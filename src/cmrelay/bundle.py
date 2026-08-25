@@ -151,7 +151,7 @@ class Bundle:
 
     @property
     def units(self) -> Path:
-        """The five daemon units cmrelay authors itself."""
+        """The units cmrelay authors, for daemons nixpkgs ships none for."""
         return self.root / "units"
 
     def vendor_file(self, relpath: str) -> Path:

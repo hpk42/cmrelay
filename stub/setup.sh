@@ -41,8 +41,12 @@ closure=$(cat "$here/closure")
 # distributions. Stage on a real filesystem instead, and prefer one that
 # usually shares a mount with /opt, so installing the closure is a rename
 # rather than a copy.
-stage=${CMRELAY_STAGE_DIR:-/var/tmp}/cmrelay-stage.$$
-mkdir -p "$stage" || fail "cannot create the staging directory $stage"
+# mktemp, not a name built from $PID: /var/tmp is world writable, a pid is
+# guessable, and `mkdir -p` succeeds on a directory somebody else already
+# created. Root would then unpack a closure into a tree an unprivileged user
+# owns and execute out of it.
+stage=$(mktemp -d "${CMRELAY_STAGE_DIR:-/var/tmp}/cmrelay-stage.XXXXXXXX") \
+    || fail "cannot create a staging directory under ${CMRELAY_STAGE_DIR:-/var/tmp}"
 
 cleanup() {
     # A refusal removes the staging directory and exits, having touched

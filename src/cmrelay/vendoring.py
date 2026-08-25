@@ -14,8 +14,8 @@ vendor.lock records the relay commit plus a sha256 per copied file, which is
 what makes a cmrelay tag name an exact relay tree.
 """
 
-import fnmatch
 import hashlib
+import re
 import shutil
 import tomllib
 from dataclasses import dataclass, field
@@ -24,6 +24,39 @@ from pathlib import Path
 
 class VendorError(Exception):
     """The mapping and relay's tree no longer agree."""
+
+
+def globmatch(path: str, pattern: str) -> bool:
+    """Match a relay-relative path, with `*` stopping at a directory boundary.
+
+    Written out rather than built on fnmatch, for two reasons. fnmatch
+    translates `*` to `.*`, which crosses separators, so a rule for
+    `dovecot/*` would silently claim `dovecot/conf.d/10-mail.conf` and
+    flatten it into the wrong destination: exactly the drift the mapping
+    exists to catch. And post-processing `fnmatch.translate`'s output means
+    depending on its shape, which changed in Python 3.14 (a lowercase
+    end-of-string anchor) and broke this on the interpreter the closure
+    actually ships.
+
+    `*` matches within one path segment, `**` matches across segments, `?`
+    matches one character that is not a separator. Nothing else is special.
+    """
+    expr = []
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "*":
+            if pattern[index : index + 2] == "**":
+                expr.append(".*")
+                index += 2
+                continue
+            expr.append("[^/]*")
+        elif char == "?":
+            expr.append("[^/]")
+        else:
+            expr.append(re.escape(char))
+        index += 1
+    return re.fullmatch("".join(expr), path) is not None
 
 
 @dataclass
@@ -52,10 +85,10 @@ class Mapping:
     def classify(self, relpath: str) -> tuple[str, str | None]:
         """Return ("skip"|"copy", destination) for one relay-relative path."""
         for patterns, _why in self.skips:
-            if any(fnmatch.fnmatch(relpath, p) for p in patterns):
+            if any(globmatch(relpath, p) for p in patterns):
                 return "skip", None
         for rule in self.copies:
-            if fnmatch.fnmatch(relpath, rule.src):
+            if globmatch(relpath, rule.src):
                 if rule.dest.endswith("/"):
                     return "copy", rule.dest + Path(relpath).name
                 return "copy", rule.dest

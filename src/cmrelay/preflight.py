@@ -187,6 +187,13 @@ def resolve_port_table(entries, config) -> list[tuple[list[str], int]]:
 
 
 def check_ports(port_table, ss_argv=("ss",)) -> Report:
+    """Whoever actually holds each port, which catches daemons by no name.
+
+    Store paths do not change argv[0] basenames, so cmrelay's own postfix
+    answers to `master` exactly as a distribution's does. That is why this
+    needs no equivalent of check_units' *ours*: a port held by the process
+    relay's table expects is right whoever installed it.
+    """
     report = Report()
     for names, port in port_table:
         holder = port_holder(port, ss_argv=ss_argv)
@@ -208,9 +215,20 @@ def check_ports(port_table, ss_argv=("ss",)) -> Report:
     return report
 
 
-def check_units(names=None) -> Report:
+def check_units(names=None, ours=None) -> Report:
+    """Which of the names cmrelay wants are held by somebody else.
+
+    *ours* answers "is this unit already cmrelay's own", and without it the
+    detector cannot tell a distribution's postfix from the one cmrelay just
+    installed. Reporting the latter would be worse than useless: the remedy
+    it prints masks the name, and a masked name is one cmrelay can no longer
+    install.
+    """
+    ours = ours or (lambda name: False)
     report = Report()
     for name, (enabled, active) in unit_states(names or CONFLICTING_UNITS).items():
+        if ours(name):
+            continue
         if enabled in ("enabled", "enabled-runtime") or active == "active":
             report.add(
                 "unit",
@@ -248,10 +266,14 @@ def check_store(nix_root=Path("/nix")) -> Report:
     return report
 
 
-def run(port_table, ss_argv=("ss",), nix_root=Path("/nix")) -> Report:
+def run(port_table, ss_argv=("ss",), nix_root=Path("/nix"), ours=None) -> Report:
     """The whole preflight. Modifies nothing."""
     report = Report()
-    parts = (check_store(nix_root), check_units(), check_ports(port_table, ss_argv))
+    parts = (
+        check_store(nix_root),
+        check_units(ours=ours),
+        check_ports(port_table, ss_argv),
+    )
     for part in parts:
         report.findings.extend(part.findings)
     return report

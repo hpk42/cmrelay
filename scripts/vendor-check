@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-"""Verify vendor/ against vendor.lock. Runs in CI.
+"""Verify vendor/ against vendor.lock and against relay. Runs in CI.
 
-A failure here means somebody hand-edited generated output. The fix is to
-move the change into patches/ and re-run vendor-sync.
+Two different failures, and only the first is about this repository.
+
+A hash mismatch means somebody hand-edited generated output; the fix is to
+move the change into patches/ and re-run scripts/vendor-sync.
+
+An uncovered relay file means upstream grew something the mapping does not
+know how to realise. That is the whole point of the mapping, so it has to be
+re-checked here rather than trusted from the last sync: comparing hashes
+alone would stay green through a relay bump that added a component.
 """
 
 import json
@@ -11,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from cmrelay.vendoring import verify  # noqa: E402
+from cmrelay.vendoring import Mapping, VendorError, plan, verify  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -22,12 +29,31 @@ def main():
         print("vendor-check: no vendor.lock; run scripts/vendor-sync", file=sys.stderr)
         return 1
     lock = json.loads(lockpath.read_text())
+
     problems = verify(REPO / "vendor", lock["files"])
     if problems:
         print("vendor-check: vendor/ does not match vendor.lock", file=sys.stderr)
         for problem in problems:
             print(f"  {problem}", file=sys.stderr)
         return 1
+
+    relay_root = REPO / "cmdeploy-relay"
+    if not (relay_root / "cmdeploy").is_dir():
+        print("vendor-check: no submodule checkout, skipping the mapping re-check")
+    else:
+        try:
+            mapped = plan(relay_root, Mapping.load(REPO / "vendor.toml"))
+        except VendorError as exc:
+            print(f"vendor-check: {exc}", file=sys.stderr)
+            return 1
+        if set(mapped.values()) != set(lock["files"]):
+            print(
+                "vendor-check: the mapping resolves to a different set of files"
+                " than vendor.lock records; run scripts/vendor-sync",
+                file=sys.stderr,
+            )
+            return 1
+
     print(
         f"vendor-check: {len(lock['files'])} files match relay"
         f" {lock['relay_commit'][:12]}"

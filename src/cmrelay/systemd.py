@@ -51,7 +51,7 @@ def query(*args) -> str:
 
 def install_unit(name: str, content: str) -> bool:
     """Write a unit where systemd loads it, and index it under /opt/cmrelay."""
-    real = paths.unit_link(name)
+    real = paths.unit_file(name)
     if real.is_symlink():
         # Either a mask (-> /dev/null) or an older cmrelay layout. Both have
         # to go before a real file can take the name.

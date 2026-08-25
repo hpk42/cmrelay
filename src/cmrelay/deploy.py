@@ -52,6 +52,10 @@ AUTHORED_UNITS = ["postfix", "dovecot", "nginx", "unbound", "opendkim"]
 
 DKIM_SELECTOR = "opendkim"
 
+# Where relay's acmetool hook lives. Debian's acmetool is patched to read
+# this; upstream reads /usr/libexec/acme/hooks, so cmrelay has to say so.
+ACME_HOOKS_DIR = "/etc/acme/hooks"
+
 
 class DeployError(Exception):
     pass
@@ -330,12 +334,12 @@ class Deployment:
         acme = paths.ACME_STATE
         ensure_directory(acme / "conf")
         ensure_directory(acme / "desired")
-        ensure_directory(Path("/etc/acme/hooks"))
+        ensure_directory(Path(ACME_HOOKS_DIR))
 
         self.put_file(
             "acmetool",
             "config/acmetool/acmetool.hook",
-            "/etc/acme/hooks/nginx",
+            f"{ACME_HOOKS_DIR}/nginx",
             mode=0o755,
         )
         remove_file(Path("/usr/lib/acme/hooks/nginx"))
@@ -366,6 +370,20 @@ class Deployment:
             "acmetool", "systemd/acmetool-reconcile.service.j2", bin_path=bin_path
         )
         self.unit_verbatim("acmetool", "systemd/acmetool-reconcile.timer")
+
+        # relay writes its reload hook to /etc/acme/hooks because Debian
+        # patches acmetool to look there. Upstream defaults to
+        # /usr/libexec/acme/hooks, so on a cmrelay host nothing would reload
+        # nginx or dovecot after a renewal and the relay would serve an
+        # expired certificate until somebody noticed. A drop-in points the
+        # binary at the path the vendored configuration already assumes,
+        # which keeps the units themselves verbatim.
+        for unit in ("acmetool-reconcile.service", "acmetool-redirector.service"):
+            systemd.install_dropin(
+                unit,
+                "10-hooks-dir.conf",
+                f"[Service]\nEnvironment=ACME_HOOKS_DIR={ACME_HOOKS_DIR}\n",
+            )
 
     def configure_selfsigned(self):
         cert = Path(self.config.tls_cert_path)
@@ -1055,6 +1073,7 @@ class Deployment:
                 self.bin("acmetool"),
                 "--batch",
                 "--xlog.severity=debug",
+                f"--hooks={ACME_HOOKS_DIR}",
                 "reconcile",
                 check=False,
             )

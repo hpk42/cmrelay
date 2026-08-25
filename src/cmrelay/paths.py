@@ -70,7 +70,8 @@ CLI = BIN / "cmrelay"
 # store path is not enough; the names have to be findable.
 LOCAL_BIN = Path("/usr/local/bin")
 
-# Where systemd looks. cmrelay writes symlinks here, never the files.
+# Where systemd looks, and therefore where cmrelay's real unit files live.
+# See cmrelay.systemd for why they cannot live under /opt/cmrelay instead.
 SYSTEMD_SYSTEM = Path("/etc/systemd/system")
 
 # Shared in place with whatever ran before, never relocated and never copied.
@@ -90,8 +91,8 @@ MAILNAME = Path("/etc/mailname")
 CMDEPLOY_INI = Path("/usr/local/lib/chatmaild/chatmail.ini")
 
 
-def unit_link(name: str) -> Path:
-    """Where systemd sees a unit that really lives under /opt/cmrelay."""
+def unit_file(name: str) -> Path:
+    """The real unit file, in the directory systemd loads from."""
     return SYSTEMD_SYSTEM / name
 
 

@@ -4,8 +4,13 @@ The four verbs differ mainly in what they are allowed to touch.
 
 `install` is for fresh hosts. It runs the preflight and bails out on any
 conflicting unit or occupied port having modified nothing at all, because a
-half-installed mail server is worse than none. It never stops, disables or
-masks anything.
+half-installed mail server is worse than none.
+
+The one thing it does take over is the resolver: every stock Debian and
+Fedora has systemd-resolved on port 53, cmdeploy stops and masks it as an
+ordinary part of every deploy, and refusing over it would make `install`
+useless on exactly the hosts it targets. That is recorded for uninstall to
+reverse. Any other holder of port 53 still refuses.
 
 `upgrade` is the only verb permitted to touch existing services, and the only
 one that may act on a conflict. When it does it stops, disables *and masks*:
@@ -245,26 +250,34 @@ def cmd_upgrade(args, out) -> int:
     require_root()
     bundle = Bundle.discover()
 
-    out.section("What is on this host")
-    findings = describe_existing(bundle, out)
+    # install_store() ends in a re-exec of this same verb from the installed
+    # closure. Without this the second run would prompt again and, having
+    # been answered, stop and mask a stack it had already taken over.
+    resumed = bool(os.environ.get(ENV_PREFLIGHT_PASSED))
 
-    conflicts = preflight.check_units()
-    if not conflicts.ok:
-        out.print("\nUnits cmrelay will stop, disable and mask:")
-        for finding in conflicts.findings:
-            out.print(f"  {finding.subject} ({finding.detail})")
+    if not resumed:
+        out.section("What is on this host")
+        findings = describe_existing(bundle, out)
 
-    if not args.yes:
-        out.print("")
-        answer = input("Convert this host to cmrelay? [y/N] ").strip().lower()
-        if answer not in ("y", "yes"):
-            out.print("aborted; nothing was modified")
-            return 1
+        conflicts = preflight.check_units(ours=ours)
+        if not conflicts.ok:
+            out.print("\nUnits cmrelay will stop, disable and mask:")
+            for finding in conflicts.findings:
+                out.print(f"  {finding.subject} ({finding.detail})")
 
-    out.section("Stopping the existing stack")
-    masked = mask_existing(out)
-    if masked:
-        systemd.record_disabled_units(masked)
+        if not args.yes:
+            out.print("")
+            answer = input("Convert this host to cmrelay? [y/N] ").strip().lower()
+            if answer not in ("y", "yes"):
+                out.print("aborted; nothing was modified")
+                return 1
+
+        out.section("Stopping the existing stack")
+        masked = mask_existing(out)
+        if masked:
+            systemd.record_disabled_units(masked)
+    else:
+        findings = describe_existing(bundle, out)
 
     install_store(bundle, out)
 
@@ -502,7 +515,7 @@ def run_preflight(bundle, out, config=None, mail_domain=None):
     if isinstance(config, dict):
         config = SimpleNamespace(**config)
     resolved = preflight.resolve_port_table(table, config)
-    return preflight.run(resolved, ss_argv=bundle.command("iproute2", "ss"))
+    return preflight.run(resolved, ss_argv=bundle.command("iproute2", "ss"), ours=ours)
 
 
 def default_config(mail_domain: str):
@@ -598,7 +611,7 @@ def stop_our_units(out):
     for unit in sorted(paths.UNITS.glob("*")):
         name = unit.name
         systemd.ensure_service(name, running=False, enabled=False)
-        real = paths.unit_link(name)
+        real = paths.unit_file(name)
         if real.is_file() or real.is_symlink():
             real.unlink()
         out.print(f"  stopped and removed {name}")

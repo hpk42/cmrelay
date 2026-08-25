@@ -56,10 +56,10 @@ why = "Debian dpkg mechanism; cmrelay installs no packages"
 
 # --- systemd units, timers and drop-ins ------------------------------------
 #
-# All twenty-one vendor verbatim. They are already parameterised on the
-# binary path, so pointing them at a Nix store path is a template variable
-# rather than an edit. Keeping the unit names identical is a contract: the
-# acceptance suite greps journald by unit name.
+# Eighteen units and two drop-in fragments, all verbatim. They are already
+# parameterised on the binary path, so pointing them at a Nix store path is a
+# template variable rather than an edit. Keeping the unit names identical is a
+# contract: the acceptance suite greps journald by unit name.
 
 [[copy]]
 src = "cmdeploy/src/cmdeploy/service/*.f"

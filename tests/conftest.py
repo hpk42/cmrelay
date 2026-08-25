@@ -32,6 +32,18 @@ def bundle(tmp_path):
     shutil.copytree(REPO / "units", root / "units")
     shutil.copyfile(REPO / "vendor.lock", root / "vendor.lock")
     shutil.copyfile(REPO / "nix/generated/relay-pins.json", root / "relay-pins.json")
+
+    # nix/closure.nix writes this; Bundle.command() reads it to find the
+    # loader that runs a store binary before the store is installed.
+    glibc = tmp_path / "nix/store/aaa-glibc-2.42/lib"
+    glibc.mkdir(parents=True)
+    (glibc / "ld-linux-x86-64.so.2").write_text("")
+    (root / "bootstrap.env").write_text(
+        "CMRELAY_LD=/nix/store/aaa-glibc-2.42/lib/ld-linux-x86-64.so.2\n"
+        "CMRELAY_PYTHON=/nix/store/lll-python/bin/python3.14\n"
+        "CMRELAY_SITE=/nix/store/lll-python/lib/python3.14/site-packages\n"
+    )
+
     (root / "manifest.json").write_text(
         json.dumps(
             {

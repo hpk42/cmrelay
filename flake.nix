@@ -96,12 +96,27 @@
           '';
         };
 
-        checks.pytest = pkgs.runCommand "cmrelay-pytest" { } ''
-          cp -r ${./.}/{src,tests,vendor,vendor.toml,vendor.lock} .
-          chmod -R u+w .
-          PYTHONPATH=$PWD/src ${pythonEnv}/bin/python -m pytest tests -q \
-            && touch $out
-        '';
+        # pytest deliberately does not go in pythonEnv: that environment ends
+        # up in the closure a relay runs, and a relay has no business
+        # carrying a test framework.
+        checks.pytest =
+          let
+            testEnv = pkgs.python3.withPackages (
+              ps: pythonDeps ++ [ ps.pytest ]
+            );
+          in
+          pkgs.runCommand "cmrelay-pytest" { } ''
+            cp -r ${./.}/src ${./.}/tests ${./.}/vendor .
+            cp ${./.}/vendor.toml ${./.}/vendor.lock .
+            cp -r ${./.}/patches .
+            cp -r ${./.}/nix .
+            cp -r ${./.}/units .
+            chmod -R u+w .
+            # The tests that read the pinned relay checkout skip without it;
+            # a flake check has no submodule to read.
+            ${testEnv}/bin/python -m pytest tests -q -p no:cacheprovider
+            touch $out
+          '';
 
         formatter = pkgs.nixfmt-tree;
 
