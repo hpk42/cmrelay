@@ -38,7 +38,6 @@ from chatmaild.config import write_initial_config as _write_initial_config
 from . import paths, preflight, store, systemd, users
 from .bundle import ENV_CLOSURE, ENV_STAGE, Bundle
 from .deploy import AUTHORED_UNITS, TIMER_DRIVEN, Deployment
-from .relayextract import extract_port_table  # noqa: F401  (kept for tests)
 from .version import __version__
 
 # Written next to the store so a second run knows the first one got this far.
