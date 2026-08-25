@@ -48,9 +48,10 @@ def payload_url(version: str = None, arch: str = None) -> str:
     version = version or __version__
     if version.startswith("0.0.0"):
         raise FetchError(
-            "this cmrelay is not a released version, so there is no payload to"
-            " download. Build one with `nix build .#payload`, or pass"
-            " --payload with a .run file."
+            "this cmrelay is not a released version, so there is no payload"
+            " to download. Build one with"
+            " `nix build '.?submodules=1#payload'` in a cmrelay checkout and"
+            " run the resulting .run file directly."
         )
     machine = platform.machine()
     arch = arch or ARCHES.get(machine)

@@ -75,7 +75,6 @@ RESOLVER_PROCESSES = {"systemd-resolve", "systemd-r", "systemd-resolved"}
 
 @dataclass
 class Finding:
-    kind: str  # "unit" | "port" | "store"
     subject: str
     detail: str
     remedy: str | None = None
@@ -207,7 +206,6 @@ def check_ports(port_table, ss_argv=("ss",)) -> Report:
                 detail += f" ({known})"
             detail += f", expected one of {', '.join(names)}"
             report.add(
-                "port",
                 f"port {port}",
                 detail,
                 remedy=f"stop whatever runs {holder!r}, or free port {port}",
@@ -231,7 +229,6 @@ def check_units(names=None, ours=None) -> Report:
             continue
         if enabled in ("enabled", "enabled-runtime") or active == "active":
             report.add(
-                "unit",
                 name,
                 f"already present and {enabled}/{active}",
                 remedy=f"systemctl disable --now {name} && systemctl mask {name}",
@@ -251,14 +248,12 @@ def check_store(nix_root=Path("/nix")) -> Report:
         expected = Path("/opt/cmrelay/nix")
         if target != expected:
             report.add(
-                "store",
                 "/nix",
                 f"is a symlink to {target}, not {expected}",
                 remedy="remove or repoint /nix",
             )
     elif nix_root.exists():
         report.add(
-            "store",
             "/nix",
             "exists as a real directory: this host already runs Nix",
             remedy="cmrelay will not mingle closures; install on a host without Nix",

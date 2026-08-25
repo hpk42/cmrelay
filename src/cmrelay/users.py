@@ -11,9 +11,11 @@ numeric IDs, so vmail has a different UID on every host and the mailboxes on
 disk are owned by that host's particular number. Three rules follow, and the
 third prevents a disaster:
 
-- On upgrade, never create users. They exist. Resolve them and reuse their
-  existing UIDs. Creating a differently named user, or assuming a number,
-  breaks access to every mailbox on the host.
+- On upgrade, never create a user that exists. Resolve it and reuse the uid
+  that is there. Creating a differently named user, or assuming a number,
+  breaks access to every mailbox on the host. Upgrade does create the ones
+  that are genuinely absent, because a host part way through a cmdeploy run
+  may be missing some, and it reports which.
 
 - On a bare install, create them exactly as cmdeploy does: same names,
   system-allocated. Matching that keeps a later `cmdeploy run` from

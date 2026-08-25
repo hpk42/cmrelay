@@ -114,8 +114,3 @@ def label_for_selinux(target: Path = paths.NIX) -> str | None:
     if result.returncode:
         return f"SELinux relabel of {target} failed: {result.stderr.strip()}"
     return f"SELinux is enforcing; relabelled {target} as bin_t"
-
-
-def remove(target: Path = paths.NIX) -> None:
-    if target.exists():
-        shutil.rmtree(target)

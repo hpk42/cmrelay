@@ -5,8 +5,12 @@
 # machinery nothing here uses.
 [Unit]
 Description=Postfix Mail Transport Agent
-After=network-online.target nss-lookup.target
-Wants=network-online.target
+# dovecot first: it creates the SASL auth socket and the LMTP socket inside
+# postfix's own queue directory, and postfix's smtpd refuses authentication
+# without them. relay orders the two this way during a deploy; without saying
+# so here, a reboot is a race.
+After=network-online.target nss-lookup.target dovecot.service
+Wants=network-online.target dovecot.service
 
 [Service]
 Type=forking

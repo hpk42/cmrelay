@@ -628,9 +628,27 @@ def remove_linked_tools(out):
     out.section("Removing tool links")
     for name in paths.LINKED_TOOLS.read_text().split():
         link = paths.LOCAL_BIN / name
-        if link.is_symlink() or link.is_file():
-            link.unlink()
-            out.print(f"  removed {link}")
+        if not is_ours(link):
+            continue
+        link.unlink()
+        out.print(f"  removed {link}")
+
+
+def is_ours(link: Path) -> bool:
+    """Whether cmrelay put this in /usr/local/bin, or something else did.
+
+    Removing by name alone would delete whatever had since taken the name.
+    Both shapes cmrelay writes are recognisable: a symlink into the store,
+    and a wrapper carrying the line it generates.
+    """
+    if link.is_symlink():
+        return str(link.readlink()).startswith(("/nix/store/", str(paths.ROOT)))
+    if link.is_file():
+        try:
+            return "written by cmrelay" in link.read_text()
+        except (OSError, UnicodeDecodeError):
+            return False
+    return False
 
 
 def diff_configs(out):
@@ -645,11 +663,6 @@ def diff_configs(out):
         " `cmdeploy run` regenerates its own ini from its checkout, so"
         " configuration edits made under cmrelay will not survive a rollback."
     )
-
-
-def main_error(exc) -> int:
-    print(f"cmrelay: {exc}", file=sys.stderr)
-    return 1
 
 
 # ----------------------------------------------------------------------

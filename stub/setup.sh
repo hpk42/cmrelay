@@ -63,8 +63,19 @@ chmod +x "$here/zstd" 2>/dev/null || true
     "the bundled zstd is not executable; is $here on a noexec mount?"
 
 echo "cmrelay: unpacking the closure into $stage ..."
-"$here/zstd" -qdc "$here/store.tar.zst" | tar -x -C "$stage" \
+# A pipeline reports only its last command, so a truncated download would
+# decompress partially, tar would succeed on what it got, and the install
+# would proceed against a store quietly missing files. zstd verifies its own
+# frame checksums, which makes its exit status the integrity check, so carry
+# it out of the pipeline by hand. POSIX sh has no PIPESTATUS.
+zstd_status="$stage/.cmrelay-zstd-status"
+{ "$here/zstd" -qdc "$here/store.tar.zst"; echo $? >"$zstd_status"; } \
+    | tar -x -C "$stage" \
     || fail "could not unpack the closure"
+read -r status <"$zstd_status" || status=unknown
+rm -f "$zstd_status"
+[ "$status" = 0 ] \
+    || fail "the payload is corrupt or truncated (zstd exited $status)"
 
 [ -d "$stage/nix/store" ] || fail "the closure did not unpack to $stage/nix/store"
 

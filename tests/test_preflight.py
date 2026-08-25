@@ -149,7 +149,7 @@ esac
 
 def test_format_report_includes_remedies():
     report = preflight.Report()
-    report.add("port", "port 25", "held by exim4", remedy="stop exim4")
+    report.add("port 25", "held by exim4", remedy="stop exim4")
     text = preflight.format_report(report)
     assert "port 25: held by exim4" in text
     assert "remedy: stop exim4" in text
