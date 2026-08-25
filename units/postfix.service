@@ -1,0 +1,24 @@
+# Debian splits this into a no-op postfix.service wrapper and a
+# postfix@-.service instance driven by postmulti. cmrelay runs a single
+# instance and does the work in postfix.service directly, which keeps the
+# unit name relay and its test suite expect while dropping the multi-instance
+# machinery nothing here uses.
+[Unit]
+Description=Postfix Mail Transport Agent
+After=network-online.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+# postfix refuses to start against a queue whose ownership it does not like,
+# and creates the missing queue subdirectories while checking.
+ExecStartPre={postfix_bin} -c {postfix_config_dir} set-permissions
+ExecStart={postfix_bin} -c {postfix_config_dir} start
+ExecStop={postfix_bin} -c {postfix_config_dir} stop
+ExecReload={postfix_bin} -c {postfix_config_dir} reload
+PIDFile=/var/spool/postfix/pid/master.pid
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenDKIM milter
+After=network-online.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+# opendkim.conf sets PidFile to this path and UserID to opendkim, so
+# systemd has to make the runtime directory writable by that account.
+RuntimeDirectory=opendkim
+PIDFile=/run/opendkim/opendkim.pid
+ExecStart={opendkim_bin} -x {opendkim_config}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

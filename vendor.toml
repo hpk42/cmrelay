@@ -1,0 +1,154 @@
+# The vendoring mapping: which files cmrelay copies out of relay, and where.
+#
+# `scripts/vendor-sync` walks every path under `roots` in the relay submodule
+# and matches it against the rules below, in order. A file matching no rule
+# is an error, not a warning. That is the whole point: when relay grows a new
+# component with new templates, the cmrelay build fails and somebody has to
+# decide how cmrelay realises it. Silent divergence would give us a relay
+# missing a service, discovered in production.
+#
+# Copying is byte for byte. Nothing here rewrites content; local deltas live
+# in `patches/` and are applied after the copy.
+
+relay_url = "https://github.com/chatmail/relay.git"
+
+roots = [
+  "cmdeploy/src/cmdeploy",
+  "www/src",
+]
+
+# Files that never take part, matched before any copy rule.
+# Build artefacts, editor droppings and relay's own test suite.
+[[skip]]
+patterns = [
+  "**/__pycache__/**",
+  "**/*.pyc",
+  "**/*.swp",
+  "cmdeploy/src/cmdeploy/tests/**",
+]
+why = "build artefacts, editor droppings and relay's own test suite"
+
+# The pyinfra deployer modules. cmrelay reimplements their effects and never
+# vendors their code, because that is the part that would rot.
+[[skip]]
+patterns = [
+  "cmdeploy/src/cmdeploy/*.py",
+  "cmdeploy/src/cmdeploy/*/*.py",
+  "cmdeploy/src/cmdeploy/*/*/*.py",
+]
+why = "pyinfra deployer code; cmrelay reimplements the effects instead"
+
+# postfix-mta-sts-resolver is dead upstream. MtastsDeployer is now a pure
+# removal step, so these two files are only ever deleted from a host, never
+# installed. cmrelay does not package them.
+[[skip]]
+patterns = [
+  "cmdeploy/src/cmdeploy/postfix/mta-sts-daemon.service",
+  "cmdeploy/src/cmdeploy/postfix/mta-sts-daemon.yml",
+]
+why = "mta-sts-daemon is removed by relay, never installed"
+
+# policy-rc.d exists to stop dpkg from starting daemons mid-install.
+# cmrelay installs no packages, so it has nothing to suppress.
+[[skip]]
+patterns = ["cmdeploy/src/cmdeploy/policy-rc.d"]
+why = "Debian dpkg mechanism; cmrelay installs no packages"
+
+# --- systemd units, timers and drop-ins ------------------------------------
+#
+# All twenty-one vendor verbatim. They are already parameterised on the
+# binary path, so pointing them at a Nix store path is a template variable
+# rather than an edit. Keeping the unit names identical is a contract: the
+# acceptance suite greps journald by unit name.
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/service/*.f"
+dest = "systemd/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/service/10_restart_on_failure.conf"
+dest = "systemd/10_restart_on_failure.conf"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/acmetool/acmetool-*.service.j2"
+dest = "systemd/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/acmetool/acmetool-reconcile.timer"
+dest = "systemd/acmetool-reconcile.timer"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/filtermail/*.service.j2"
+dest = "systemd/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/external/tls-cert-reload.*"
+dest = "systemd/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/mtail/mtail.service.j2"
+dest = "systemd/mtail.service.j2"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/iroh-relay.service.j2"
+dest = "systemd/iroh-relay.service.j2"
+
+# Landed as /etc/systemd/system/opendkim.service.d/10-prevent-memory-leak.conf
+[[copy]]
+src = "cmdeploy/src/cmdeploy/opendkim/systemd.conf"
+dest = "systemd/opendkim-10-prevent-memory-leak.conf"
+
+# --- component configuration ----------------------------------------------
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/postfix/*"
+dest = "config/postfix/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/dovecot/*"
+dest = "config/dovecot/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/nginx/*"
+dest = "config/nginx/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/unbound/*"
+dest = "config/unbound/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/opendkim/*"
+dest = "config/opendkim/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/mtail/*.mtail"
+dest = "config/mtail/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/acmetool/*.yaml.j2"
+dest = "config/acmetool/"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/acmetool/acmetool.hook"
+dest = "config/acmetool/acmetool.hook"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/iroh-relay.toml"
+dest = "config/iroh-relay.toml"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/journald.conf"
+dest = "config/journald.conf"
+
+# --- assets ---------------------------------------------------------------
+
+# Fonts and images for the invite QR code that the website build draws.
+[[copy]]
+src = "cmdeploy/src/cmdeploy/data/*"
+dest = "data/"
+
+# The website source. cmrelay renders it with the same markdown and jinja2
+# pipeline relay uses, reimplemented in cmrelay/website.py.
+[[copy]]
+src = "www/src/*"
+dest = "www/"

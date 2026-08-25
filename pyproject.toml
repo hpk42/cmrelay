@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools-git-versioning >=2.0,<3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cmrelay"
+description = "Single-file installer for a chatmail relay, built as a Nix closure"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+# chatmaild is a hard dependency and is deliberately absent here: it is
+# relay's own code, built from the vendored commit into the closure's
+# interpreter, and it is not on PyPI. A pip-installed cmrelay therefore only
+# fetches the payload and hands over to it -- see src/cmrelay/fetch.py.
+dependencies = [
+  "jinja2>=3.1",
+  "markdown",
+  "qrcode",
+  "pillow",
+]
+dynamic = ["version"]
+
+[tool.setuptools-git-versioning]
+enabled = true
+
+[project.urls]
+Repository = "https://github.com/chatmail/cmrelay"
+
+[project.scripts]
+cmrelay = "cmrelay.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+
+[dependency-groups]
+# chatmaild comes from the pinned relay submodule, which is where every
+# other consumer of it gets it too.
+test = ["pytest", "chatmaild @ file://${PROJECT_ROOT}/cmdeploy-relay/chatmaild"]
+
+[tool.pytest.ini_options]
+addopts = "-v -ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+extend-exclude = ["vendor", "cmdeploy-relay"]
+
+[tool.ruff.lint.per-file-ignores]
+# cli.py must import its verbs lazily: from a pip-installed wheel there is no
+# closure and no chatmaild, and the CLI has to reach the code that says so
+# rather than fail at import time. fetch.py is the wheel's only real job.
+"src/cmrelay/cli.py" = ["PLC0415"]
+# verbs.py defers fetch for the same reason, in one place.
+"src/cmrelay/verbs.py" = ["PLC0415"]
+# Tests import inside a test when the import itself is what is under test.
+"tests/*" = ["PLC0415"]
+
+[tool.ruff.lint]
+select = [
+  "F", # Pyflakes
+  "I", # isort
+
+  "PLC", # Pylint Convention
+  "PLE", # Pylint Error
+  "PLW", # Pylint Warning
+]

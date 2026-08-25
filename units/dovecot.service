@@ -1,0 +1,21 @@
+[Unit]
+Description=Dovecot IMAP/LMTP email server
+After=local-fs.target network-online.target
+Wants=network-online.target
+
+[Service]
+# dovecot is built --with-systemd and reports readiness and its own version
+# through sd_notify. relay's test suite reads that version back out of
+# `systemctl show -p StatusText dovecot.service` and compares it against
+# `dovecot --version`, so Type=simple would quietly cost that check.
+Type=notify
+ExecStart={dovecot_bin} -F -c {dovecot_config}
+ExecReload={doveadm_bin} -c {dovecot_config} reload
+ExecStop={doveadm_bin} -c {dovecot_config} stop
+# dovecot's own recommendation for a busy relay
+LimitNOFILE=65535
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

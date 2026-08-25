@@ -1,0 +1,118 @@
+#
+# Postfix master process configuration file.  For details on the format
+# of the file, see the master(5) manual page (command: "man 5 master" or
+# on-line: http://www.postfix.org/master.5.html).
+#
+# Do not forget to execute "postfix reload" after editing this file.
+#
+# ==========================================================================
+# service type  private unpriv  chroot  wakeup  maxproc command + args
+#               (yes)   (yes)   (no)    (never) (100)
+# ==========================================================================
+{% if debug == true %}
+smtp      inet  n       -       y       -       -       smtpd -v
+{%- else %}
+smtp      inet  n       -       y       -       -       smtpd 
+{%- endif %}
+  -o smtpd_tls_security_level=encrypt
+  -o smtpd_tls_mandatory_protocols=>=TLSv1.2
+  -o smtpd_proxy_filter=127.0.0.1:{{ config.filtermail_smtp_port_incoming }}
+  -o smtpd_relay_restrictions=reject_unauth_destination
+submission inet n       -       y       -       {{ config.max_smtp_connections }}    smtpd
+  -o syslog_name=postfix/submission
+  -o smtpd_tls_security_level=encrypt
+  -o smtpd_tls_mandatory_protocols=>=TLSv1.3
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_sasl_type=dovecot
+  -o smtpd_sasl_path=private/auth
+  -o smtpd_tls_auth_only=yes
+  -o smtpd_reject_unlisted_recipient=no
+  -o smtpd_client_restrictions=$mua_client_restrictions
+  -o smtpd_helo_restrictions=$mua_helo_restrictions
+  -o smtpd_sender_restrictions=$mua_sender_restrictions
+  -o smtpd_recipient_restrictions=
+  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
+  -o smtpd_client_connection_count_limit={{ config.max_smtp_connections // 5 }}
+  -o smtpd_proxy_filter=127.0.0.1:{{ config.filtermail_smtp_port }}
+smtps     inet  n       -       y       -       {{ config.max_smtp_connections }}    smtpd
+  -o syslog_name=postfix/smtps
+  -o smtpd_tls_wrappermode=yes
+  -o smtpd_tls_security_level=encrypt
+  -o smtpd_tls_mandatory_protocols=>=TLSv1.3
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_sasl_type=dovecot
+  -o smtpd_sasl_path=private/auth
+  -o smtpd_reject_unlisted_recipient=no
+  -o smtpd_client_restrictions=$mua_client_restrictions
+  -o smtpd_helo_restrictions=$mua_helo_restrictions
+  -o smtpd_sender_restrictions=$mua_sender_restrictions
+  -o smtpd_recipient_restrictions=
+  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
+  -o smtpd_client_connection_count_limit={{ config.max_smtp_connections // 5 }}
+  -o smtpd_proxy_filter=127.0.0.1:{{ config.filtermail_smtp_port }}
+#628       inet  n       -       y       -       -       qmqpd
+pickup    unix  n       -       y       60      1       pickup
+cleanup   unix  n       -       y       -       0       cleanup
+qmgr      unix  n       -       n       300     1       qmgr
+#qmgr     unix  n       -       n       300     1       oqmgr
+tlsmgr    unix  -       -       y       1000?   1       tlsmgr
+rewrite   unix  -       -       y       -       -       trivial-rewrite
+bounce    unix  -       -       y       -       0       bounce
+defer     unix  -       -       y       -       0       bounce
+trace     unix  -       -       y       -       0       bounce
+verify    unix  -       -       y       -       1       verify
+flush     unix  n       -       y       1000?   0       flush
+proxymap  unix  -       -       n       -       -       proxymap
+proxywrite unix -       -       n       -       1       proxymap
+smtp      unix  -       -       y       -       -       smtp
+relay     unix  -       -       y       -       -       smtp
+        -o syslog_name=postfix/$service_name
+#       -o smtp_helo_timeout=5 -o smtp_connect_timeout=5
+showq     unix  n       -       y       -       -       showq
+error     unix  -       -       y       -       -       error
+retry     unix  -       -       y       -       -       error
+discard   unix  -       -       y       -       -       discard
+lmtp      unix  -       -       y       -       -       lmtp
+anvil     unix  -       -       y       -       1       anvil
+scache    unix  -       -       y       -       1       scache
+postlog   unix-dgram n  -       n       -       1       postlogd
+# Local SMTP server for reinjecting outgoing filtered mail.
+127.0.0.1:{{ config.postfix_reinject_port }} inet  n       -       n       -       100      smtpd
+  -o syslog_name=postfix/reinject
+  -o milter_macro_daemon_name=ORIGINATING
+  -o cleanup_service_name=authclean
+  -o smtpd_relay_restrictions=permit_mynetworks,reject
+{% if not config.ipv4_relay %}  -o smtpd_milters=unix:opendkim/opendkim.sock
+{% endif %}
+
+# Local SMTP server for reinjecting incoming filtered mail 
+127.0.0.1:{{ config.postfix_reinject_port_incoming }} inet  n       -       n       -       100      smtpd
+  -o syslog_name=postfix/reinject_incoming
+  -o smtpd_relay_restrictions=reject_unauth_destination
+
+# Cleanup `Received` headers for authenticated mail
+# to avoid leaking client IP.
+#
+# We do not do this for received mails
+# as this will break DKIM signatures
+# if `Received` header is signed.
+#
+# This service also rewrites
+# Subject with `[...]`
+# to make sure the users
+# cannot send unprotected Subject.
+authclean unix  n       -       -       -       0       cleanup
+  -o header_checks=regexp:{{ postfix_config_dir }}/submission_header_cleanup
+
+# Reducing `maxproc` here may result in a head of line blocking
+# when there are many messages sent to unreachable destinations
+# at the same time.
+# LMTP clients here talk to filtermail-transport.
+# LMTP has no pipelining,
+# so while filtermail-transport tries to deliver the message,
+# possibly waiting for a long connection timeout
+# or talking to a slow server, LMTP client cannot be reused.
+lmtp-filtermail unix  -       -       y       -       500       lmtp
+  -o syslog_name=postfix/lmtp-filtermail
+  -o lmtp_header_checks=
+  -o lmtp_tls_security_level=none

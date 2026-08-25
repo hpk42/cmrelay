@@ -1,0 +1,11 @@
+--- a/config/opendkim/opendkim.conf
++++ b/config/opendkim/opendkim.conf
+@@ -58,7 +58,7 @@
+ 
+ # The trust anchor enables DNSSEC. In Debian, the trust anchor file is provided
+ # by the package dns-root-data.
+-TrustAnchorFile		/usr/share/dns/root.key
++TrustAnchorFile		{{ trust_anchor_file }}
+ 
+ # Sign messages when `-o milter_macro_daemon_name=ORIGINATING` is set.
+ MTA ORIGINATING

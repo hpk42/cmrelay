@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Verify vendor/ against vendor.lock. Runs in CI.
+
+A failure here means somebody hand-edited generated output. The fix is to
+move the change into patches/ and re-run vendor-sync.
+"""
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from cmrelay.vendoring import verify  # noqa: E402
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def main():
+    lockpath = REPO / "vendor.lock"
+    if not lockpath.is_file():
+        print("vendor-check: no vendor.lock; run scripts/vendor-sync", file=sys.stderr)
+        return 1
+    lock = json.loads(lockpath.read_text())
+    problems = verify(REPO / "vendor", lock["files"])
+    if problems:
+        print("vendor-check: vendor/ does not match vendor.lock", file=sys.stderr)
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 1
+    print(
+        f"vendor-check: {len(lock['files'])} files match relay"
+        f" {lock['relay_commit'][:12]}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,67 @@
+# Standard workflow config of chatmail/workflow's py-checks flow, plus the
+# vendoring check: vendor/ is generated output, so CI has to prove it still
+# matches vendor.lock rather than trusting that nobody hand-edited it.
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    tags-ignore: [ '**' ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  py-checks:
+    uses: chatmail/workflows/.github/workflows/py-checks.yml@main
+
+  vendor:
+    name: vendor/ matches vendor.lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Verify the vendored tree
+        run: ./scripts/vendor-check
+
+      # A relay refactor that moves the port table or the binary pins has to
+      # fail here, which is the whole reason the extractor asserts shapes.
+      - name: Re-extract relay's port table and pins
+        run: |
+          ./scripts/extract-from-relay -o /tmp/pins.json
+          diff -u nix/generated/relay-pins.json /tmp/pins.json
+
+  build:
+    name: nix build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build the closure
+        run: nix build --print-build-logs '.?submodules=1#closure'
+
+      - name: Build the single file
+        run: nix build --print-build-logs '.?submodules=1#payload'
+
+      - name: Report the payload size
+        run: ls -lh result/bin/

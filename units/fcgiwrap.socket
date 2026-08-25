@@ -1,0 +1,13 @@
+# nginx reaches the newemail CGI through this socket; relay's nginx.conf
+# names /run/fcgiwrap.socket, so the path is not ours to choose.
+[Unit]
+Description=fcgiwrap socket
+
+[Socket]
+ListenStream=/run/fcgiwrap.socket
+SocketUser=www-data
+SocketGroup=www-data
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target

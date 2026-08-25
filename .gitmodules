@@ -1,0 +1,3 @@
+[submodule "cmdeploy-relay"]
+	path = cmdeploy-relay
+	url = https://github.com/chatmail/relay.git

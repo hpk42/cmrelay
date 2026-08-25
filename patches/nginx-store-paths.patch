@@ -1,0 +1,47 @@
+--- a/config/nginx/nginx.conf.j2
++++ b/config/nginx/nginx.conf.j2
+@@ -1,4 +1,3 @@
+-load_module modules/ngx_stream_module.so;
+ 
+ user www-data;
+ worker_processes auto;
+@@ -54,7 +53,7 @@
+ 	# Do not emit nginx version on error pages.
+ 	server_tokens off;
+ 
+-	include /etc/nginx/mime.types;
++	include {{ nginx_prefix }}/conf/mime.types;
+ 	default_type application/octet-stream;
+ 
+ 	ssl_protocols TLSv1.2 TLSv1.3;
+@@ -68,7 +67,7 @@
+   
+ 		listen 127.0.0.1:8443 ssl default_server;
+ 
+-		root /var/www/html;
++		root {{ www_root }};
+ 
+ 		index index.html index.htm;
+ 
+@@ -96,8 +95,8 @@
+ {% endif %}
+ 
+ 			fastcgi_pass unix:/run/fcgiwrap.socket;
+-			include /etc/nginx/fastcgi_params;
+-			fastcgi_param SCRIPT_FILENAME /usr/lib/cgi-bin/newemail.py;
++			include {{ nginx_prefix }}/conf/fastcgi_params;
++			fastcgi_param SCRIPT_FILENAME {{ cgi_bin_dir }}/newemail.py;
+ 		}
+ 
+ 		# Old URL for compatibility with e.g. printed QR codes.
+@@ -114,8 +113,8 @@
+ {% endif %}
+ 
+ 			fastcgi_pass unix:/run/fcgiwrap.socket;
+-			include /etc/nginx/fastcgi_params;
+-			fastcgi_param SCRIPT_FILENAME /usr/lib/cgi-bin/newemail.py;
++			include {{ nginx_prefix }}/conf/fastcgi_params;
++			fastcgi_param SCRIPT_FILENAME {{ cgi_bin_dir }}/newemail.py;
+ 		}
+ 
+                 # Proxy to iroh-relay service.
