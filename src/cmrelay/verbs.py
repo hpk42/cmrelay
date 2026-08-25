@@ -40,9 +40,6 @@ from .bundle import ENV_CLOSURE, ENV_STAGE, Bundle
 from .deploy import AUTHORED_UNITS, TIMER_DRIVEN, Deployment
 from .version import __version__
 
-# Written next to the store so a second run knows the first one got this far.
-INSTALL_MARKER = paths.STATE / "installed"
-
 # Set across the re-exec that follows installing the store, so the second
 # half of an install does not re-run a check the first half already passed.
 ENV_PREFLIGHT_PASSED = "CMRELAY_PREFLIGHT_PASSED"
@@ -120,19 +117,29 @@ def cmd_install(args, out) -> int:
         write_initial_config(args.mail_domain, parse_overrides(args.set))
         out.print(f"  {paths.INI}")
 
-    config = read_config(bundle)
+    config = apply_configuration(bundle, args, out)
+    out.section("Done")
+    report_dns(config, bundle, out)
+    return 0
+
+
+def apply_configuration(bundle, args, out, config=None):
+    """Everything from chatmail.ini onwards, which install and upgrade share.
+
+    The two verbs differ only in what they may do to a host *before* this
+    point: install refuses to touch anything, upgrade stops and masks what is
+    in the way. From here they are the same run.
+    """
+    if config is None:
+        config = read_config(bundle)
     deployment = Deployment(bundle, config, out, disable_mail=args.disable_mail)
     deployment.configure()
     deployment.install_daemon_units()
 
     out.section("Starting services")
     deployment.activate()
-
-    mark_installed(bundle)
     link_cli(bundle, out)
-    out.section("Done")
-    report_dns(config, bundle, out)
-    return 0
+    return config
 
 
 def parse_overrides(pairs) -> dict:
@@ -229,17 +236,6 @@ def link_cli(bundle, out):
     out.print(f"  {paths.CLI} -> {target}")
 
 
-def mark_installed(bundle):
-    paths.STATE.mkdir(parents=True, exist_ok=True)
-    INSTALL_MARKER.write_text(
-        json.dumps(
-            {"closure": str(bundle.closure), "relay_commit": bundle.relay_commit},
-            indent=2,
-        )
-        + "\n"
-    )
-
-
 # ----------------------------------------------------------------------
 # upgrade
 # ----------------------------------------------------------------------
@@ -286,15 +282,7 @@ def cmd_upgrade(args, out) -> int:
     config = read_config(bundle)
     users.verify_mailbox_ownership(config.mailboxes_dir)
 
-    deployment = Deployment(bundle, config, out, disable_mail=args.disable_mail)
-    deployment.configure()
-    deployment.install_daemon_units()
-
-    out.section("Starting services")
-    deployment.activate()
-
-    mark_installed(bundle)
-    link_cli(bundle, out)
+    apply_configuration(bundle, args, out, config=config)
     out.section("Verifying")
     verify(bundle, config, out)
     return 0

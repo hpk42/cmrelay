@@ -111,10 +111,6 @@ def unmask(name: str) -> None:
     systemctl("unmask", name, check=False)
 
 
-def is_masked(name: str) -> bool:
-    return query("is-enabled", name) == "masked"
-
-
 def read_disabled_units() -> list[str]:
     if not paths.DISABLED_UNITS.is_file():
         return []

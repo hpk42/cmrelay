@@ -95,9 +95,6 @@ class Report:
     def add(self, *args, **kwargs):
         self.findings.append(Finding(*args, **kwargs))
 
-    def of_kind(self, kind: str) -> list[Finding]:
-        return [f for f in self.findings if f.kind == kind]
-
 
 class DetectorError(Exception):
     """A detector could not run, which is not the same as finding nothing."""

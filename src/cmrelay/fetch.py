@@ -19,7 +19,6 @@ only path that is actually tested.
 import os
 import platform
 import shutil
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -129,11 +128,3 @@ def run_from_wheel(args_list: list[str], out) -> int:
     sys.stdout.flush()
     exec_payload(payload, args_list)
     return 1  # unreachable unless execve fails
-
-
-def check_payload(payload: Path) -> str:
-    """`--list` on the archive, as a cheap integrity check for a bug report."""
-    result = subprocess.run(
-        [str(payload), "--list"], capture_output=True, text=True, check=False
-    )
-    return result.stdout

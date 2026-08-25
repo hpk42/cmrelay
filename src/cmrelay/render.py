@@ -112,6 +112,3 @@ class Changes:
 
     def __contains__(self, component: str) -> bool:
         return component in self.changed
-
-    def __bool__(self):
-        return bool(self.changed)
