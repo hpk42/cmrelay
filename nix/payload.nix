@@ -56,8 +56,15 @@ let
     "*.a" # static libraries, 63 MiB of it libpython
     "*/include/*" # C headers
     "*/share/doc/*"
+    "*/share/*/doc/*" # postfix keeps its 5.4 MiB of it one level deeper
     "*/share/man/*"
     "*/share/locale/*" # gettext catalogues; a relay logs in English
+    # glibc's locale *sources*: 16 MiB of text that only localedef reads, and
+    # localedef lives in glibc's bin output, which this closure does not have.
+    # Nothing here can consume them. share/terminfo and share/zoneinfo look
+    # similar and are not: readline and python read the first, python, mtail
+    # and acmetool the second, and both cost under 0.3 MiB compressed anyway.
+    "*/share/i18n/*"
     "*/lib/python3.14/test/*" # CPython's own test suite
     "*/idlelib/*" # the Tk IDE
     "*/pkgconfig/*"
