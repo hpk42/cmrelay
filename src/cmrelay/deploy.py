@@ -848,10 +848,14 @@ class Deployment:
     # --- MtailDeployer ------------------------------------------------------
 
     def configure_mtail(self):
+        """The unit always, the programs only when mtail is actually wanted.
+
+        relay gates the programs on mtail_address because a relay with mtail
+        disabled has no use for rules it will never evaluate, and validating
+        them costs a subprocess.
+        """
         progs_dir = paths.config_dir("mtail")
         ensure_directory(progs_dir)
-        for prog in sorted((self.bundle.vendor / "config/mtail").glob("*.mtail")):
-            self.changes.note("mtail", copy(prog, progs_dir / prog.name))
         self.unit_from_template(
             "mtail",
             "systemd/mtail.service.j2",
@@ -859,6 +863,41 @@ class Deployment:
             port=3903,
             bin_path=self.bin("mtail"),
             progs_dir=str(progs_dir),
+        )
+        if not self.config.mtail_address:
+            return
+
+        for prog in sorted((self.bundle.vendor / "config/mtail").glob("*.mtail")):
+            self.changes.note("mtail", copy(prog, progs_dir / prog.name))
+        # relay downloads this from the filtermail release it pins; cmrelay
+        # has it in the closure for the same reason and by the same hash.
+        self.changes.note(
+            "mtail",
+            copy(
+                Path(self.bundle.resolve(self.bin("filtermail", "mtail_program"))),
+                progs_dir / "filtermail.mtail",
+            ),
+        )
+
+        if "mtail" in self.changes:
+            self.validate_mtail_programs(progs_dir)
+
+    def validate_mtail_programs(self, progs_dir: Path):
+        """Fail the install rather than leave mtail crash-looping on a bad rule."""
+        self.shell(
+            "timeout",
+            "30",
+            self.bin("mtail"),
+            "--compile_only",
+            "--one_shot",
+            "--progs",
+            str(progs_dir),
+            "--logs",
+            "/dev/null",
+            "--address",
+            "127.0.0.1",
+            "--port",
+            "0",
         )
 
     # --- tools on the operator's PATH ---------------------------------------

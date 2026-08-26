@@ -1,45 +1,54 @@
 {
-  "binary_pins": {
-    "filtermail": {
-      "aarch64": {
-        "sha256": "66aa0ca2ca9add7a12d92883d76f8786384092adfde24a3d3a1d0b1f30d23a9e",
-        "url": "https://github.com/chatmail/filtermail/releases/download/v0.7.4/filtermail-aarch64"
-      },
-      "x86_64": {
-        "sha256": "484cb8dff083134aefba9fce4a6b7ef4784a0f0e28e5108ecf8bb9e58a44fd2c",
-        "url": "https://github.com/chatmail/filtermail/releases/download/v0.7.4/filtermail-x86_64"
-      }
+  "pins": {
+    "DOVECOT_VERSION": "2.3.21+dfsg1-3",
+    "FILTERMAIL_ARTIFACTS": {
+      "aarch64": [
+        "https://github.com/chatmail/filtermail/releases/download/v0.7.4/filtermail-aarch64",
+        "66aa0ca2ca9add7a12d92883d76f8786384092adfde24a3d3a1d0b1f30d23a9e"
+      ],
+      "mtail": [
+        "https://raw.githubusercontent.com/chatmail/filtermail/v0.7.4/contrib/filtermail.mtail",
+        "948f688bb89ad47e6eb0fc8fa107e201a689f5adc264ff926be487a2a8562b51"
+      ],
+      "x86_64": [
+        "https://github.com/chatmail/filtermail/releases/download/v0.7.4/filtermail-x86_64",
+        "484cb8dff083134aefba9fce4a6b7ef4784a0f0e28e5108ecf8bb9e58a44fd2c"
+      ]
     },
-    "iroh": {
-      "aarch64": {
-        "sha256": "f8ef27631fac213b3ef668d02acd5b3e215292746a3fc71d90c63115446008b1",
-        "url": "https://github.com/n0-computer/iroh/releases/download/v0.35.0/iroh-relay-v0.35.0-aarch64-unknown-linux-musl.tar.gz"
-      },
-      "x86_64": {
-        "sha256": "45c81199dbd70f8c4c30fef7f3b9727ca6e3cea8f2831333eeaf8aa71bf0fac1",
-        "url": "https://github.com/n0-computer/iroh/releases/download/v0.35.0/iroh-relay-v0.35.0-x86_64-unknown-linux-musl.tar.gz"
-      }
+    "FILTERMAIL_VERSION": "v0.7.4",
+    "IROH_ARTIFACTS": {
+      "aarch64": [
+        "https://github.com/n0-computer/iroh/releases/download/v0.35.0/iroh-relay-v0.35.0-aarch64-unknown-linux-musl.tar.gz",
+        "f8ef27631fac213b3ef668d02acd5b3e215292746a3fc71d90c63115446008b1"
+      ],
+      "x86_64": [
+        "https://github.com/n0-computer/iroh/releases/download/v0.35.0/iroh-relay-v0.35.0-x86_64-unknown-linux-musl.tar.gz",
+        "45c81199dbd70f8c4c30fef7f3b9727ca6e3cea8f2831333eeaf8aa71bf0fac1"
+      ]
     },
-    "mtail": {
-      "aarch64": {
-        "sha256": "e0a2b66b372ca257d7daeb7ba10f9233a2192a1f9057618fccc6be5c854a2a3c",
-        "url": "https://github.com/jaqx0r/mtail/releases/download/v3.4.9/mtail_3.4.9_linux_arm64.tar.gz"
-      },
-      "x86_64": {
-        "sha256": "55f64a87f71955bb871c724b4aadf19fe9d854e6327196919c7fe44943427eab",
-        "url": "https://github.com/jaqx0r/mtail/releases/download/v3.4.9/mtail_3.4.9_linux_amd64.tar.gz"
-      }
+    "IROH_VERSION": "v0.35.0",
+    "MTAIL_ARTIFACTS": {
+      "aarch64": [
+        "https://github.com/jaqx0r/mtail/releases/download/v3.4.9/mtail_3.4.9_linux_arm64.tar.gz",
+        "e0a2b66b372ca257d7daeb7ba10f9233a2192a1f9057618fccc6be5c854a2a3c"
+      ],
+      "x86_64": [
+        "https://github.com/jaqx0r/mtail/releases/download/v3.4.9/mtail_3.4.9_linux_amd64.tar.gz",
+        "55f64a87f71955bb871c724b4aadf19fe9d854e6327196919c7fe44943427eab"
+      ]
     },
-    "turn": {
-      "aarch64": {
-        "sha256": "0fb3e792419494e21ecad536464929dba706bb2c88884ed8f1788141d26fc756",
-        "url": "https://github.com/chatmail/chatmail-turn/releases/download/v0.4/chatmail-turn-aarch64-linux"
-      },
-      "x86_64": {
-        "sha256": "1ec1f5c50122165e858a5a91bcba9037a28aa8cb8b64b8db570aa457c6141a8a",
-        "url": "https://github.com/chatmail/chatmail-turn/releases/download/v0.4/chatmail-turn-x86_64-linux"
-      }
-    }
+    "MTAIL_VERSION": "3.4.9",
+    "TURN_ARTIFACTS": {
+      "aarch64": [
+        "https://github.com/chatmail/chatmail-turn/releases/download/v0.4/chatmail-turn-aarch64-linux",
+        "0fb3e792419494e21ecad536464929dba706bb2c88884ed8f1788141d26fc756"
+      ],
+      "x86_64": [
+        "https://github.com/chatmail/chatmail-turn/releases/download/v0.4/chatmail-turn-x86_64-linux",
+        "1ec1f5c50122165e858a5a91bcba9037a28aa8cb8b64b8db570aa457c6141a8a"
+      ]
+    },
+    "TURN_VERSION": "v0.4"
   },
   "port_table": [
     {

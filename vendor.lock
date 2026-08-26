@@ -64,7 +64,7 @@
     "dovecot-store-paths.patch",
     "opendkim-trust-anchor.patch"
   ],
-  "relay_commit": "12664d9188d1e2335409cbdc3f204cbc025d015d",
-  "relay_describe": "1.12.0-7-g12664d91",
+  "relay_commit": "cae03e27149608aefe0e7e2a8be1d588f4ab476d",
+  "relay_describe": "1.12.0-10-gcae03e27",
   "relay_url": "https://github.com/chatmail/relay.git"
 }

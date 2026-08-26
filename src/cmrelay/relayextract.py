@@ -1,43 +1,111 @@
-"""Extract declarative data out of relay's Python deployers, without importing them.
+"""Read relay's pinned artefacts and its preflight port table as plain data.
 
-relay keeps two things cmrelay needs as data inside Python function bodies:
-the preflight port table, and the pinned download URLs and sha256 sums for
-the binaries it fetches rather than packages. Parsing the AST gets us both
-now, without waiting for relay to lift them into files and without importing
-pyinfra.
+Two pieces of data cmrelay's build needs live in relay's Python rather than
+in files the vendoring mapping can copy, and they are read two different ways
+because relay keeps them two different ways.
 
-Every extractor asserts the shape it expects and raises ShapeError otherwise.
-That is the point: an upstream refactor becomes a loud build failure here
-rather than silent drift in cmrelay. Moving the port table behind a helper
-call, for instance, yields "port_services is not a list literal at line 519".
+The pinned download URLs and sha256 sums live in `cmdeploy/pins.py`, which
+imports nothing. That is deliberate on relay's side, and it means cmrelay can
+run the module and read its names rather than parsing them out. The only
+guard needed is that it stays importless: an import would mean executing
+something with dependencies, and this is the one place cmrelay runs upstream
+code rather than reading it.
 
-When relay lands the declarative files, delete this module.
+The preflight port table is still a list built inside `deploy_chatmail()`, so
+it is parsed out of the AST. That extractor asserts the shape it expects, so
+an upstream refactor becomes a loud build failure here rather than silent
+drift: moving the table behind a helper call yields "port_services is not a
+list literal at line 502". When relay lifts the port table into a file too,
+this module goes away entirely.
 """
 
 import ast
 from pathlib import Path
 
-# The files that carry pinned binaries, relative to relay's checkout root.
-PIN_SOURCES = [
-    "cmdeploy/src/cmdeploy/deployers.py",
-    "cmdeploy/src/cmdeploy/mtail/deployer.py",
-    "cmdeploy/src/cmdeploy/filtermail/deployer.py",
-]
-
+PINS_SOURCE = "cmdeploy/src/cmdeploy/pins.py"
 PORT_TABLE_SOURCE = "cmdeploy/src/cmdeploy/deployers.py"
 
-# Sanity floors. relay has 19 port entries and 4 pinned binaries today;
-# a large drop means the shape changed rather than that upstream shrank.
+# The artefact tables cmrelay fetches. relay has one more, DOVECOT_SHA256 for
+# the .deb packages, which cmrelay does not use because it builds dovecot
+# from the chatmail source tree.
+EXPECTED_PINS = [
+    "FILTERMAIL_ARTIFACTS",
+    "MTAIL_ARTIFACTS",
+    "TURN_ARTIFACTS",
+    "IROH_ARTIFACTS",
+]
+
+# relay has 19 port entries today; a large drop means the shape changed
+# rather than that upstream shrank.
 MIN_PORT_ENTRIES = 15
-EXPECTED_COMPONENTS = {"turn", "iroh", "mtail", "filtermail"}
 
 
 class ShapeError(Exception):
-    """relay's source no longer matches what this extractor understands."""
+    """relay's source no longer matches what this reader understands."""
 
 
 def _parse(path: Path) -> ast.Module:
     return ast.parse(Path(path).read_text(), filename=str(path))
+
+
+# ----------------------------------------------------------------------
+# pinned artefacts, read from cmdeploy/pins.py
+# ----------------------------------------------------------------------
+
+
+def read_pins(path: Path) -> dict:
+    """Run relay's pins module and return its public names.
+
+    The importlessness check is the whole safety story. pins.py is data
+    written as Python, and running data is fine; running something that pulls
+    in pyinfra is not, and would fail in the build sandbox anyway.
+    """
+    tree = _parse(path)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            raise ShapeError(
+                f"{path} imports something at line {node.lineno};"
+                " cmrelay only runs it because it does not"
+            )
+
+    namespace = {}
+    exec(compile(tree, str(path), "exec"), namespace)
+
+    pins = {
+        name: value
+        for name, value in namespace.items()
+        if not name.startswith("__") and _jsonable(value)
+    }
+    missing = [name for name in EXPECTED_PINS if name not in pins]
+    if missing:
+        raise ShapeError(
+            f"{path} no longer defines {', '.join(missing)};"
+            " relay changed how it pins the binaries cmrelay fetches"
+        )
+    return pins
+
+
+def _jsonable(value) -> bool:
+    """Whether a pins.py value survives a round trip through JSON.
+
+    DOVECOT_SHA256 is keyed by (package, arch) tuples, which JSON cannot
+    express. cmrelay does not use it, so dropping it is simpler than
+    inventing an encoding.
+    """
+    if isinstance(value, str):
+        return True
+    if isinstance(value, dict):
+        return all(isinstance(k, str) for k in value) and all(
+            _jsonable(v) for v in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return all(_jsonable(v) for v in value)
+    return False
+
+
+# ----------------------------------------------------------------------
+# the preflight port table, parsed out of deployers.py
+# ----------------------------------------------------------------------
 
 
 def _str_or_strlist(node) -> list[str]:
@@ -127,107 +195,10 @@ def extract_port_table(path: Path) -> list[dict]:
     return entries
 
 
-def _url(node) -> str:
-    """A URL is a literal or an f-string whose only placeholder is {arch}."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.JoinedStr):
-        parts = []
-        for value in node.values:
-            if isinstance(value, ast.Constant):
-                parts.append(value.value)
-            elif (
-                isinstance(value, ast.FormattedValue)
-                and getattr(value.value, "id", "") == "arch"
-            ):
-                parts.append("{arch}")
-            else:
-                raise ShapeError(
-                    f"URL f-string has an unexpected placeholder at line {node.lineno}"
-                )
-        return "".join(parts)
-    raise ShapeError(f"unrecognised URL expression at line {node.lineno}")
-
-
-def _enclosing_class(tree, lineno) -> str:
-    best = None
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef) and node.lineno <= lineno:
-            if best is None or node.lineno > best.lineno:
-                best = node
-    return best.name if best else "?"
-
-
-def extract_binary_pins(path: Path) -> dict:
-    """Pinned download URLs and sha256 sums, per component and architecture.
-
-    An empty result is not an error here: relay spreads its pins over several
-    files and any one of them may legitimately carry none. extract_all() does
-    the checking, because only it can say which component went missing.
-    """
-    tree = _parse(path)
-    pins = {}
-
-    for node in ast.walk(tree):
-        dict_node = None
-        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Subscript):
-            if isinstance(node.value.value, ast.Dict):
-                dict_node = node.value.value  # (url, sha) = {arch: (url, sha)}[arch]
-        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict):
-            dict_node = node.value  # sha-only dict, URL built separately
-        if dict_node is None or not dict_node.keys:
-            continue
-        keys = [getattr(k, "value", None) for k in dict_node.keys]
-        if set(keys) != {"x86_64", "aarch64"}:
-            continue
-
-        component = _enclosing_class(tree, node.lineno).replace("Deployer", "").lower()
-        entry = pins.setdefault(component, {})
-        for arch, value in zip(keys, dict_node.values):
-            if isinstance(value, ast.Tuple) and len(value.elts) == 2:
-                entry[arch] = {
-                    "url": _url(value.elts[0]),
-                    "sha256": ast.literal_eval(value.elts[1]),
-                }
-            elif isinstance(value, ast.Constant) and isinstance(value.value, str):
-                entry[arch] = {"sha256": value.value}
-            else:
-                raise ShapeError(f"unrecognised pin value at line {value.lineno}")
-
-        # A sha-only dict needs the URL from a sibling assignment nearby.
-        if all("url" not in e for e in entry.values()):
-            for other in ast.walk(tree):
-                if (
-                    isinstance(other, ast.Assign)
-                    and any(getattr(t, "id", "") == "url" for t in other.targets)
-                    and abs(other.lineno - node.lineno) < 10
-                ):
-                    url = _url(other.value)
-                    for arch in entry:
-                        entry[arch]["url"] = url.replace("{arch}", arch)
-    return pins
-
-
 def extract_all(relay_root: Path) -> dict:
     """Everything cmrelay's build needs out of relay's Python, as plain data."""
     relay_root = Path(relay_root)
-    pins = {}
-    for source in PIN_SOURCES:
-        for component, arches in extract_binary_pins(relay_root / source).items():
-            pins.setdefault(component, {}).update(arches)
-
-    missing = EXPECTED_COMPONENTS - set(pins)
-    if missing:
-        raise ShapeError(
-            f"no pins found for {', '.join(sorted(missing))};"
-            " relay changed how it fetches them"
-        )
-    for component, arches in pins.items():
-        for arch, pin in arches.items():
-            if "url" not in pin or "sha256" not in pin:
-                raise ShapeError(f"incomplete pin for {component}/{arch}: {pin}")
-
     return {
+        "pins": read_pins(relay_root / PINS_SOURCE),
         "port_table": extract_port_table(relay_root / PORT_TABLE_SOURCE),
-        "binary_pins": pins,
     }

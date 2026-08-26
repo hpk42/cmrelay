@@ -108,6 +108,9 @@ let
 
     filtermail = component fetched.filtermail {
       filtermail = "${fetched.filtermail}/bin/filtermail";
+      # the mtail program shipped with this filtermail release, so its own
+      # metrics are monitored by the rules written against it
+      mtail_program = "${fetched.filtermail-mtail}/filtermail.mtail";
     };
 
     chatmail-turn = component fetched.chatmail-turn {

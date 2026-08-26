@@ -28,7 +28,7 @@
 }:
 
 let
-  pins = (lib.importJSON ../generated/relay-pins.json).binary_pins;
+  pins = (lib.importJSON ../generated/relay-pins.json).pins;
 
   arch =
     {
@@ -37,9 +37,18 @@ let
     }
     .${system} or (throw "cmrelay does not support ${system}");
 
-  pin =
-    component:
-    pins.${component}.${arch} or (throw "relay pins no ${component} binary for ${arch}");
+  # relay writes each artefact as (url, sha256); JSON makes that a list.
+  artifact =
+    table: key:
+    let
+      entry = pins.${table}.${key} or (throw "relay pins no ${table}.${key}");
+    in
+    {
+      url = builtins.elemAt entry 0;
+      sha256 = builtins.elemAt entry 1;
+    };
+
+  pin = table: artifact table arch;
 
   # A pinned upstream artefact, laid down as bin/<name>.
   #
@@ -50,11 +59,11 @@ let
     {
       name,
       version,
-      component,
+      pin,
       tarballMember ? null,
     }:
     let
-      p = pin component;
+      p = pin;
       src = fetchurl (
         {
           inherit (p) url;
@@ -84,34 +93,39 @@ let
       };
     };
 
-  # Cosmetic, for `cmrelay --version`; the sha256 is what pins the artefact.
-  versionOf =
-    component: regex:
-    let
-      matched = builtins.match regex (pin component).url;
-    in
-    if matched == null then "unknown" else builtins.head matched;
-
-  releaseVersion = ".*/download/v?([^/]+)/.*";
+  # relay states each version beside its artefacts, so nothing has to be
+  # recovered from a URL.
+  version = name: lib.removePrefix "v" (pins.${name} or "unknown");
 
 in
 {
   filtermail = fetched {
     name = "filtermail";
-    component = "filtermail";
-    version = versionOf "filtermail" releaseVersion;
+    pin = pin "FILTERMAIL_ARTIFACTS";
+    version = version "FILTERMAIL_VERSION";
   };
 
   chatmail-turn = fetched {
     name = "chatmail-turn";
-    component = "turn";
-    version = versionOf "turn" releaseVersion;
+    pin = pin "TURN_ARTIFACTS";
+    version = version "TURN_VERSION";
   };
 
   iroh-relay = fetched {
     name = "iroh-relay";
-    component = "iroh";
-    version = versionOf "iroh" releaseVersion;
+    pin = pin "IROH_ARTIFACTS";
+    version = version "IROH_VERSION";
     tarballMember = "./iroh-relay";
+  };
+
+  # An mtail program rather than a binary: relay fetches it from the
+  # filtermail release it pins, so filtermail's own metrics are monitored by
+  # the rules that shipped with it.
+  filtermail-mtail = stdenvNoCC.mkDerivation {
+    pname = "filtermail-mtail";
+    version = version "FILTERMAIL_VERSION";
+    src = fetchurl (artifact "FILTERMAIL_ARTIFACTS" "mtail");
+    dontUnpack = true;
+    installPhase = "install -Dm644 $src $out/filtermail.mtail";
   };
 }

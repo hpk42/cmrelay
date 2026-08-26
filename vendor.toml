@@ -28,6 +28,13 @@ patterns = [
 ]
 why = "build artefacts, editor droppings and relay's own test suite"
 
+# pins.py is data written as Python and imports nothing, which is why
+# scripts/extract-from-relay can run it. It is read from the submodule at
+# build time rather than copied, so vendoring it would give two truths.
+[[skip]]
+patterns = ["cmdeploy/src/cmdeploy/pins.py"]
+why = "read from the submodule by scripts/extract-from-relay, not vendored"
+
 # The pyinfra deployer modules. cmrelay reimplements their effects and never
 # vendors their code, because that is the part that would rot.
 [[skip]]
