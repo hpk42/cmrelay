@@ -51,7 +51,15 @@ stage=$(mktemp -d "${CMRELAY_STAGE_DIR:-/var/tmp}/cmrelay-stage.XXXXXXXX") \
 cleanup() {
     # A refusal removes the staging directory and exits, having touched
     # nothing else.
-    [ -n "${CMRELAY_KEEP_STAGE:-}" ] || rm -rf "$stage"
+    #
+    # chmod first: store paths are r-xr-xr-x, so a non-root user running a
+    # verb that needs no root -- `--version`, `download` -- could not delete
+    # what it had just unpacked, and left 380 MiB behind while exiting
+    # non-zero for a command that had in fact succeeded.
+    [ -n "${CMRELAY_KEEP_STAGE:-}" ] || {
+        chmod -R u+w "$stage" 2>/dev/null || true
+        rm -rf "$stage"
+    }
 }
 trap cleanup EXIT INT TERM
 

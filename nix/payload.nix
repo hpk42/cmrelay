@@ -108,7 +108,14 @@ runCommand "cmrelay-${version}"
     ls -l archive/
 
     mkdir -p $out/bin
+    # --nox11 matters more than it looks. Without it the stub checks, when
+    # stdout is not a terminal, whether DISPLAY is set, and if so re-execs
+    # itself inside a spawned xterm ending in "Press Return to close this
+    # window". An operator piping the installer to a log, or running it over
+    # ssh with X11 forwarding, would get a window instead of output, and an
+    # automated run would hang waiting for a keypress nobody is there to give.
     makeself \
+      --nox11 \
       --nomd5 --nocrc --nocomp \
       --tar-extra "--owner=0 --group=0 --numeric-owner" \
       archive \

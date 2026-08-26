@@ -22,7 +22,14 @@
 
         crypt-r = pkgs.python3Packages.callPackage ./nix/packages/crypt-r.nix { };
         acmetool = pkgs.callPackage ./nix/packages/acmetool.nix { };
-        dovecot = pkgs.callPackage ./nix/packages/dovecot.nix { };
+        # libsystemd only. dovecot links it for sd_notify and fcgiwrap for
+        # socket activation; neither runs systemd, which the host provides.
+        # The plain `systemd` attribute is the whole init system, and
+        # systemdLibs is the same 261.1 built for exactly this case.
+        dovecot = pkgs.callPackage ./nix/packages/dovecot.nix {
+          systemd = pkgs.systemdLibs;
+        };
+        fcgiwrap = pkgs.fcgiwrap.override { systemd = pkgs.systemdLibs; };
         # a relay runs mtail, not the three tools shipped beside it
         mtail-minimal = pkgs.callPackage ./nix/packages/mtail-minimal.nix { };
         # ... and the opendkim milter, not the Perl script that made its key
@@ -49,6 +56,7 @@
 
         closure = pkgs.callPackage ./nix/closure.nix {
           inherit
+            fcgiwrap
             fetched
             acmetool
             dovecot
