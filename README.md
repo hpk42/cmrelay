@@ -11,18 +11,26 @@ with systemd units registered and services running.
 
     ./cmrelay.run install --mail-domain relay.example.org
 
-Or, if you would rather not move a 180 MiB file around by hand:
+Or, if you would rather not move a 61 MiB file around by hand:
 
     pip install cmrelay
     cmrelay install --mail-domain relay.example.org
 
-A pip-installed cmrelay is the CLI and nothing else.
-The relay itself is a 650 MiB Nix closure,
-and the installer has to run on the interpreter
-from inside that closure, not on whatever pip installed it into.
-So it downloads the payload matching its own version and hands over to it,
-which puts you on exactly the path that is tested. `cmrelay download` fetches
-the payload without installing it, for a host with no outbound access.
+`pip` is the last step that needs the network.
+The released wheels are per-architecture and carry the payload inside them,
+so the relay install itself reaches nothing:
+useful on a firewalled or air-gapped host,
+and the reason the wheel is the size of the payload rather than a few kilobytes.
+
+The CLI still only ever hands over. The relay is a Nix closure and the
+installer has to run on the interpreter from inside it, not on whatever pip
+installed the CLI into, so `cmrelay install` execs the payload and everything
+proceeds exactly as if you had copied the `.run` file across yourself --
+which is the only path that is actually tested.
+
+A wheel built from a source checkout has no payload
+and downloads the release matching its own version instead;
+`cmrelay download` fetches it without installing, for staging by hand.
 
 No apt, no pyinfra, no ssh orchestration, and nothing required
 of the host beyond a kernel, systemd and a POSIX shell.

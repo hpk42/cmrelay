@@ -83,6 +83,11 @@
           cmrelaySrc = ./.;
         };
 
+        wheel = pkgs.callPackage ./nix/wheel.nix {
+          inherit payload;
+          cmrelaySrc = ./.;
+        };
+
         payload = pkgs.callPackage ./nix/payload.nix {
           inherit closure;
           cmrelaySrc = ./.;
@@ -94,6 +99,7 @@
           default = payload;
           inherit
             payload
+            wheel
             closure
             dovecot
             mtail-minimal

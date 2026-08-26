@@ -1,19 +1,21 @@
-"""The `pip install cmrelay` path: get the payload, then hand over to it.
+"""The `pip install cmrelay` path: find the payload, then hand over to it.
 
 A wheel is a convenient way to *reach* cmrelay and a useless way to *be* it.
-The wheel carries the CLI source and nothing else; the relay is 650 MiB of
-Nix closure, and the interpreter that runs the installer has to be the one
-from that closure rather than whatever pip installed it into. Shipping the
-closure inside a wheel is not an option, and running the installer against
-the host's Python would defeat the point of the design.
-
-So a pip-installed cmrelay does one thing: it downloads the release payload
-matching its own version and execs it. From there everything proceeds exactly
-as if the operator had copied the .run file across themselves, which is the
-only path that is actually tested.
+The relay is a Nix closure, and the interpreter that runs the installer has
+to be the one from inside it rather than whatever pip installed the CLI into.
+So a pip-installed cmrelay does one thing: it execs the payload. From there
+everything proceeds exactly as if the operator had copied the .run file
+across themselves, which is the only path that is actually tested.
 
     pip install cmrelay
     cmrelay install --mail-domain relay.example.org
+
+Where the payload comes from is what decides whether that second line needs
+the network. The released wheels are per-architecture and carry it inside
+them, so it does not: pip is the last thing that talks to the internet, which
+is what an operator staging a firewalled or air-gapped host needs. Building
+the wheel from a source checkout produces one without a payload, and that
+one downloads the release matching its own version instead.
 """
 
 import os
@@ -27,6 +29,9 @@ from pathlib import Path
 from .version import __version__
 
 RELEASES = "https://github.com/chatmail/cmrelay/releases/download"
+
+# Written here by scripts/wheel-cmrelay.py when it builds a release wheel.
+BUNDLED = Path(__file__).parent / "_payload" / "cmrelay.run"
 
 ARCHES = {
     "x86_64": "x86_64",
@@ -58,6 +63,11 @@ def payload_url(version: str = None, arch: str = None) -> str:
     if arch is None:
         raise FetchError(f"cmrelay has no payload for {machine}")
     return f"{RELEASES}/v{version}/{asset_name(version, arch)}"
+
+
+def bundled_payload() -> Path | None:
+    """The payload inside this wheel, if this wheel has one."""
+    return BUNDLED if BUNDLED.is_file() else None
 
 
 def cache_dir() -> Path:
@@ -109,8 +119,20 @@ def exec_payload(payload: Path, argv: list[str]) -> int:
     """Run the payload with the original arguments. Does not return on success.
 
     TMPDIR matters: makeself unpacks the archive there, and /tmp is a tmpfs on
-    several of the target distributions while the payload is ~180 MiB.
+    several of the target distributions while the payload is ~60 MiB
+    compressed and ~250 MiB open.
     """
+    if not os.access(payload, os.X_OK):
+        # The wheel records mode 755, but an installer that flattens modes --
+        # or an unzip into a noexec-adjacent tree -- would leave it unrunnable,
+        # and `Permission denied` from execve does not say which of the two
+        # went wrong.
+        try:
+            payload.chmod(payload.stat().st_mode | 0o111)
+        except OSError as exc:
+            raise FetchError(
+                f"{payload} is not executable and cannot be made so: {exc}"
+            ) from exc
     env = dict(os.environ)
     env.setdefault("TMPDIR", "/var/tmp")
     argv = [str(payload), "--quiet", "--", *argv]
@@ -123,8 +145,12 @@ def run_from_wheel(args_list: list[str], out) -> int:
         raise FetchError("cmrelay needs tar on the host to unpack its payload")
     if sys.platform != "linux":
         raise FetchError(f"cmrelay installs relays on Linux, not {sys.platform}")
-    out.section("Fetching the cmrelay payload")
-    payload = ensure_payload(out)
+    payload = bundled_payload()
+    if payload is None:
+        out.section("Fetching the cmrelay payload")
+        payload = ensure_payload(out)
+    else:
+        out.section("Starting the bundled cmrelay payload")
     out.print(f"  handing over to {payload}")
     sys.stdout.flush()
     exec_payload(payload, args_list)

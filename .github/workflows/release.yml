@@ -30,9 +30,14 @@ jobs:
   py-checks:
     uses: chatmail/workflows/.github/workflows/py-checks.yml@main
 
-  # The payload is the actual deliverable; the wheel only knows how to
-  # download it. Asset names are a contract with src/cmrelay/fetch.py:
-  # cmrelay-<version>-<arch>-linux.run
+  # The payload is the actual deliverable, and it ships twice: on the GitHub
+  # release as a .run an operator can copy across by hand, and inside a
+  # per-architecture wheel so that `pip install cmrelay` is the last step
+  # needing the network. Release asset names are a contract with
+  # src/cmrelay/fetch.py: cmrelay-<version>-<arch>-linux.run
+  #
+  # Each arch builds on its own native runner. There is no cross-building
+  # here: the payload is a Nix closure of real binaries for that host.
   payload:
     name: payload (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -72,6 +77,30 @@ jobs:
           files: cmrelay-*.run
           fail_on_unmatched_files: true
 
+      # Standard library only, so no environment to set up. The version comes
+      # from the tag rather than from git describe, and the script refuses one
+      # containing a '-', which pip would read as a build tag.
+      - name: Build the wheel around the payload
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 scripts/wheel-cmrelay.py \
+            --payload "cmrelay-$version-${{ matrix.arch }}-linux.run" \
+            --arch "${{ matrix.arch }}" \
+            --version "$version" \
+            --outdir wheelhouse
+
+      - name: Check the tags read back
+        run: |
+          pip install --quiet wheel
+          cp -r wheelhouse tagcheck
+          python3 -m wheel tags tagcheck/*.whl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.arch }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
   # The publish job must stay here in the repo's own workflow: PyPI
   # trusted publishing rejects publishes from reusable workflows.
   # See https://github.com/pypi/warehouse/issues/11096
@@ -82,10 +111,23 @@ jobs:
     permissions:
       id-token: write
     steps:
+      # The sdist and the pure-python wheel from py-checks. That wheel is the
+      # fallback for a platform with no payload of its own: it downloads the
+      # release asset instead. pip prefers a matching platform wheel over it.
       - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
+
+      # ... and the per-architecture wheels with the payload inside them.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Show what is about to be published
+        run: ls -lh dist/
 
       - uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
         with:

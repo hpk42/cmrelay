@@ -8,15 +8,12 @@ description = "Single-file installer for a chatmail relay, built as a Nix closur
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
-# chatmaild is a hard dependency and is deliberately absent here: it is
-# relay's own code, built from the vendored commit into the closure's
-# interpreter, and it is not on PyPI. A pip-installed cmrelay therefore only
-# fetches the payload and hands over to it -- see src/cmrelay/fetch.py.
-dependencies = [
-  "jinja2>=3.1",
-  "markdown",
-  "qrcode",
-]
+# No dependencies, deliberately. A pip-installed cmrelay reaches four of its
+# own modules -- cli, output, version and fetch -- and then execs the payload,
+# which brings its own interpreter. jinja2, markdown, qrcode and chatmaild are
+# all used on the far side of that handover, by the closure. chatmaild is not
+# on PyPI at all; it is relay's own code, built from the vendored commit.
+dependencies = []
 dynamic = ["version"]
 
 [tool.setuptools-git-versioning]

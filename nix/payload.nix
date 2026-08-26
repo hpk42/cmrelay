@@ -7,8 +7,8 @@
 # static zstd that travels inside the archive. The result depends on nothing
 # but a POSIX shell and tar.
 #
-# zstd checks its own frames, so makeself's md5 and crc passes over 175 MiB
-# would only re-verify what the decompressor already does.
+# zstd checks its own frames, so makeself's md5 and crc passes over the
+# archive would only re-verify what the decompressor already does.
 
 {
   lib,
