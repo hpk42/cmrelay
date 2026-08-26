@@ -445,14 +445,26 @@ def cmd_status(args, out) -> int:
     out.print(f"  closure        {bundle.closure}")
     out.print(f"  config         {paths.INI}")
 
-    if paths.INI.is_file():
-        config = read_config(bundle)
-        out.print(f"  mail domain    {config.mail_domain}")
-        out.print(f"  tls mode       {config.tls_cert_mode}")
-        out.print(f"  mailboxes      {config.mailboxes_dir}")
-    else:
-        config = None
+    if not paths.INI.is_file():
         out.warn(f"{paths.INI} does not exist; this host is not installed")
+        out.print("  `cmrelay install --mail-domain <domain>` installs one")
+        # Everything below reports on an installation, and there is none. The
+        # conflict check especially: on a host cmrelay has never touched it
+        # lists the distribution's own services and advises masking them,
+        # which is advice for an install nobody asked for. `install` already
+        # refuses and changes nothing when something is in the way, so the
+        # question "would it install here" is answered by running it.
+        #
+        # What is still worth printing is anything upgrade masked. An upgrade
+        # that stopped before writing the ini leaves masked units and no other
+        # record of them, and that is exactly when the list is needed.
+        report_masked(out)
+        return 1
+
+    config = read_config(bundle)
+    out.print(f"  mail domain    {config.mail_domain}")
+    out.print(f"  tls mode       {config.tls_cert_mode}")
+    out.print(f"  mailboxes      {config.mailboxes_dir}")
 
     out.section("Components")
     for name in sorted(bundle.components):
@@ -461,20 +473,54 @@ def cmd_status(args, out) -> int:
     out.section("Units")
     report_units(out)
 
-    out.section("Preflight")
+    # Not "Preflight". The detector is the one install uses, but the question
+    # it answers here is different: nothing is about to take off, so this is
+    # asking whether something has appeared since. A distribution package
+    # installed later, or a distro upgrade re-enabling systemd-resolved, does
+    # not disturb a running relay -- it collides at the next reboot, which is
+    # the worst moment to find out.
+    out.section("Conflicts")
     report = run_preflight(bundle, out, config=config)
     if report.ok:
         out.ok("  no conflicts")
     else:
         out.print(preflight.format_report(report))
 
-    masked = systemd.read_disabled_units()
-    if masked:
-        out.section("Masked by cmrelay")
-        for name in masked:
-            out.print(f"  {name}")
+    masked_ok = report_masked(out)
+    return 0 if report.ok and masked_ok else 1
 
-    return 0 if report.ok else 1
+
+def report_masked(out) -> bool:
+    """What cmrelay masked, and whether it has stayed that way.
+
+    Checked rather than listed, because nothing else here would notice one
+    coming back. These are the units cmrelay takes over instead of refusing
+    on -- systemd-resolved and the other resolver managers -- so they are
+    deliberately absent from CONFLICTING_UNITS: an install that refused
+    merely because systemd-resolved was running could never proceed on a
+    stock Debian. The cost of that choice is that the conflict detector is
+    blind to them afterwards, and this is where it is paid back.
+
+    A resolver that has been re-enabled disturbs nothing today. It takes
+    /etc/resolv.conf at the next boot, and a relay that cannot resolve
+    anything is a relay that cannot deliver mail.
+    """
+    masked = systemd.read_disabled_units()
+    if not masked:
+        return True
+    out.section("Masked by cmrelay")
+    ok = True
+    for name in masked:
+        state = systemd.query("is-enabled", name) or "-"
+        if state == "masked":
+            out.print(f"  {name:<36} masked")
+            continue
+        ok = False
+        out.error(f"  {name:<36} {state} -- no longer masked")
+        out.print(
+            f"      remedy: systemctl disable --now {name} && systemctl mask {name}"
+        )
+    return ok
 
 
 def report_units(out):
