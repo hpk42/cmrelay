@@ -11,11 +11,14 @@
 #
 # One subtlety decides the shape of this file. relay's download_executable()
 # pipes the download through an extraction command *before* checking the
-# sha256, so for the two components shipped as tarballs the recorded hash is
-# of the extracted binary, not of the archive. Reproducing that exactly means
-# making the extraction part of the fixed-output derivation, so the hash Nix
+# sha256, so for a component shipped as a tarball the recorded hash is of the
+# extracted binary, not of the archive. Reproducing that exactly means making
+# the extraction part of the fixed-output derivation, so the hash Nix
 # verifies is the same number relay verifies. Hashing the tarball instead
 # would need a second pin that relay does not have.
+#
+# mtail is deliberately absent: relay follows jaqx0r/mtail and nixpkgs
+# packages the same releases, so it comes from there. See nix/closure.nix.
 
 {
   lib,
@@ -110,15 +113,5 @@ in
     component = "iroh";
     version = versionOf "iroh" releaseVersion;
     tarballMember = "./iroh-relay";
-  };
-
-  # relay tracks a pinned mtail release rather than a distribution package,
-  # and cmrelay follows the same pin so the mtail programs in
-  # vendor/config/mtail are run by the version they were written against.
-  mtail = fetched {
-    name = "mtail";
-    component = "mtail";
-    version = versionOf "mtail" releaseVersion;
-    tarballMember = "mtail";
   };
 }

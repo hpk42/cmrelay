@@ -77,7 +77,6 @@
             filtermail
             chatmail-turn
             iroh-relay
-            mtail
             ;
         };
 

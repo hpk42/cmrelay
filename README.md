@@ -201,16 +201,16 @@ Updating cmrelay is then one of exactly two kinds of change:
 Three ways in, and the tree is arranged so you can tell which at a glance.
 
 **Stock nixpkgs**, named only in `nix/closure.nix`:
-postfix, nginx, unbound, fcgiwrap, opendkim, python3 and its packages.
+postfix, nginx, unbound, fcgiwrap, opendkim, mtail, python3 and its packages.
 Their *configuration* still arrives through `vendor/config/`, which is why
 `vendor/config/opendkim/` exists while `nix/packages/opendkim.nix` does not.
 
 **Pinned prebuilt binaries**, in `nix/fetch/`:
-filtermail, chatmail-turn, iroh-relay and mtail.
-Nothing is compiled; each is a `fetchurl` with the sha256
-relay already records, read out of the extracted pins.
-Fetching rather than building means cmrelay ships byte-identical
-binaries to what deployed relays run, and buys no exposure to whether
+filtermail, chatmail-turn and iroh-relay.
+Nothing is compiled; each is a `fetchurl`
+with the sha256 relay already records, read out of the extracted pins.
+Fetching rather than building means cmrelay ships byte-identical binaries
+to what deployed relays run, and buys no exposure to whether
 a given iroh release still compiles against a current rustc.
 
 **Built here**, in `nix/packages/`:
