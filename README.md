@@ -201,9 +201,13 @@ Updating cmrelay is then one of exactly two kinds of change:
 Three ways in, and the tree is arranged so you can tell which at a glance.
 
 **Stock nixpkgs**, named only in `nix/closure.nix`:
-postfix, nginx, unbound, fcgiwrap, opendkim, mtail, python3 and its packages.
-Their *configuration* still arrives through `vendor/config/`, which is why
-`vendor/config/opendkim/` exists while `nix/packages/opendkim.nix` does not.
+postfix, nginx, unbound, fcgiwrap, opendkim, mtail, python3
+and its packages. The web pages are rendered with markdown and jinja2,
+and the invite QR code is an SVG rather than relay's composited PNG:
+drawing that needs Pillow, which costs 74 MiB of image codecs for one picture
+per host. Their *configuration* still arrives through `vendor/config/`,
+which is why `vendor/config/opendkim/` exists
+while `nix/packages/opendkim.nix` does not.
 
 **Pinned prebuilt binaries**, in `nix/fetch/`:
 filtermail, chatmail-turn and iroh-relay.

@@ -6,6 +6,11 @@ vendoring cmdeploy's Python is what the vendoring model exists to avoid.
 What it produces is the same tree from the same sources -- the markdown pages
 under vendor/www rendered through page-layout.html, plus the invite QR code.
 
+The QR code is the one deliberate difference, and it is an SVG rather than
+relay's composited PNG. Where relay's web pages end up is an open question,
+so cmrelay should not carry 74 MiB of image codecs on their behalf while it
+is undecided.
+
 Rendering is recursive because relay's pages contain jinja expressions inside
 the markdown, which land inside the layout and have to be expanded again.
 """
@@ -15,11 +20,11 @@ from pathlib import Path
 
 import markdown
 import qrcode
+import qrcode.image.svg
 from jinja2 import Template
-from PIL import Image, ImageDraw, ImageFont
 
 QR_BORDER = 4
-FONT_SIZE = 22
+QR_BOX_SIZE = 10
 
 
 def int_to_english(number: int) -> str:
@@ -33,45 +38,25 @@ def int_to_english(number: int) -> str:
     return "more"
 
 
-def gen_qr_png(mail_domain: str, bundle) -> bytes:
-    """The DCACCOUNT invite code, drawn over relay's own artwork."""
-    url = f"DCACCOUNT:https://{mail_domain}/new"
+def gen_qr_svg(mail_domain: str) -> str:
+    """The DCACCOUNT invite code, as an SVG.
+
+    relay draws this as a PNG with the Delta Chat logo composited into the
+    middle and the domain written underneath, which needs Pillow. Pillow
+    costs 74 MiB of image codecs in the closure, almost all of it formats a
+    relay never touches, to produce one picture per host. An SVG carries the
+    same code, scales better, and needs nothing beyond qrcode itself.
+    """
     qr = qrcode.QRCode(
-        version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=10,
+        box_size=QR_BOX_SIZE,
         border=QR_BORDER,
     )
-    qr.add_data(url)
+    qr.add_data(f"DCACCOUNT:https://{mail_domain}/new")
     qr.make(fit=True)
-    image = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-
-    logo_path = bundle.vendor / "data" / "delta-chat-bw.png"
-    if logo_path.is_file():
-        logo = Image.open(logo_path).convert("RGBA")
-        side = image.size[0] // 5
-        logo = logo.resize((side, side))
-        offset = ((image.size[0] - side) // 2, (image.size[1] - side) // 2)
-        image.paste(logo, offset, logo)
-
-    font_path = bundle.vendor / "data" / "opensans-regular.ttf"
-    draw = ImageDraw.Draw(image)
-    try:
-        font = ImageFont.truetype(str(font_path), FONT_SIZE)
-    except OSError:
-        font = ImageFont.load_default()
-    text = mail_domain
-    width = draw.textlength(text, font=font)
-    draw.text(
-        ((image.size[0] - width) / 2, image.size[1] - FONT_SIZE - 8),
-        text,
-        fill="black",
-        font=font,
-    )
-
     out = io.BytesIO()
-    image.save(out, format="png")
-    return out.getvalue()
+    qr.make_image(image_factory=qrcode.image.svg.SvgPathImage).save(out)
+    return out.getvalue().decode()
 
 
 def render_page(source: Path, layout: str, config, extra: dict) -> str:
@@ -91,7 +76,7 @@ def render_page(source: Path, layout: str, config, extra: dict) -> str:
         content = new
 
 
-def build_website(src_dir: Path, config, bundle, build_dir: Path | None = None) -> Path:
+def build_website(src_dir: Path, config, build_dir: Path | None = None) -> Path:
     """Render src_dir into build_dir, returning it."""
     src_dir = Path(src_dir)
     if build_dir is None:
@@ -104,8 +89,8 @@ def build_website(src_dir: Path, config, bundle, build_dir: Path | None = None) 
     layout = layout_path.read_text()
 
     mail_domain = config.mail_domain
-    (build_dir / f"qr-chatmail-invite-{mail_domain}.png").write_bytes(
-        gen_qr_png(mail_domain, bundle)
+    (build_dir / f"qr-chatmail-invite-{mail_domain}.svg").write_text(
+        gen_qr_svg(mail_domain)
     )
 
     extra = {

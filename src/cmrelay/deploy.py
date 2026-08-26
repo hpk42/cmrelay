@@ -437,7 +437,7 @@ class Deployment:
     def configure_website(self):
         ensure_directory(paths.WWW_ROOT)
         try:
-            built = build_website(self.bundle.vendor / "www", self.config, self.bundle)
+            built = build_website(self.bundle.vendor / "www", self.config)
         except Exception as exc:  # noqa: BLE001 - a broken page must not fail a deploy
             self.out.warn(f"web page build failed, skipping website: {exc}")
             return

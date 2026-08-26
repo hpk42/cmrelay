@@ -149,10 +149,11 @@ dest = "config/journald.conf"
 
 # --- assets ---------------------------------------------------------------
 
-# Fonts and images for the invite QR code that the website build draws.
-[[copy]]
-src = "cmdeploy/src/cmdeploy/data/*"
-dest = "data/"
+# The logo and font relay composites into its PNG QR code. cmrelay emits an
+# SVG instead, so it needs neither; see patches/www-qr-svg.patch.
+[[skip]]
+patterns = ["cmdeploy/src/cmdeploy/data/*"]
+why = "inputs to relay's composited PNG QR code, which cmrelay does not draw"
 
 # The website source. cmrelay renders it with the same markdown and jinja2
 # pipeline relay uses, reimplemented in cmrelay/website.py.

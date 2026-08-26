@@ -16,7 +16,6 @@ dependencies = [
   "jinja2>=3.1",
   "markdown",
   "qrcode",
-  "pillow",
 ]
 dynamic = ["version"]
 

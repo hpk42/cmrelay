@@ -156,4 +156,5 @@ def test_patched_files_differ_from_upstream(relay_root):
         "config/opendkim/opendkim.conf",
         "config/postfix/main.cf.j2",
         "config/postfix/master.cf.j2",
+        "www/index.md",
     ]

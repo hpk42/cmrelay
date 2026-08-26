@@ -39,7 +39,6 @@
           # the website build relay performs, reimplemented in cmrelay
           markdown
           qrcode
-          pillow
         ];
 
         pythonEnv = pkgs.python3.withPackages (_: pythonDeps);

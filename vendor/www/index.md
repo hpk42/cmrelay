@@ -30,7 +30,7 @@ without a Delta Chat app,
 you can also **scan this QR code** with Delta Chat:
 
 <a href="DCACCOUNT:https://{{ config.mail_domain }}/new">
-    <img width=300 style="float: none;" src="qr-chatmail-invite-{{config.mail_domain}}.png" /></a>
+    <img width=300 style="float: none;" src="qr-chatmail-invite-{{config.mail_domain}}.svg" /></a>
 {% endif %}
 
 🐣 **Choose** your Avatar and Name

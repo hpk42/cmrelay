@@ -10,3 +10,9 @@ nginx-store-paths.patch
 postfix-store-paths.patch
 dovecot-store-paths.patch
 opendkim-trust-anchor.patch
+
+# The invite QR code is an SVG here, not relay's composited PNG: drawing
+# that PNG needs Pillow, which costs 74 MiB of image codecs in the closure
+# for one picture per host. Where relay's web pages live is an open
+# question, so cmrelay does not carry that on their behalf yet.
+www-qr-svg.patch

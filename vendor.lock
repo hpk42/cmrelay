@@ -23,8 +23,6 @@
     "config/postfix/smtp_tls_policy_map": "9ca129d2514a183be170c7b9095f22f82aa52a824194143c9465887d38230a1b",
     "config/postfix/submission_header_cleanup": "43b72680fb4811a623aeb21b0971b8836f5d12ec53dbc5af377e8d0f2af9ffc5",
     "config/unbound/unbound.conf.j2": "65d7c862afbbd88c3802cc6501e08e48928f2dc0df87bfb8676599e579113223",
-    "data/delta-chat-bw.png": "82e717d8356eb47decb93ef041ed38f9fcd3d834d408d88cca366f6d2ca366cf",
-    "data/opensans-regular.ttf": "037236ed4bf58a85f67074c165d308260fd6be01c86d7df4e79ea16eb273f8c5",
     "systemd/10_restart_on_failure.conf": "687cf8d8b7f1d2a7d3eb08ccc319528c7eb21adc51e9ebb51da6fb2645aa9641",
     "systemd/acmetool-reconcile.service.j2": "b29177d12538bb11fcaf5d7600eb5fc7c5b532eeb44d4290622af9aa1c04cf13",
     "systemd/acmetool-reconcile.timer": "c9fe0e37d121e3c9f4f03d486598f687b01c01ba191fb119aaa93fa5d463c8a3",
@@ -49,7 +47,7 @@
     "www/collage-privacy.png": "080f4fad6273e126a2b44caa2581379606442e2c42d3ffe7383d834806b62232",
     "www/collage-top.png": "24f571eb1850f63a77afae4869adc06e95d376d862b3c35d050320ee5f1ab55a",
     "www/dclogin.js": "2aa8f60f7b1f62d9f09a327f4fb46bfb78b5305fa3bb14f44130d5bbf23197d2",
-    "www/index.md": "025b00520e7c35aa0fd3fb00efefa5dd66761dcf268661bc7ae05571260a7b25",
+    "www/index.md": "4a53e88f277561cead2784e6110d5d69f5ea47b6c28195d7704d3c5b6d974022",
     "www/info.md": "5aa856125677a6f7f3d227edd15a2d8cca99edea3425692d0b3ce4b03b995b5e",
     "www/logo.svg": "504f4fc64dcda0d767b10212324f28b80818156f56456279428dd9ea2a8cf4fd",
     "www/main.css": "0a6323277988ba267246df52c623a37266edae6ad46bf79c65d9ae0936fd359e",
@@ -62,7 +60,8 @@
     "nginx-store-paths.patch",
     "postfix-store-paths.patch",
     "dovecot-store-paths.patch",
-    "opendkim-trust-anchor.patch"
+    "opendkim-trust-anchor.patch",
+    "www-qr-svg.patch"
   ],
   "relay_commit": "cae03e27149608aefe0e7e2a8be1d588f4ab476d",
   "relay_describe": "1.12.0-10-gcae03e27",
