@@ -23,6 +23,8 @@
         crypt-r = pkgs.python3Packages.callPackage ./nix/packages/crypt-r.nix { };
         acmetool = pkgs.callPackage ./nix/packages/acmetool.nix { };
         dovecot = pkgs.callPackage ./nix/packages/dovecot.nix { };
+        # a relay runs mtail, not the three tools shipped beside it
+        mtail-minimal = pkgs.callPackage ./nix/packages/mtail-minimal.nix { };
 
         # chatmaild and the cmrelay CLI share one interpreter, which is what
         # makes template rendering an import rather than an integration:
@@ -48,6 +50,7 @@
             fetched
             acmetool
             dovecot
+            mtail-minimal
             pythonEnv
             pythonDeps
             ;
@@ -67,6 +70,7 @@
             payload
             closure
             dovecot
+            mtail-minimal
             acmetool
             chatmaild
             crypt-r

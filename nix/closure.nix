@@ -22,7 +22,7 @@
   unbound,
   opendkim,
   fcgiwrap,
-  mtail,
+  mtail-minimal,
   openssl,
   coreutils,
   iproute2,
@@ -125,8 +125,8 @@ let
     # 3.4.8, which is one patch release of drift that closes on its own.
     # relay's programs under vendor/config/mtail compile unchanged against
     # it, which is the only compatibility that matters here.
-    mtail = component mtail {
-      mtail = "${mtail}/bin/mtail";
+    mtail = component mtail-minimal {
+      mtail = "${mtail-minimal}/bin/mtail";
     };
 
     # buildEnv carries no version of its own; the interpreter's is what a
