@@ -34,7 +34,7 @@ jobs:
   # release as a .run an operator can copy across by hand, and inside a
   # per-architecture wheel so that `pip install cmrelay` is the last step
   # needing the network. Release asset names are a contract with
-  # src/cmrelay/fetch.py: cmrelay-<version>-<arch>-linux.run
+  # src/cmrelay/payload.py: cmrelay-<version>-<arch>-linux.run
   #
   # Each arch builds on its own native runner. There is no cross-building
   # here: the payload is a Nix closure of real binaries for that host.
@@ -111,15 +111,12 @@ jobs:
     permissions:
       id-token: write
     steps:
-      # The sdist and the pure-python wheel from py-checks. That wheel is the
-      # fallback for a platform with no payload of its own: it downloads the
-      # release asset instead. pip prefers a matching platform wheel over it.
-      - uses: actions/download-artifact@v8
-        with:
-          name: dist
-          path: dist/
-
-      # ... and the per-architecture wheels with the payload inside them.
+      # Only the per-architecture wheels, each carrying its own payload.
+      # Deliberately not the sdist or the pure-python wheel that py-checks
+      # builds: both would install a cmrelay with no relay in it, which could
+      # only go and fetch one. Publishing neither means pip says "no matching
+      # distribution" on a platform cmrelay does not support, instead of
+      # installing something that fails later.
       - uses: actions/download-artifact@v8
         with:
           pattern: wheels-*

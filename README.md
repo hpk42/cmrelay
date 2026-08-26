@@ -28,9 +28,10 @@ installed the CLI into, so `cmrelay install` execs the payload and everything
 proceeds exactly as if you had copied the `.run` file across yourself --
 which is the only path that is actually tested.
 
-A wheel built from a source checkout has no payload
-and downloads the release matching its own version instead;
-`cmrelay download` fetches it without installing, for staging by hand.
+There is no wheel that downloads a payload, and therefore no code that could:
+cmrelay never makes a network request, on any path.
+A wheel built straight from a source checkout has no payload,
+says so, and stops.
 
 No apt, no pyinfra, no ssh orchestration, and nothing required
 of the host beyond a kernel, systemd and a POSIX shell.
@@ -67,7 +68,6 @@ and updating means re-running that script.
 | `cmrelay upgrade` | convert an existing `cmdeploy` host; the only verb that may touch existing services |
 | `cmrelay status` | units, versions and conflicts; modifies nothing |
 | `cmrelay uninstall` | remove `/opt/cmrelay` and `/nix`, and unmask what `upgrade` masked |
-| `cmrelay download` | fetch the payload for this version without installing it |
 | `cmrelay --version` | the runtime face of `vendor.lock`, and what a bug report should paste |
 
 Rolling back is two steps, and the first one is not optional:

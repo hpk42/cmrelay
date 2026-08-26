@@ -10,3 +10,9 @@ venv/
 result
 result-*
 /out/
+
+# editor swap files
+*.swp
+*.swo
+.*.swp
+*~

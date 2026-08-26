@@ -7,10 +7,10 @@ default that relay's own write_initial_config supplies.
 The same CLI runs from two places, and the difference decides what it can do.
 Out of the closure -- which is how the .run payload starts it -- everything
 works. Out of a pip-installed wheel there is no closure, no chatmaild and no
-relay to install, so the verbs that need one download the payload and hand
-over to it. That is why the verb implementations are imported inside
-`main()`: importing them from a wheel would fail on chatmaild before the CLI
-could explain itself.
+relay to install, so every verb hands over to the payload the wheel carries.
+That is why the verb implementations are imported inside `main()`: importing
+them from a wheel would fail on chatmaild before the CLI could explain
+itself.
 """
 
 import argparse
@@ -61,7 +61,7 @@ def build_parser():
     install.add_argument(
         "--force", action="store_true", help="overwrite an existing installation"
     )
-    install.set_defaults(verb="install", needs_closure=True)
+    install.set_defaults(verb="install")
 
     upgrade = sub.add_parser(
         "upgrade",
@@ -77,14 +77,14 @@ def build_parser():
         action="store_true",
         help="configure everything but leave postfix and dovecot stopped",
     )
-    upgrade.set_defaults(verb="upgrade", needs_closure=True)
+    upgrade.set_defaults(verb="upgrade")
 
     status = sub.add_parser(
         "status",
         help="report units, versions and conflicts",
         description="Re-run the conflict detector and report state. Modifies nothing.",
     )
-    status.set_defaults(verb="status", needs_closure=True)
+    status.set_defaults(verb="status")
 
     uninstall = sub.add_parser(
         "uninstall",
@@ -95,21 +95,10 @@ def build_parser():
         ),
     )
     uninstall.add_argument("--yes", "-y", action="store_true", help="skip the prompt")
-    uninstall.set_defaults(verb="uninstall", needs_closure=True)
+    uninstall.set_defaults(verb="uninstall")
 
     version = sub.add_parser("version", help="print component versions")
-    version.set_defaults(verb="version", needs_closure=True)
-
-    download = sub.add_parser(
-        "download",
-        help="fetch the payload for this version without installing it",
-        description=(
-            "Download the release payload matching this cmrelay's version and"
-            " print where it landed. Useful for staging an install on a host"
-            " with no outbound access."
-        ),
-    )
-    download.set_defaults(verb="download", needs_closure=False)
+    version.set_defaults(verb="version")
 
     return parser
 
@@ -145,14 +134,14 @@ def main(argv=None):
         parser.print_help()
         return 2
 
-    # A pip-installed cmrelay carries the CLI and nothing else. Every verb
-    # that touches a relay needs the closure, so fetch it and hand over.
-    if args.needs_closure and not installed_in_a_closure():
-        from .fetch import FetchError, run_from_wheel
+    # A pip-installed cmrelay is the CLI and the payload. Every verb needs the
+    # closure, so there is one thing to do: hand over to it.
+    if not installed_in_a_closure():
+        from .payload import PayloadError, run_from_wheel
 
         try:
             return run_from_wheel(argv, out)
-        except FetchError as exc:
+        except PayloadError as exc:
             out.error(str(exc))
             return 1
 

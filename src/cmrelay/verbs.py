@@ -550,23 +550,6 @@ def cmd_version(args, out) -> int:
     return 0
 
 
-def cmd_download(args, out) -> int:
-    """Fetch the payload without installing it, for a host with no outbound access."""
-    from .fetch import ensure_payload
-
-    out.section("Fetching the cmrelay payload")
-    payload = ensure_payload(out)
-    out.ok(f"  {payload}")
-    out.print("\nCopy it to the target host and run it there:")
-    out.print(f"  {payload.name} install --mail-domain <domain>")
-    return 0
-
-
-# ----------------------------------------------------------------------
-# uninstall
-# ----------------------------------------------------------------------
-
-
 def cmd_uninstall(args, out) -> int:
     require_root()
 
@@ -681,7 +664,6 @@ VERBS = {
     "status": cmd_status,
     "uninstall": cmd_uninstall,
     "version": cmd_version,
-    "download": cmd_download,
 }
 
 
