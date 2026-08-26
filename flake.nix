@@ -21,6 +21,9 @@
         fetched = pkgs.callPackage ./nix/fetch/binaries.nix { inherit system; };
 
         crypt-r = pkgs.python3Packages.callPackage ./nix/packages/crypt-r.nix { };
+        # postfix pulls ICU in for SMTPUTF8 and uses only its IDNA tables
+        icu-idna = pkgs.callPackage ./nix/packages/icu-idna.nix { };
+        postfix = pkgs.postfix.override { icu = icu-idna; };
         acmetool = pkgs.callPackage ./nix/packages/acmetool.nix { };
         # libsystemd only. dovecot links it for sd_notify and fcgiwrap for
         # socket activation; neither runs systemd, which the host provides.
@@ -60,6 +63,7 @@
             fetched
             acmetool
             dovecot
+            postfix
             mtail-minimal
             opendkim-milter
             pythonEnv
@@ -83,6 +87,8 @@
             dovecot
             mtail-minimal
             opendkim-milter
+            postfix
+            icu-idna
             acmetool
             chatmaild
             crypt-r
