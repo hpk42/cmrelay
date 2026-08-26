@@ -56,6 +56,9 @@ DKIM_SELECTOR = "opendkim"
 # this; upstream reads /usr/libexec/acme/hooks, so cmrelay has to say so.
 ACME_HOOKS_DIR = "/etc/acme/hooks"
 
+# opendkim-genkey defaults to 1024, which is weak by current practice.
+DKIM_KEY_BITS = 2048
+
 
 class DeployError(Exception):
     pass
@@ -524,26 +527,55 @@ class Deployment:
         )
 
     def generate_dkim_key(self):
-        """opendkim-genkey, run as opendkim so the key lands owned correctly.
+        """Make the DKIM keypair with openssl rather than opendkim-genkey.
 
-        This is what the 55 MiB of Perl in the closure are for. It earns its
-        place exactly once per host.
+        opendkim-genkey is a Perl script, and it is the only thing in the
+        closure that needs Perl: 55 MiB carried by every operator to run one
+        command once per host. openssl is already here, and relay's own DNS
+        tooling reads the key back with
+        `openssl rsa -in ... -pubout`, so the private key is the only
+        artefact anything downstream actually depends on.
+
+        The key is 2048 bits. opendkim-genkey defaults to 1024, which is
+        weak by current practice, and relay already splits a public key
+        across several quoted strings when it exceeds the 255 characters a
+        single TXT string allows, so the longer key needs nothing new.
         """
         self.out.print(f"Generating DKIM key for {self.mail_domain} ...")
+        private = paths.DKIM_KEYS / f"{DKIM_SELECTOR}.private"
         self.shell(
-            self.bin("opendkim", "opendkim-genkey"),
-            "-D",
-            str(paths.DKIM_KEYS),
-            "-d",
-            self.config.mail_domain_bare,
-            "-s",
-            DKIM_SELECTOR,
+            self.bin("openssl"), "genrsa", "-out", str(private), str(DKIM_KEY_BITS)
         )
-        for name in (f"{DKIM_SELECTOR}.private", f"{DKIM_SELECTOR}.txt"):
-            path = paths.DKIM_KEYS / name
-            if path.exists():
-                shutil.chown(path, user="opendkim", group="opendkim")
-                os.chmod(path, 0o600 if name.endswith(".private") else 0o644)
+        os.chmod(private, 0o600)
+        shutil.chown(private, user="opendkim", group="opendkim")
+        self.write_dkim_record(private)
+
+    def write_dkim_record(self, private: Path):
+        """The .txt file opendkim-genkey leaves beside the key.
+
+        Nothing reads it: relay derives the record from the private key, and
+        so does `cmrelay install`. It is written because a cmdeploy host has
+        one and an operator looking for their DNS record will look here.
+        """
+        record = paths.DKIM_KEYS / f"{DKIM_SELECTOR}.txt"
+        pubkey = self.dkim_public_key(private)
+        self.changes.note(
+            "opendkim",
+            write(
+                record,
+                f'{DKIM_SELECTOR}._domainkey\tIN\tTXT\t( "v=DKIM1; k=rsa; "\n'
+                f'\t  "p={pubkey}" )'
+                f"  ; ----- DKIM key {DKIM_SELECTOR} for {self.mail_domain}\n",
+            ),
+        )
+        shutil.chown(record, user="opendkim", group="opendkim")
+
+    def dkim_public_key(self, private: Path) -> str:
+        """The base64 body of the public key, the way relay extracts it."""
+        result = self.shell(self.bin("openssl"), "rsa", "-in", str(private), "-pubout")
+        return "".join(
+            line for line in result.stdout.splitlines() if not line.startswith("-")
+        )
 
     # --- DovecotDeployer --------------------------------------------------
 
@@ -940,7 +972,6 @@ class Deployment:
         }
         plain = {
             "acmetool": self.bin("acmetool"),
-            "opendkim-genkey": self.bin("opendkim", "opendkim-genkey"),
             "filtermail": self.bin("filtermail"),
             "chatmail-turn": self.bin("chatmail-turn"),
             "iroh-relay": self.bin("iroh-relay"),

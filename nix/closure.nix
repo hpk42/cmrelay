@@ -20,7 +20,7 @@
   postfix,
   nginx,
   unbound,
-  opendkim,
+  opendkim-milter,
   fcgiwrap,
   mtail-minimal,
   openssl,
@@ -91,11 +91,10 @@ let
       unbound-anchor = "${unbound}/bin/unbound-anchor";
     };
 
-    opendkim = component opendkim {
-      opendkim = "${opendkim}/bin/opendkim";
-      # what those 55 MiB of Perl in the closure are actually for; it earns
-      # its place exactly once per host
-      opendkim-genkey = "${opendkim}/bin/opendkim-genkey";
+    # The milter only; cmrelay makes the DKIM key with openssl rather than
+    # with opendkim-genkey, which is Perl. See nix/packages/opendkim-milter.nix.
+    opendkim = component opendkim-milter {
+      opendkim = "${opendkim-milter}/bin/opendkim";
     };
 
     fcgiwrap = component fcgiwrap {
