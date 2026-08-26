@@ -29,6 +29,37 @@
 let
   info = closureInfo { rootPaths = [ closure ]; };
   staticZstd = pkgsStatic.zstd;
+
+  # Files a relay never reads, dropped on the way into the payload.
+  #
+  # This is a deliberate departure from Nix's usual contract, and worth being
+  # explicit about: the store paths a cmrelay host ends up with are no longer
+  # byte-for-byte what their hashes name. That is sound here and nowhere else,
+  # because the host has no Nix: no daemon, no database, nothing that verifies
+  # a path or rebuilds from one, a store that is written once and read-only
+  # afterwards, and an uninstall that deletes the whole tree. The one thing it
+  # costs is that such a store cannot be used as an input to Nix again, which
+  # nothing does.
+  #
+  # The alternative is overriding the interpreter with nixpkgs' stripConfig
+  # and friends. That rebuilds the entire Python package set from source --
+  # measured at 48 derivations including cython, cffi and the pytest tooling,
+  # over half an hour, and again on every nixpkgs bump -- to save less than
+  # this does, and only for Python. Excluding by pattern costs nothing at
+  # build time and covers every component at once.
+  #
+  # libtool .la files are deliberately kept: dovecot's module loader has
+  # historically read them, and they are 0.2 MiB.
+  deadWeight = [
+    "*.a" # static libraries, 63 MiB of it libpython
+    "*/include/*" # C headers
+    "*/share/doc/*"
+    "*/share/man/*"
+    "*/share/locale/*" # gettext catalogues; a relay logs in English
+    "*/lib/python3.14/test/*" # CPython's own test suite
+    "*/idlelib/*" # the Tk IDE
+    "*/pkgconfig/*"
+  ];
 in
 runCommand "cmrelay-${version}"
   {
@@ -60,8 +91,11 @@ runCommand "cmrelay-${version}"
     sed 's|^/||' ${info}/store-paths > paths.txt
     echo "packing $(wc -l < paths.txt) store paths"
 
+    # The excludes have to precede --files-from: GNU tar applies them only to
+    # names that come after them on the command line.
     tar --create \
         --directory=/ \
+        ${lib.concatMapStringsSep " " (p: "--exclude='${p}'") deadWeight} \
         --files-from=paths.txt \
         --owner=0 --group=0 --numeric-owner \
         --sort=name \
