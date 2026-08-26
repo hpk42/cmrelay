@@ -33,6 +33,10 @@
           systemd = pkgs.systemdLibs;
         };
         fcgiwrap = pkgs.fcgiwrap.override { systemd = pkgs.systemdLibs; };
+        # nginx is the one component nixpkgs builds against OpenSSL 4, and a
+        # second major costs 8.7 MiB to serve the same TLS that postfix,
+        # dovecot, unbound, opendkim and python all get from pkgs.openssl.
+        nginx = pkgs.nginx.override { openssl = pkgs.openssl; };
         # a relay runs mtail, not the three tools shipped beside it
         mtail-minimal = pkgs.callPackage ./nix/packages/mtail-minimal.nix { };
         # ... and the opendkim milter, not the Perl script that made its key
@@ -60,6 +64,7 @@
         closure = pkgs.callPackage ./nix/closure.nix {
           inherit
             fcgiwrap
+            nginx
             fetched
             acmetool
             dovecot
@@ -88,6 +93,7 @@
             mtail-minimal
             opendkim-milter
             postfix
+            nginx
             icu-idna
             acmetool
             chatmaild
