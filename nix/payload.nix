@@ -50,6 +50,8 @@ let
   #
   # libtool .la files are deliberately kept: dovecot's module loader has
   # historically read them, and they are 0.2 MiB.
+  #
+  # __pycache__ goes too, it's not worth some megabytes.
   deadWeight = [
     "*.a" # static libraries, 63 MiB of it libpython
     "*/include/*" # C headers
@@ -59,6 +61,7 @@ let
     "*/lib/python3.14/test/*" # CPython's own test suite
     "*/idlelib/*" # the Tk IDE
     "*/pkgconfig/*"
+    "*/__pycache__/*" # unrefillable on a read-only store
   ];
 in
 runCommand "cmrelay-${version}"
