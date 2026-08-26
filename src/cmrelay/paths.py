@@ -70,6 +70,12 @@ CLI = BIN / "cmrelay"
 # store path is not enough; the names have to be findable.
 LOCAL_BIN = Path("/usr/local/bin")
 
+# A login shell reads /etc/profile, which sources this directory on every
+# distribution cmrelay supports. It is the one place a package may add to
+# PATH without editing a file the distribution owns.
+PROFILE_D = Path("/etc/profile.d")
+PROFILE_SCRIPT = PROFILE_D / "cmrelay.sh"
+
 # Where systemd looks, and therefore where cmrelay's real unit files live.
 # See cmrelay.systemd for why they cannot live under /opt/cmrelay instead.
 SYSTEMD_SYSTEM = Path("/etc/systemd/system")

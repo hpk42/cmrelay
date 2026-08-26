@@ -621,6 +621,19 @@ def remove_linked_tools(out):
             continue
         link.unlink()
         out.print(f"  removed {link}")
+    remove_profile_script(out)
+
+
+def remove_profile_script(out):
+    """Take /opt/cmrelay/bin back off PATH, so it does not point at nothing."""
+    script = paths.PROFILE_SCRIPT
+    if not script.is_file():
+        return
+    if "written by cmrelay" not in script.read_text():
+        out.print(f"  leaving {script} alone: cmrelay did not write it")
+        return
+    script.unlink()
+    out.print(f"  removed {script}")
 
 
 def is_ours(link: Path) -> bool:

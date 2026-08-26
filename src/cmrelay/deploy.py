@@ -990,6 +990,41 @@ class Deployment:
 
         paths.STATE.mkdir(parents=True, exist_ok=True)
         write(paths.LINKED_TOOLS, "\n".join(sorted(names)) + "\n")
+        self.put_profile_script()
+
+    def put_profile_script(self):
+        """Put cmrelay's own bin directory on root's PATH.
+
+        The tools above are already reachable, because /usr/local/bin is on
+        every distribution's default PATH. This is for what cmrelay owns
+        rather than what it borrows: /opt/cmrelay/bin is the directory whose
+        contents are cmrelay's to change, and having it on PATH means adding
+        something there later needs no second mechanism.
+
+        Appended rather than prepended, so nothing here can shadow a
+        distribution tool of the same name. The names that must win --
+        dovecot, postfix and the rest, which need cmrelay's config rather than
+        /etc's -- win in /usr/local/bin, which already precedes /usr/bin.
+
+        Only login shells read this: `ssh root@relay`, `su -`, `sudo -i`. A
+        systemd unit does not, which is why every unit cmrelay writes names an
+        absolute store path instead of relying on PATH.
+        """
+        if not paths.PROFILE_D.is_dir():
+            self.out.print(
+                f"  {paths.PROFILE_D} does not exist; not adding {paths.BIN} to PATH"
+            )
+            return
+        write(
+            paths.PROFILE_SCRIPT,
+            "# written by cmrelay; removed by `cmrelay uninstall`\n"
+            f'case ":$PATH:" in\n'
+            f"    *:{paths.BIN}:*) ;;\n"
+            f'    *) PATH="$PATH:{paths.BIN}" ;;\n'
+            "esac\n"
+            "export PATH\n",
+            mode=0o644,
+        )
 
     def put_wrapper(self, link: Path, target: str, args: list[str]):
         if link.is_symlink():
