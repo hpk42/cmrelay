@@ -11,7 +11,8 @@ Two detectors, because names and ports catch different things. A unit name
 collision catches the distro package that is about to fight us for port 25;
 port occupancy catches the daemon cmrelay has never heard of.
 
-Nothing here modifies the host. `install` reports and refuses; only `upgrade`
+Nothing here modifies the host. `install` reports and refuses; only
+`install --take-over`
 may act on what this finds.
 """
 
@@ -119,6 +120,24 @@ def systemd_available() -> bool:
     return Path("/run/systemd/system").is_dir() and shutil.which("systemctl")
 
 
+def template_of(name: str) -> str | None:
+    """`postfix@-.service` -> `postfix@.service`, the name that has a file.
+
+    An instantiated unit has no unit *file* of its own; only its template
+    does. `systemctl list-unit-files` therefore never lists one, so a
+    membership test against that listing answers "does not exist" for every
+    `foo@instance.service` -- and a detector that skips what does not exist
+    skips it in silence. Debian runs its postfix as `postfix@-.service`, so
+    this is the difference between taking a host over and leaving its MTA
+    running against the queue cmrelay is about to use.
+    """
+    stem, sep, rest = name.partition("@")
+    if not sep or rest.startswith("."):
+        return None
+    suffix = rest.partition(".")[2]
+    return f"{stem}@.{suffix}" if suffix else None
+
+
 def unit_states(names) -> dict[str, tuple[str, str]]:
     """Return name -> (enabled-state, active-state) for units that exist."""
     if not systemd_available():
@@ -131,7 +150,7 @@ def unit_states(names) -> dict[str, tuple[str, str]]:
             known.add(parts[0])
     states = {}
     for name in names:
-        if name not in known:
+        if name not in known and template_of(name) not in known:
             continue
         # systemctl exits non-zero for disabled and inactive units, which is
         # an answer rather than a failure.
@@ -274,10 +293,16 @@ def run(port_table, ss_argv=("ss",), nix_root=Path("/nix"), ours=None) -> Report
     return report
 
 
-def format_report(report: Report) -> str:
+def format_report(report: Report, remedies: bool = True) -> str:
+    """The findings, and per-finding remedies unless something else fixes them.
+
+    A caller about to say "re-run with --take-over" suppresses them: telling
+    an operator to mask five services by hand, immediately above an offer to
+    do exactly that, reads as two alternatives when only one is meant.
+    """
     lines = []
     for finding in report.findings:
         lines.append(f"  {finding}")
-        if finding.remedy:
+        if remedies and finding.remedy:
             lines.append(f"      remedy: {finding.remedy}")
     return "\n".join(lines)

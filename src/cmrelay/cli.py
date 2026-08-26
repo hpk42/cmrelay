@@ -32,13 +32,27 @@ def build_parser():
 
     install = sub.add_parser(
         "install",
-        help="install onto a fresh host",
+        help="install a relay, on a fresh host or over an existing one",
         description=(
-            "Install a chatmail relay. Refuses and modifies nothing if the host"
-            " already carries a mail stack; use `upgrade` for that."
+            "Install a chatmail relay. On a host that already carries a mail"
+            " stack this refuses and modifies nothing, and says to add"
+            " --take-over, which is the only way cmrelay will touch services"
+            " it did not install."
         ),
     )
-    install.add_argument("--mail-domain", required=True, help="the relay's mail domain")
+    install.add_argument(
+        "--mail-domain",
+        help="the relay's mail domain; required unless --take-over, which adopts it",
+    )
+    install.add_argument(
+        "--take-over",
+        action="store_true",
+        help=(
+            "convert a host that already runs chatmail: stop, disable and mask"
+            " what is there, adopt its chatmail.ini, then install and start"
+        ),
+    )
+    install.add_argument("--yes", "-y", action="store_true", help="skip the prompt")
     install.add_argument(
         "--config",
         metavar="PATH",
@@ -63,22 +77,6 @@ def build_parser():
     )
     install.set_defaults(verb="install")
 
-    upgrade = sub.add_parser(
-        "upgrade",
-        help="convert an existing deployment to cmrelay",
-        description=(
-            "Convert a host to cmrelay. This is the only command permitted to"
-            " stop, disable and mask existing services."
-        ),
-    )
-    upgrade.add_argument("--yes", "-y", action="store_true", help="skip the prompt")
-    upgrade.add_argument(
-        "--disable-mail",
-        action="store_true",
-        help="configure everything but leave postfix and dovecot stopped",
-    )
-    upgrade.set_defaults(verb="upgrade")
-
     status = sub.add_parser(
         "status",
         help="report units, versions and conflicts",
@@ -91,7 +89,7 @@ def build_parser():
         help="remove cmrelay and unmask what it masked",
         description=(
             "Remove /opt/cmrelay and /nix, and unmask the distribution units"
-            " upgrade masked. Roll back with `cmdeploy run` afterwards."
+            " --take-over masked. Roll back with `cmdeploy run` afterwards."
         ),
     )
     uninstall.add_argument("--yes", "-y", action="store_true", help="skip the prompt")
@@ -133,6 +131,18 @@ def main(argv=None):
     if not getattr(args, "verb", None):
         parser.print_help()
         return 2
+
+    # --mail-domain names a domain for a relay being created. --take-over
+    # adopts the one the host already serves, so supplying both asks cmrelay
+    # to rename a live relay, which is not what either flag means.
+    if args.verb == "install":
+        if args.take_over and (args.mail_domain or args.config or args.set):
+            parser.error(
+                "--take-over adopts the host's existing chatmail.ini, so"
+                " --mail-domain, --config and --set do not apply"
+            )
+        if not args.take_over and not (args.mail_domain or args.config):
+            parser.error("install needs --mail-domain (or --config, or --take-over)")
 
     # A pip-installed cmrelay is the CLI and the payload. Every verb needs the
     # closure, so there is one thing to do: hand over to it.

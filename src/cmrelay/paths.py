@@ -40,7 +40,7 @@ UNITS = ROOT / "systemd"
 
 STATE = ROOT / "state"
 
-# What `upgrade` masked, so `uninstall` can unmask it. The unmask is the
+# What `install --take-over` masked, so `uninstall` can unmask it. The unmask is the
 # load-bearing part of rollback: `systemctl enable` fails on a masked unit,
 # so a `cmdeploy run` against a host still carrying cmrelay's masks would not
 # come back up.
@@ -63,6 +63,10 @@ CGI_BIN = ROOT / "cgi-bin"
 # does not.
 BIN = ROOT / "bin"
 CLI = BIN / "cmrelay"
+
+# See Deployment.write_unbound_anchor_seed for why this is not a bare
+# unbound-anchor call in the unit.
+UNBOUND_ANCHOR_SEED = BIN / "unbound-seed-anchor"
 
 # Operator-facing tools, on the PATH they have on a Debian relay. relay's own
 # remote tooling and its test suite invoke several of these by bare name --
@@ -92,7 +96,7 @@ VERSION_MARKER = Path("/etc/chatmail-version")
 
 MAILNAME = Path("/etc/mailname")
 
-# cmdeploy's own config path. cmrelay reads it once during `upgrade` and
+# cmdeploy's own config path. cmrelay reads it once during --take-over and
 # leaves it alone thereafter, so rollback finds it where it was.
 CMDEPLOY_INI = Path("/usr/local/lib/chatmaild/chatmail.ini")
 

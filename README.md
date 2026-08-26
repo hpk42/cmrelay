@@ -64,10 +64,10 @@ and updating means re-running that script.
 
 | | |
 |---|---|
-| `cmrelay install --mail-domain <domain>` | fresh hosts only; refuses and modifies nothing if anything is in the way |
-| `cmrelay upgrade` | convert an existing `cmdeploy` host; the only verb that may touch existing services |
+| `cmrelay install --mail-domain <domain>` | fresh hosts; refuses and modifies nothing if anything is in the way |
+| `cmrelay install --take-over` | convert a host already running chatmail; the only way cmrelay touches services it did not install |
 | `cmrelay status` | units, versions and conflicts; modifies nothing |
-| `cmrelay uninstall` | remove `/opt/cmrelay` and `/nix`, and unmask what `upgrade` masked |
+| `cmrelay uninstall` | remove `/opt/cmrelay` and `/nix`, and unmask what `--take-over` masked |
 | `cmrelay --version` | the runtime face of `vendor.lock`, and what a bug report should paste |
 
 Rolling back is two steps, and the first one is not optional:
@@ -93,7 +93,7 @@ Everything holding live *state* stays where it already is.
 ├── chatmail.ini            # source of truth, written once, never overwritten
 ├── config/                 # rendered config, one directory per component
 ├── systemd/                # an index: one symlink per unit cmrelay owns
-├── state/disabled-units    # what upgrade masked, for uninstall to unmask
+├── state/disabled-units    # what --take-over masked, for uninstall to unmask
 └── nix/store/              # the closure
 
 /home/vmail/mail/<domain>   # mail and credentials

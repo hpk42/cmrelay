@@ -105,6 +105,10 @@ def stop_disable_mask(name: str) -> None:
     systemctl("stop", name, check=False)
     systemctl("disable", name, check=False)
     systemctl("mask", name, check=False)
+    # A unit that was already failed stays in `systemctl --failed` after
+    # masking, so a converted host reports a fault it no longer has and an
+    # operator cannot tell it from one that matters.
+    systemctl("reset-failed", name, check=False)
 
 
 def unmask(name: str) -> None:

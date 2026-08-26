@@ -233,6 +233,7 @@ class Deployment:
     # --- UnboundDeployer ----------------------------------------------
 
     def configure_unbound(self):
+        self.write_unbound_anchor_seed()
         # Dynamic resolver managers compete for /etc/resolv.conf. cmdeploy
         # purges resolvconf and masks systemd-resolved; cmrelay cannot purge
         # a package, so masking is all of it.
@@ -267,10 +268,34 @@ class Deployment:
         /etc/unbound/unbound.conf.d is included as well, deliberately: it is
         where other tooling drops files -- cmlxc's localchat forwarder among
         them -- and honouring the conventional path is cheaper than teaching
-        every such tool a new one.
+        every such tool a new one. On a converted host it also still holds
+        the unbound package's own conffiles, which is why the trust anchor
+        below is conditional.
         """
         ensure_directory(Path("/var/lib/unbound"), owner=("unbound", "unbound"))
         ensure_directory(Path("/etc/unbound/unbound.conf.d"))
+
+        # Debian's unbound package ships root-auto-trust-anchor-file.conf,
+        # setting the very directive below. Two anchors for the same zone is
+        # not additive, it is fatal:
+        #
+        #     error: trust anchor for '.' presented twice
+        #     fatal error: failed to init modules
+        #
+        # and unbound does not start, which takes DNS and therefore mail
+        # delivery down on a host that was working a moment earlier. A fresh
+        # install has an empty conf.d and never sees it, so this is only
+        # reachable by taking a host over -- the path that gets tested least.
+        #
+        # Yielding rather than removing their file: it is a dpkg conffile,
+        # and `cmdeploy run` has to find this host as it left it.
+        anchor_line = '    auto-trust-anchor-file: "/var/lib/unbound/root.key"\n'
+        if self.anchor_already_configured():
+            self.out.print(
+                "  /etc/unbound/unbound.conf.d already sets the trust anchor;"
+                " leaving it to do so"
+            )
+            anchor_line = ""
 
         self.changes.note(
             "unbound",
@@ -281,9 +306,7 @@ class Deployment:
                 '    username: "unbound"\n'
                 '    directory: "/var/lib/unbound"\n'
                 '    chroot: ""\n'
-                '    pidfile: "/run/unbound.pid"\n'
-                '    auto-trust-anchor-file: "/var/lib/unbound/root.key"\n'
-                "\n"
+                '    pidfile: "/run/unbound.pid"\n' + anchor_line + "\n"
                 f'include: "{drop_in_dir}/*.conf"\n'
                 'include: "/etc/unbound/unbound.conf.d/*.conf"\n',
             ),
@@ -934,6 +957,45 @@ class Deployment:
 
     # --- tools on the operator's PATH ---------------------------------------
 
+    @staticmethod
+    def anchor_already_configured(
+        drop_ins=Path("/etc/unbound/unbound.conf.d"),
+    ) -> bool:
+        """Whether something in the distribution's drop-ins anchors a zone."""
+        if not drop_ins.is_dir():
+            return False
+        for conf in sorted(drop_ins.glob("*.conf")):
+            for line in conf.read_text(errors="replace").splitlines():
+                bare = line.split("#", 1)[0].strip()
+                if bare.startswith(("auto-trust-anchor-file:", "trust-anchor-file:")):
+                    return True
+        return False
+
+    def write_unbound_anchor_seed(self):
+        """Seed unbound's root trust anchor, but only when there is none.
+
+        Seeding is only ever needed once. From then on the file is unbound's
+        own: auto-trust-anchor-file means unbound rewrites it as the root
+        rolls its key, per RFC 5011. On a host converted from cmdeploy it is
+        already such a file, maintained by the distribution's unbound across
+        however many rollovers, and `unbound-anchor -a` would probe and
+        rewrite it on every start of a daemon that maintains it perfectly
+        well itself.
+
+        Guarding on absence keeps the self-healing -- a host that loses the
+        file still gets one -- without touching an anchor that is not ours.
+        """
+        paths.BIN.mkdir(parents=True, exist_ok=True)
+        anchor = "/var/lib/unbound/root.key"
+        write(
+            paths.UNBOUND_ANCHOR_SEED,
+            "#!/bin/sh\n"
+            "# written by cmrelay; regenerated on every run\n"
+            f"test -s {anchor} && exit 0\n"
+            f"exec {self.bin('unbound', 'unbound-anchor')} -a {anchor}\n",
+            mode=0o755,
+        )
+
     def link_host_tools(self):
         """Put the tools relay invokes by bare name where PATH will find them.
 
@@ -1080,7 +1142,7 @@ class Deployment:
             "nginx_prefix": self.bin("nginx", "prefix"),
             "nginx_config": str(paths.config_dir("nginx") / "nginx.conf"),
             "unbound_bin": self.bin("unbound"),
-            "unbound_anchor_bin": self.bin("unbound", "unbound-anchor"),
+            "unbound_anchor_seed": str(paths.UNBOUND_ANCHOR_SEED),
             "unbound_config": str(paths.config_dir("unbound") / "unbound.conf"),
             "opendkim_bin": self.bin("opendkim"),
             "opendkim_config": str(paths.config_dir("opendkim") / "opendkim.conf"),

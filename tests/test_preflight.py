@@ -188,3 +188,22 @@ def test_another_resolver_on_53_still_refuses(tmp_path):
     report = preflight.check_ports([(["unbound"], 53)], ss_argv=[ss])
     assert not report.ok
     assert "BIND" in report.findings[0].detail
+
+
+def test_an_instantiated_unit_resolves_to_its_template():
+    """Debian runs its postfix as postfix@-.service, which has no unit file.
+
+    Without this the detector answers "does not exist" and skips it, leaving
+    the distribution's MTA running against the queue cmrelay is taking over.
+    """
+    assert preflight.template_of("postfix@-.service") == "postfix@.service"
+    assert preflight.template_of("getty@tty1.service") == "getty@.service"
+    assert preflight.template_of("postfix.service") is None
+    # A bare template is already the file name; it needs no translation.
+    assert preflight.template_of("postfix@.service") is None
+
+
+def test_the_masked_units_list_is_reachable_by_the_detector():
+    """Every name cmrelay means to mask must be one unit_states can find."""
+    for name in preflight.MASKED_UNITS:
+        assert "@" not in name or preflight.template_of(name), name

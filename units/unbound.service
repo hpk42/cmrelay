@@ -1,6 +1,6 @@
 # Debian's unit calls /usr/libexec/unbound-helper to seed the root trust
 # anchor from the dns-root-data package and to set up a chroot. cmrelay has
-# neither, so it runs unbound-anchor directly and does not chroot; the
+# neither, so it seeds the anchor itself and does not chroot; the
 # corresponding settings are in the base config cmrelay writes beside relay's
 # own drop-in.
 [Unit]
@@ -11,7 +11,7 @@ Wants=nss-lookup.target
 
 [Service]
 Type=simple
-ExecStartPre=-{unbound_anchor_bin} -a /var/lib/unbound/root.key
+ExecStartPre=-{unbound_anchor_seed}
 ExecStart={unbound_bin} -d -c {unbound_config}
 Restart=on-failure
 RestartSec=5

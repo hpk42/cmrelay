@@ -184,3 +184,41 @@ def test_the_profile_script_is_idempotent_and_valid_sh(tmp_path):
     ).stdout.strip()
     assert out.count(bin_dir) == 1
     assert out.endswith(f":{bin_dir}")
+
+
+def test_a_distro_drop_in_anchoring_the_root_is_detected(tmp_path):
+    """Debian's unbound ships root-auto-trust-anchor-file.conf.
+
+    Two anchors for the same zone is fatal to unbound, not additive, so
+    cmrelay has to notice and leave the directive to whoever set it first.
+    """
+    from cmrelay.deploy import Deployment
+
+    drop_ins = tmp_path / "unbound.conf.d"
+    drop_ins.mkdir()
+    assert Deployment.anchor_already_configured(drop_ins) is False
+
+    (drop_ins / "chatmail.conf").write_text("server:\n  cache-max-negative-ttl: 0\n")
+    assert Deployment.anchor_already_configured(drop_ins) is False
+
+    (drop_ins / "root-auto-trust-anchor-file.conf").write_text(
+        'server:\n    auto-trust-anchor-file: "/var/lib/unbound/root.key"\n'
+    )
+    assert Deployment.anchor_already_configured(drop_ins) is True
+
+
+def test_a_commented_out_anchor_does_not_count(tmp_path):
+    from cmrelay.deploy import Deployment
+
+    drop_ins = tmp_path / "unbound.conf.d"
+    drop_ins.mkdir()
+    (drop_ins / "x.conf").write_text(
+        'server:\n    # auto-trust-anchor-file: "/var/lib/unbound/root.key"\n'
+    )
+    assert Deployment.anchor_already_configured(drop_ins) is False
+
+
+def test_a_missing_drop_in_directory_is_not_an_anchor(tmp_path):
+    from cmrelay.deploy import Deployment
+
+    assert Deployment.anchor_already_configured(tmp_path / "absent") is False

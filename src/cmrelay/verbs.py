@@ -1,4 +1,4 @@
-"""install, upgrade, status and uninstall.
+"""install, status and uninstall.
 
 The four verbs differ mainly in what they are allowed to touch.
 
@@ -12,7 +12,7 @@ ordinary part of every deploy, and refusing over it would make `install`
 useless on exactly the hosts it targets. That is recorded for uninstall to
 reverse. Any other holder of port 53 still refuses.
 
-`upgrade` is the only verb permitted to touch existing services, and the only
+`install --take-over` is the only way to touch existing services, and the only
 one that may act on a conflict. When it does it stops, disables *and masks*:
 disabling alone loses to the next apt or dnf upgrade re-enabling the unit.
 
@@ -20,7 +20,7 @@ disabling alone loses to the next apt or dnf upgrade re-enabling the unit.
 later -- a distribution upgrade re-enabling postfix -- becomes visible
 instead of silently fighting for port 25.
 
-`uninstall` reverses exactly what upgrade did. The unmask is the load-bearing
+`uninstall` reverses exactly what --take-over did. The unmask is load-bearing
 part: `systemctl enable` fails on a masked unit, so a `cmdeploy run` against
 a host still carrying cmrelay's masks would not come back up.
 """
@@ -82,12 +82,20 @@ def write_initial_config(mail_domain: str, overrides: dict | None = None):
 
 
 def cmd_install(args, out) -> int:
+    """One entry point, because an operator should not have to know in advance
+    which kind of host they are on. The preflight already knows, so the
+    refusal names the flag rather than a second verb."""
     require_root()
     bundle = Bundle.discover()
+    if args.take_over:
+        return install_over_existing(args, bundle, out)
+    return install_fresh(args, bundle, out)
 
+
+def install_fresh(args, bundle, out) -> int:
     if paths.INI.exists() and not args.force:
         out.error(f"{paths.INI} already exists: this host has cmrelay on it already.")
-        out.print("Use `cmrelay upgrade` to re-apply, or --force to overwrite.")
+        out.print("Use --force to overwrite it.")
         return 1
 
     if not os.environ.get(ENV_PREFLIGHT_PASSED):
@@ -95,11 +103,20 @@ def cmd_install(args, out) -> int:
         report = run_preflight(bundle, out, mail_domain=args.mail_domain)
         if not report.ok:
             out.error("this host is not a fresh install target")
-            out.print(preflight.format_report(report))
-            out.print(
-                "\nNothing was modified. If this host already carries a mail"
-                "\nstack, that is not an install: run `cmrelay upgrade` instead."
-            )
+            takeover = paths.CMDEPLOY_INI.is_file()
+            out.print(preflight.format_report(report, remedies=not takeover))
+            out.print("\nNothing was modified.")
+            if takeover:
+                out.print(
+                    f"This host already runs chatmail ({paths.CMDEPLOY_INI}"
+                    " exists).\nTo convert it, re-run with --take-over."
+                )
+            else:
+                out.print(
+                    "If this host is meant to keep the stack above, cmrelay is"
+                    " not\nfor it. To hand it over instead, re-run with"
+                    " --take-over."
+                )
             return 1
         out.ok("  no conflicting units, no occupied ports, no existing store")
 
@@ -129,11 +146,11 @@ def cmd_install(args, out) -> int:
 
 
 def apply_configuration(bundle, args, out, config=None):
-    """Everything from chatmail.ini onwards, which install and upgrade share.
+    """Everything from chatmail.ini onwards, which both paths share.
 
-    The two verbs differ only in what they may do to a host *before* this
-    point: install refuses to touch anything, upgrade stops and masks what is
-    in the way. From here they are the same run.
+    They differ only in what they may do to a host *before* this point: a
+    plain install refuses to touch anything, --take-over stops and masks what
+    is in the way. From here they are the same run.
     """
     if config is None:
         config = read_config(bundle)
@@ -248,14 +265,11 @@ def link_cli(bundle, out):
 
 
 # ----------------------------------------------------------------------
-# upgrade
+# install --take-over
 # ----------------------------------------------------------------------
 
 
-def cmd_upgrade(args, out) -> int:
-    require_root()
-    bundle = Bundle.discover()
-
+def install_over_existing(args, bundle, out) -> int:
     # install_store() ends in a re-exec of this same verb from the installed
     # closure. Without this the second run would prompt again and, having
     # been answered, stop and mask a stack it had already taken over.
@@ -330,11 +344,13 @@ def describe_existing(bundle, out) -> dict:
                 " its configuration may not match any relay commit"
             )
         if commit and commit != bundle.relay_commit:
-            out.warn(
-                f"cmrelay vendored relay {bundle.relay_commit[:12]}, this host runs"
-                f" {commit[:12]}. If the host is newer, the templates cmrelay carries"
-                " are older than the ones that produced its running configuration."
-            )
+            # Reported, not warned about. Two commit hashes say which is
+            # newer only against a shared history, and there is no relay
+            # checkout here to ask -- the host's marker may name a branch,
+            # a fork or a tree cmrelay has never seen. Differing is also the
+            # normal case, since a cmrelay release pins one relay commit and
+            # a deployed host tracks whatever it was deployed from.
+            out.print(f"  cmrelay vendored relay {bundle.relay_commit[:12]}")
     else:
         findings["host_relay_commit"] = None
         out.print(f"  {marker}: not found")
@@ -393,7 +409,7 @@ def adopt_config(out, findings):
     if not source:
         raise VerbError(
             f"no {paths.CMDEPLOY_INI} to adopt and no {paths.INI} yet."
-            " This host has no chatmail deployment to upgrade;"
+            " This host has no chatmail deployment to take over;"
             " use `cmrelay install --mail-domain <domain>`."
         )
     paths.INI.parent.mkdir(parents=True, exist_ok=True)
@@ -612,7 +628,7 @@ def cmd_uninstall(args, out) -> int:
     out.section("Stopping cmrelay units")
     stop_our_units(out)
 
-    out.section("Unmasking what upgrade masked")
+    out.section("Unmasking what --take-over masked")
     masked = systemd.read_disabled_units()
     for name in masked:
         systemd.unmask(name)
@@ -719,7 +735,6 @@ def diff_configs(out):
 
 VERBS = {
     "install": cmd_install,
-    "upgrade": cmd_upgrade,
     "status": cmd_status,
     "uninstall": cmd_uninstall,
     "version": cmd_version,
