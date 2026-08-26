@@ -24,7 +24,6 @@
   lua5_4,
   lz4,
   openssl,
-  pam,
   systemd,
   xz,
   zlib,
@@ -81,7 +80,6 @@ stdenv.mkDerivation (finalAttrs: {
     inotify-tools
     libcap
     libtirpc
-    pam
     systemd
   ];
 
@@ -148,6 +146,13 @@ stdenv.mkDerivation (finalAttrs: {
     "--without-lucene"
     "--without-textcat"
     "--without-stemmer"
+    # relay authenticates against doveauth over a socket -- its passdb and
+    # userdb are `driver = lua` and `driver = dict` -- so no PAM stack is ever
+    # consulted. The switch defaults to `auto`, which means merely having the
+    # library present makes the auth daemon link it, and linux-pam brings
+    # Berkeley DB 4.8 along for pam_userdb: 1 MiB of payload for a code path
+    # a chatmail relay cannot reach.
+    "--without-pam"
     "--without-libwrap"
     "--disable-static"
     "--disable-rpath"

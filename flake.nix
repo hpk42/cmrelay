@@ -23,7 +23,13 @@
         crypt-r = pkgs.python3Packages.callPackage ./nix/packages/crypt-r.nix { };
         # postfix pulls ICU in for SMTPUTF8 and uses only its IDNA tables
         icu-idna = pkgs.callPackage ./nix/packages/icu-idna.nix { };
-        postfix = pkgs.postfix.override { icu = icu-idna; };
+        # withLDAP pulls openldap and a second cyrus-sasl for `ldap:` lookup
+        # tables. relay's postfix configuration defines none, and a chatmail
+        # relay has no directory to look anything up in.
+        postfix = pkgs.postfix.override {
+          icu = icu-idna;
+          withLDAP = false;
+        };
         acmetool = pkgs.callPackage ./nix/packages/acmetool.nix { };
         # libsystemd only. dovecot links it for sd_notify and fcgiwrap for
         # socket activation; neither runs systemd, which the host provides.
