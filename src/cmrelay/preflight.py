@@ -52,6 +52,13 @@ CONFLICTING_UNITS = SHADOWED_UNITS + MASKED_UNITS
 # dependency reasons; cmrelay needs the same treatment.
 RESOLVER_UNITS = [
     "systemd-resolved.service",
+    # Fedora 43 splits resolved's IPC out into socket units. Masking only the
+    # service leaves these to fail the moment anything touches them, which
+    # puts a permanent entry in `systemctl --failed` -- noise that makes a
+    # real fault harder to see. Absent on Debian, where unit_states skips
+    # them.
+    "systemd-resolved-varlink.socket",
+    "systemd-resolved-monitor.socket",
     "unbound-resolvconf.service",
 ]
 

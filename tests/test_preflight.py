@@ -207,3 +207,13 @@ def test_the_masked_units_list_is_reachable_by_the_detector():
     """Every name cmrelay means to mask must be one unit_states can find."""
     for name in preflight.MASKED_UNITS:
         assert "@" not in name or preflight.template_of(name), name
+
+
+def test_the_resolver_family_covers_more_than_the_service():
+    """Fedora 43 splits resolved's IPC into sockets that fail on their own."""
+    assert "systemd-resolved.service" in preflight.RESOLVER_UNITS
+    assert "systemd-resolved-varlink.socket" in preflight.RESOLVER_UNITS
+    # These are taken over, not refused on, so they must stay out of the set
+    # install refuses for -- a stock host always has resolved running.
+    for name in preflight.RESOLVER_UNITS:
+        assert name not in preflight.CONFLICTING_UNITS, name
