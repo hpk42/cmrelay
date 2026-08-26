@@ -40,6 +40,12 @@ UNITS = ROOT / "systemd"
 
 STATE = ROOT / "state"
 
+# Units --take-over found enabled and disabled so it could use their names,
+# so uninstall can enable them again. Separate from DISABLED_UNITS because
+# the two need opposite treatment: those were masked and want unmasking,
+# these were disabled and want enabling.
+SHADOWED_UNITS_STATE = STATE / "shadowed-units"
+
 # What `install --take-over` masked, so `uninstall` can unmask it. The unmask is the
 # load-bearing part of rollback: `systemctl enable` fails on a masked unit,
 # so a `cmdeploy run` against a host still carrying cmrelay's masks would not

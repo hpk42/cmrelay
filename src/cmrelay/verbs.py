@@ -367,6 +367,7 @@ def mask_existing(out) -> list[str]:
     cmrelay's own unit symlink needs.
     """
     masked = []
+    shadowed = []
     for name in preflight.SHADOWED_UNITS:
         if ours(name):
             continue
@@ -377,8 +378,12 @@ def mask_existing(out) -> list[str]:
         out.print(
             f"  {name} ({enabled}/{active}) -> stopped and disabled, then shadowed"
         )
+        if enabled in ("enabled", "enabled-runtime"):
+            shadowed.append(name)
         systemd.ensure_service(name, running=False, enabled=False)
         systemd.unmask(name)
+    if shadowed:
+        systemd.record_shadowed_units(shadowed)
 
     for name in preflight.MASKED_UNITS + preflight.RESOLVER_UNITS:
         states = preflight.unit_states([name])
@@ -635,10 +640,28 @@ def cmd_uninstall(args, out) -> int:
         out.print(f"  unmasked {name}")
     if not masked:
         out.print("  nothing to unmask")
-    out.print(
-        "\nUninstall re-enables nothing itself. `cmdeploy run` enables the"
-        "\nservices it wants through its own ensure_service() calls."
-    )
+
+    # Enabled, not started: `cmdeploy run` starts what it wants, and starting
+    # a stack here would race the one being torn down. Enabling is not
+    # cosmetic -- relay's unbound deployer runs
+    #
+    #     systemctl reset-failed unbound.service
+    #
+    # through pyinfra's server.shell, which fails the host on a non-zero
+    # exit, and systemd answers "Unit unbound.service not loaded" for a unit
+    # that is disabled. So a host left disabled cannot be rolled back at all:
+    # `cmdeploy run` aborts before it reaches its own enable step.
+    out.section("Re-enabling what --take-over disabled")
+    shadowed = systemd.read_shadowed_units()
+    for name in shadowed:
+        systemd.enable(name)
+        out.print(f"  enabled {name}")
+    if not shadowed:
+        out.print("  nothing to re-enable")
+    out.print("\nStarting them is `cmdeploy run`'s job, not this one's.")
+
+    if systemd.tmpfiles_create():
+        out.print("  recreated the /run directories tmpfiles.d declares")
 
     remove_linked_tools(out)
     diff_configs(out)

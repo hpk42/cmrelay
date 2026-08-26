@@ -77,8 +77,12 @@ Rolling back is two steps, and the first one is not optional:
 
 `systemctl enable` fails on a masked unit, so a `cmdeploy run` against
 a host still carrying cmrelay's masks would not come back up.
-Uninstall re-enables nothing itself; it only unmasks,
-and leaves the enabling to `cmdeploy run`.
+Uninstall therefore unmasks what `--take-over` masked, and re-enables
+what it disabled -- relay's unbound deployer runs
+`systemctl reset-failed unbound.service` through pyinfra,
+which fails the host when the unit is disabled and therefore not loaded,
+so a host left disabled cannot be rolled back at all.
+Starting the services is `cmdeploy run`'s job, not uninstall's.
 
 
 ## Where things go

@@ -20,6 +20,7 @@ why the preflight exists: identical names are exactly what makes the
 distribution's own packages collide.
 """
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -111,6 +112,33 @@ def stop_disable_mask(name: str) -> None:
     systemctl("reset-failed", name, check=False)
 
 
+def tmpfiles_create() -> bool:
+    """Recreate the /run directories the distribution's packages declare.
+
+    systemd deletes a RuntimeDirectory= when its service stops, and cmrelay's
+    units declare one because a fresh host has no package to declare it for
+    them. On a host taken over from a distribution the same path is usually
+    tmpfiles' -- Debian's opendkim.service has no RuntimeDirectory and relies
+    on /usr/lib/tmpfiles.d/opendkim.conf creating /run/opendkim at boot -- so
+    stopping cmrelay's unit removes a directory the distribution's unit needs
+    and does not create. `cmdeploy run` then fails on
+
+        can't write pid to /run/opendkim/opendkim.pid: No such file or directory
+
+    until the next reboot, which is when tmpfiles would run anyway. This is
+    that reboot's effect, without the reboot.
+    """
+    if not shutil.which("systemd-tmpfiles"):
+        return False
+    subprocess.run(
+        ["systemd-tmpfiles", "--create"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return True
+
+
 def unmask(name: str) -> None:
     systemctl("unmask", name, check=False)
 
@@ -123,6 +151,26 @@ def read_disabled_units() -> list[str]:
         for line in paths.DISABLED_UNITS.read_text().splitlines()
         if line.strip()
     ]
+
+
+def read_shadowed_units() -> list[str]:
+    if not paths.SHADOWED_UNITS_STATE.is_file():
+        return []
+    return [
+        line.strip()
+        for line in paths.SHADOWED_UNITS_STATE.read_text().splitlines()
+        if line.strip()
+    ]
+
+
+def record_shadowed_units(names) -> None:
+    paths.SHADOWED_UNITS_STATE.parent.mkdir(parents=True, exist_ok=True)
+    merged = sorted(set(read_shadowed_units()) | set(names))
+    paths.SHADOWED_UNITS_STATE.write_text("\n".join(merged) + "\n")
+
+
+def enable(name: str) -> None:
+    systemctl("enable", name, check=False)
 
 
 def record_disabled_units(names) -> None:
