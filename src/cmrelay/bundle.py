@@ -20,6 +20,11 @@ from pathlib import Path
 
 # The stub exports these before handing over.
 ENV_STAGE = "CMRELAY_STAGE"
+
+# The stub keeps a complete staging tree under a canonical name so the next
+# run can reuse it, and tells a complete tree from a consumed one by this
+# marker. Shared with stub/setup.sh.
+READY_MARKER = ".cmrelay-ready"
 ENV_CLOSURE = "CMRELAY_CLOSURE"
 
 # The stub writes these into the closure; see nix/closure.nix.

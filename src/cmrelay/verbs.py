@@ -41,7 +41,7 @@ from chatmaild.config import read_config as _read_config
 from chatmaild.config import write_initial_config as _write_initial_config
 
 from . import paths, preflight, store, systemd, users
-from .bundle import ENV_CLOSURE, ENV_STAGE, Bundle
+from .bundle import ENV_CLOSURE, ENV_STAGE, READY_MARKER, Bundle
 from .deploy import AUTHORED_UNITS, TIMER_DRIVEN, Deployment
 from .version import __version__
 
@@ -171,6 +171,12 @@ def install_store(bundle, out):
     out.section("Installing the closure")
     stage_store = bundle.prefix / "nix/store"
     paths.ROOT.mkdir(parents=True, exist_ok=True)
+    # Before the first rename rather than after the last. install() moves
+    # store paths out of the staging tree, so a run interrupted halfway
+    # through leaves a tree that is missing some of them; dropping the marker
+    # first is what stops the stub offering that husk to the next run as
+    # though it were whole.
+    (bundle.prefix / READY_MARKER).unlink(missing_ok=True)
     moved = store.install(stage_store)
     store.link_nix()
     note = store.label_for_selinux()
