@@ -30,9 +30,19 @@ where = ["src"]
 namespaces = true
 
 [dependency-groups]
-# chatmaild comes from the pinned relay submodule, which is where every
-# other consumer of it gets it too.
-test = ["pytest", "chatmaild @ file://${PROJECT_ROOT}/cmdeploy-relay/chatmaild"]
+# chatmaild comes from the pinned relay submodule, which is where every other
+# consumer of it gets it too. jinja2, markdown and qrcode are here rather than
+# in dependencies for the same reason the wheel declares none: nothing a
+# wheel-installed cmrelay reaches imports them, because it execs a payload
+# carrying its own interpreter. The tests do reach them -- they render relay's
+# templates and build the website -- so they are test dependencies.
+test = [
+  "pytest",
+  "chatmaild @ file://${PROJECT_ROOT}/cmdeploy-relay/chatmaild",
+  "jinja2>=3.1",
+  "markdown",
+  "qrcode",
+]
 
 [tool.pytest.ini_options]
 addopts = "-v -ra --strict-markers"

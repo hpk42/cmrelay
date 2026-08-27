@@ -21,6 +21,10 @@ concurrency:
 jobs:
   py-checks:
     uses: chatmail/workflows/.github/workflows/py-checks.yml@main
+    with:
+      # The test dependency group installs chatmaild from the pinned relay
+      # submodule, which is where every other consumer of it gets it too.
+      submodules: true
 
   vendor:
     name: vendor/ matches vendor.lock
