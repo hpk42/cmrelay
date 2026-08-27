@@ -78,13 +78,15 @@ def daemon_reload() -> None:
         systemctl("daemon-reload")
 
 
-def ensure_service(name: str, running=True, enabled=True, restart=False) -> None:
+def ensure_service(
+    name: str, running=True, enabled=True, restart=False, reload: bool = True
+) -> None:
     if not available():
         return
     if enabled:
-        systemctl("enable", name, check=False)
+        systemctl("enable", *_no_reload(reload), name, check=False)
     else:
-        systemctl("disable", name, check=False)
+        systemctl("disable", *_no_reload(reload), name, check=False)
     if running:
         verb = "restart" if restart else "start"
         result = systemctl(verb, name, check=False)
@@ -97,15 +99,30 @@ def ensure_service(name: str, running=True, enabled=True, restart=False) -> None
         systemctl("stop", name, check=False)
 
 
-def stop_disable_mask(name: str) -> None:
+def _no_reload(reload: bool) -> tuple:
+    """`--no-reload`, when the caller will reload once at the end itself.
+
+    enable, disable, mask and unmask each ask systemd to reload its
+    configuration after rewriting the symlinks, and a reload costs 391 ms on
+    a two-core VPS against about 20 ms for the symlink work. Taking a host
+    over touches thirteen units two or three times each, so the reloads were
+    most of the sixteen seconds that step took -- all of them redundant,
+    because nothing reads the unit graph until cmrelay starts services, and
+    activate() reloads before it does.
+    """
+    return ("--no-reload",) if not reload else ()
+
+
+def stop_disable_mask(name: str, reload: bool = True) -> None:
     """Take a unit out of the way for good.
 
     Disable alone loses to the next apt or dnf upgrade re-enabling the unit,
     which is why cmdeploy masks systemd-resolved rather than disabling it.
     """
+    flags = _no_reload(reload)
     systemctl("stop", name, check=False)
-    systemctl("disable", name, check=False)
-    systemctl("mask", name, check=False)
+    systemctl("disable", *flags, name, check=False)
+    systemctl("mask", *flags, name, check=False)
     # A unit that was already failed stays in `systemctl --failed` after
     # masking, so a converted host reports a fault it no longer has and an
     # operator cannot tell it from one that matters.
@@ -139,8 +156,8 @@ def tmpfiles_create() -> bool:
     return True
 
 
-def unmask(name: str) -> None:
-    systemctl("unmask", name, check=False)
+def unmask(name: str, reload: bool = True) -> None:
+    systemctl("unmask", *_no_reload(reload), name, check=False)
 
 
 def read_disabled_units() -> list[str]:
@@ -169,8 +186,8 @@ def record_shadowed_units(names) -> None:
     paths.SHADOWED_UNITS_STATE.write_text("\n".join(merged) + "\n")
 
 
-def enable(name: str) -> None:
-    systemctl("enable", name, check=False)
+def enable(name: str, reload: bool = True) -> None:
+    systemctl("enable", *_no_reload(reload), name, check=False)
 
 
 def record_disabled_units(names) -> None:

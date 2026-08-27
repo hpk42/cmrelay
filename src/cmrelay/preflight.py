@@ -146,7 +146,14 @@ def template_of(name: str) -> str | None:
 
 
 def unit_states(names) -> dict[str, tuple[str, str]]:
-    """Return name -> (enabled-state, active-state) for units that exist."""
+    """Return name -> (enabled-state, active-state) for units that exist.
+
+    Ask for every name at once. Finding out which exist means enumerating the
+    host's unit files, which is one `systemctl list-unit-files` -- 942 ms on a
+    two-core VPS, against 20 ms for the is-enabled/is-active pair per name. A
+    caller looping over names and asking for one at a time pays that
+    enumeration once per unit and cannot see it happening.
+    """
     if not systemd_available():
         return {}
     known = set()

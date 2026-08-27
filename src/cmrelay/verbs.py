@@ -366,13 +366,18 @@ def mask_existing(out) -> list[str]:
     /etc/systemd/system/<name> -> /dev/null, which is the exact path
     cmrelay's own unit symlink needs.
     """
+    # One call, not thirteen. unit_states enumerates every unit file on the
+    # host to learn which of these exist, and `systemctl list-unit-files`
+    # costs 942 ms on a two-core VPS -- so asking per unit spent twelve
+    # seconds of a take-over re-reading the same answer.
+    states = preflight.unit_states(
+        preflight.SHADOWED_UNITS + preflight.MASKED_UNITS + preflight.RESOLVER_UNITS
+    )
+
     masked = []
     shadowed = []
     for name in preflight.SHADOWED_UNITS:
-        if ours(name):
-            continue
-        states = preflight.unit_states([name])
-        if not states:
+        if ours(name) or name not in states:
             continue
         enabled, active = states[name]
         out.print(
@@ -380,19 +385,23 @@ def mask_existing(out) -> list[str]:
         )
         if enabled in ("enabled", "enabled-runtime"):
             shadowed.append(name)
-        systemd.ensure_service(name, running=False, enabled=False)
-        systemd.unmask(name)
+        systemd.ensure_service(name, running=False, enabled=False, reload=False)
+        systemd.unmask(name, reload=False)
     if shadowed:
         systemd.record_shadowed_units(shadowed)
 
     for name in preflight.MASKED_UNITS + preflight.RESOLVER_UNITS:
-        states = preflight.unit_states([name])
-        if not states or states[name][0] == "masked":
+        if name not in states or states[name][0] == "masked":
             continue
         enabled, active = states[name]
         out.print(f"  {name} ({enabled}/{active}) -> stopped, disabled, masked")
-        systemd.stop_disable_mask(name)
+        systemd.stop_disable_mask(name, reload=False)
         masked.append(name)
+
+    # The one reload the thirteen above deferred. Nothing has read the unit
+    # graph in between: cmrelay writes its own units afterwards and activate()
+    # reloads again before starting anything.
+    systemd.daemon_reload()
     return masked
 
 
@@ -636,7 +645,7 @@ def cmd_uninstall(args, out) -> int:
     out.section("Unmasking what --take-over masked")
     masked = systemd.read_disabled_units()
     for name in masked:
-        systemd.unmask(name)
+        systemd.unmask(name, reload=False)
         out.print(f"  unmasked {name}")
     if not masked:
         out.print("  nothing to unmask")
@@ -654,7 +663,7 @@ def cmd_uninstall(args, out) -> int:
     out.section("Re-enabling what --take-over disabled")
     shadowed = systemd.read_shadowed_units()
     for name in shadowed:
-        systemd.enable(name)
+        systemd.enable(name, reload=False)
         out.print(f"  enabled {name}")
     if not shadowed:
         out.print("  nothing to re-enable")
