@@ -16,7 +16,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # A superseded run is answering a question nobody is asking any more, and
+  # the nix build below spends a quarter of an hour on it.
+  cancel-in-progress: true
 
 jobs:
   # Everything except pytest. The shared workflow checks out without
@@ -30,6 +32,7 @@ jobs:
 
   tests:
     name: pytest
+    needs: py-checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -54,6 +57,7 @@ jobs:
 
   vendor:
     name: vendor/ matches vendor.lock
+    needs: py-checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -75,6 +79,9 @@ jobs:
 
   build:
     name: nix build
+    # Last, and only if everything cheap passed. Compiling the closure from
+    # source takes about a quarter of an hour; ruff takes eighteen seconds.
+    needs: [py-checks, tests, vendor]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
