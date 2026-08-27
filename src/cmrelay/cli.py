@@ -13,6 +13,13 @@ them from a wheel would fail on chatmaild before the CLI could explain
 itself.
 """
 
+# RHEL 9 and its rebuilds ship Python 3.9 as the system interpreter, and
+# a wheel-installed cmrelay only has to parse this far before it execs a
+# payload carrying its own 3.14. `X | None` in an annotation is 3.10+ at
+# runtime; deferring annotations costs nothing and keeps the pip path
+# open on the whole family.
+from __future__ import annotations
+
 import argparse
 import os
 import sys

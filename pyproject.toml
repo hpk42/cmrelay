@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cmrelay"
 description = "Single-file installer for a chatmail relay, built as a Nix closure"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 # No dependencies, deliberately. A pip-installed cmrelay reaches four of its
 # own modules -- cli, output, version and fetch -- and then execs the payload,
@@ -40,6 +40,13 @@ testpaths = ["tests"]
 
 [tool.ruff]
 extend-exclude = ["vendor", "cmdeploy-relay"]
+# requires-python is the wheel's floor, not this code's. The wheel only has
+# to parse far enough to exec a payload that carries its own 3.14, so it
+# declares 3.9 and the four modules on that path defer their annotations.
+# Everything else -- vendoring.py reads TOML with tomllib, which is 3.11+ --
+# runs inside the closure. Without this, ruff infers 3.9 from the metadata
+# and reclassifies stdlib modules as third-party.
+target-version = "py311"
 
 [tool.ruff.lint.per-file-ignores]
 # cli.py must import its verbs lazily: from a pip-installed wheel there is no

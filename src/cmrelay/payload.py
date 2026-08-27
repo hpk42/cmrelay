@@ -21,8 +21,14 @@ A wheel built straight from a source checkout has no payload, because only
 scripts/wheel-cmrelay.py puts one in. That wheel says so and stops.
 """
 
+# RHEL 9 and its rebuilds ship Python 3.9 as the system interpreter, and
+# a wheel-installed cmrelay only has to parse this far before it execs a
+# payload carrying its own 3.14. `X | None` in an annotation is 3.10+ at
+# runtime; deferring annotations costs nothing and keeps the pip path
+# open on the whole family.
+from __future__ import annotations
+
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -67,9 +73,6 @@ def run_from_wheel(args_list: list[str], out) -> int:
     """Handle a verb that needs the closure, from a CLI that has no closure."""
     if sys.platform != "linux":
         raise PayloadError(f"cmrelay installs relays on Linux, not {sys.platform}")
-    if not shutil.which("tar"):
-        raise PayloadError("cmrelay needs tar on the host to unpack its payload")
-
     payload = bundled_payload()
     if payload is None:
         raise PayloadError(

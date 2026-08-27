@@ -63,7 +63,7 @@ def metadata(version: str, readme: str) -> str:
         ("Version", version),
         ("Summary", "Single-file installer for a chatmail relay"),
         ("License", "MIT"),
-        ("Requires-Python", ">=3.11"),
+        ("Requires-Python", ">=3.9"),
         ("Project-URL", "Repository, https://github.com/chatmail/cmrelay"),
         ("Classifier", "License :: OSI Approved :: MIT License"),
         ("Classifier", "Operating System :: POSIX :: Linux"),

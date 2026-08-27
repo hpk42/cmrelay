@@ -130,8 +130,9 @@ binaries run unchanged, and uninstall is `rm /nix && rm -rf /opt/cmrelay`.
 ## Supported platforms
 
 systemd, a Linux kernel, x86_64 or aarch64, a POSIX shell,
-and a writable `/` so `/nix` can be created.
-The host's libc is irrelevant, because the closure carries its own.
+coreutils, and a writable `/` so `/nix` can be created.
+The host's libc is irrelevant, because the closure carries its own,
+and so is its `tar`: the payload brings one.
 
 The units use nothing newer than systemd 229,
 so no distribution still in support is below the floor:
@@ -155,12 +156,18 @@ The right NixOS story is a module consuming the same derivations.
     nix build .#closure        # just the store tree
     nix develop                # a shell with pytest, ruff, makeself, quilt
 
-Two layers of compression, and the split is deliberate:
-the outer makeself archive is uncompressed, because its stub would
-otherwise have to shell out to a decompressor the host may not have.
-A bare Debian 12 container carries only `tar` and `gzip`.
-The inner store tarball uses zstd, decompressed
-by a static zstd that travels inside the archive.
+The `.run` file is a shell header with three blobs after it --
+a static zstd, a static tar, and the zstd-compressed store --
+at byte offsets patched into the header at build time.
+It slices them out of itself with `tail -c` and `head -c`
+and streams the store straight through them, so the only host tools
+it needs are the ones in coreutils.
+That is why there is no makeself and no host `tar`:
+makeself unpacks with the host's tar before any cmrelay code runs,
+so a machine without it fails with `Extraction failed` and no way to say why.
+The bundled tar is libarchive built with one format and no codecs,
+which is 0.9 MiB rather than the 9.2 MiB it is when it can also
+do zip, 7z, xz, bzip2 and OpenSSL digests.
 
 
 ## Vendoring: relay stays the source of truth

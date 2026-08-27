@@ -21,6 +21,10 @@
         fetched = pkgs.callPackage ./nix/fetch/binaries.nix { inherit system; };
 
         crypt-r = pkgs.python3Packages.callPackage ./nix/packages/crypt-r.nix { };
+        # the payload's own extractor, so no host tar is needed
+        bsdtar-minimal = pkgs.callPackage ./nix/packages/bsdtar-minimal.nix {
+          libarchiveStatic = pkgs.pkgsStatic.libarchive;
+        };
         # postfix pulls ICU in for SMTPUTF8 and uses only its IDNA tables
         icu-idna = pkgs.callPackage ./nix/packages/icu-idna.nix { };
         # withLDAP pulls openldap and a second cyrus-sasl for `ldap:` lookup
@@ -89,7 +93,7 @@
         };
 
         payload = pkgs.callPackage ./nix/payload.nix {
-          inherit closure;
+          inherit closure bsdtar-minimal;
           cmrelaySrc = ./.;
           version = self.shortRev or self.dirtyShortRev or "dev";
         };
@@ -102,6 +106,7 @@
             wheel
             closure
             dovecot
+            bsdtar-minimal
             mtail-minimal
             opendkim-milter
             postfix
