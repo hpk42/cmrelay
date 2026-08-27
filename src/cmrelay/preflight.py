@@ -127,50 +127,26 @@ def systemd_available() -> bool:
     return Path("/run/systemd/system").is_dir() and shutil.which("systemctl")
 
 
-def template_of(name: str) -> str | None:
-    """`postfix@-.service` -> `postfix@.service`, the name that has a file.
-
-    An instantiated unit has no unit *file* of its own; only its template
-    does. `systemctl list-unit-files` therefore never lists one, so a
-    membership test against that listing answers "does not exist" for every
-    `foo@instance.service` -- and a detector that skips what does not exist
-    skips it in silence. Debian runs its postfix as `postfix@-.service`, so
-    this is the difference between taking a host over and leaving its MTA
-    running against the queue cmrelay is about to use.
-    """
-    stem, sep, rest = name.partition("@")
-    if not sep or rest.startswith("."):
-        return None
-    suffix = rest.partition(".")[2]
-    return f"{stem}@.{suffix}" if suffix else None
-
-
 def unit_states(names) -> dict[str, tuple[str, str]]:
     """Return name -> (enabled-state, active-state) for units that exist.
 
-    Ask for every name at once. Finding out which exist means enumerating the
-    host's unit files, which is one `systemctl list-unit-files` -- 942 ms on a
-    two-core VPS, against 20 ms for the is-enabled/is-active pair per name. A
-    caller looping over names and asking for one at a time pays that
-    enumeration once per unit and cannot see it happening.
+    Existence comes from is-enabled itself: for a unit systemd has it prints
+    the state on stdout; for one it does not, stdout is empty and the
+    complaint goes to stderr. Enumerating every unit file to answer the same
+    question cost 942 ms on a two-core VPS against 20 ms for the query, and
+    got instantiated units wrong -- postfix@-.service has no unit file of its
+    own, only its template does, so a listing of unit files could not see the
+    instance Debian actually runs its postfix as.
     """
     if not systemd_available():
         return {}
-    known = set()
-    listing = _run(["systemctl", "list-unit-files", "--no-legend", "--no-pager"])
-    for line in listing.splitlines():
-        parts = line.split()
-        if parts:
-            known.add(parts[0])
     states = {}
     for name in names:
-        if name not in known and template_of(name) not in known:
-            continue
-        # systemctl exits non-zero for disabled and inactive units, which is
-        # an answer rather than a failure.
         enabled = _run(["systemctl", "is-enabled", name], required=False).strip()
+        if not enabled:
+            continue
         active = _run(["systemctl", "is-active", name], required=False).strip()
-        states[name] = (enabled or "unknown", active or "unknown")
+        states[name] = (enabled, active or "unknown")
     return states
 
 

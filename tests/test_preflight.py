@@ -131,11 +131,14 @@ def test_unit_check_flags_an_enabled_distro_unit(tmp_path, monkeypatch):
     fake_tool(
         bindir,
         "systemctl",
+        # systemd prints the state on stdout for a unit it has, and nothing
+        # on stdout for one it does not -- which is the whole existence test.
         """
-case "$1" in
-  list-unit-files) echo "postfix.service enabled enabled" ;;
-  is-enabled) echo enabled ;;
-  is-active) echo active ;;
+case "$1 $2" in
+  "is-enabled postfix.service") echo enabled ;;
+  "is-active postfix.service") echo active ;;
+  "is-enabled "*) echo "Failed to get unit file state for $2." >&2; exit 1 ;;
+  "is-active "*) echo inactive ;;
 esac
 """,
     )
@@ -188,25 +191,6 @@ def test_another_resolver_on_53_still_refuses(tmp_path):
     report = preflight.check_ports([(["unbound"], 53)], ss_argv=[ss])
     assert not report.ok
     assert "BIND" in report.findings[0].detail
-
-
-def test_an_instantiated_unit_resolves_to_its_template():
-    """Debian runs its postfix as postfix@-.service, which has no unit file.
-
-    Without this the detector answers "does not exist" and skips it, leaving
-    the distribution's MTA running against the queue cmrelay is taking over.
-    """
-    assert preflight.template_of("postfix@-.service") == "postfix@.service"
-    assert preflight.template_of("getty@tty1.service") == "getty@.service"
-    assert preflight.template_of("postfix.service") is None
-    # A bare template is already the file name; it needs no translation.
-    assert preflight.template_of("postfix@.service") is None
-
-
-def test_the_masked_units_list_is_reachable_by_the_detector():
-    """Every name cmrelay means to mask must be one unit_states can find."""
-    for name in preflight.MASKED_UNITS:
-        assert "@" not in name or preflight.template_of(name), name
 
 
 def test_the_resolver_family_covers_more_than_the_service():
