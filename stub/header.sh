@@ -66,10 +66,36 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Root only. Everything cmrelay does -- writing /opt/cmrelay, creating users,
+# installing units -- needs it, and the alternative was a second staging path
+# for verbs that do not.
+if [ "$(id -u)" != 0 ]; then
+    fail "cmrelay must run as root"
+fi
+
 ready=.cmrelay-ready
 
-parent=${CMRELAY_STAGE_DIR:-/var/tmp}
-shared=$parent/cmrelay
+# Stage inside cmrelay's own tree. The store is renamed from staging into
+# /opt/cmrelay/nix/store, and a rename only stays a rename within one
+# filesystem: store.install() catches EXDEV and silently copies instead, which
+# is 2171 ms against 292 for a 232 MiB store. /var/tmp is usually the same
+# filesystem as /opt and sometimes is not, and nothing in the output said
+# which had happened. Under /opt/cmrelay it cannot be otherwise.
+#
+# This is still a staging tree, and install still refuses having written
+# nothing outside it -- /opt/cmrelay is cmrelay's own directory, not the
+# system's, and a refusal takes it back down to whatever was there before.
+#
+opt_existed=1
+[ -d /opt/cmrelay ] || opt_existed=
+
+if [ -n "${CMRELAY_STAGE_DIR:-}" ]; then
+    shared=$CMRELAY_STAGE_DIR/cmrelay
+    opt_existed=1
+else
+    mkdir -p /opt/cmrelay || fail "cannot create /opt/cmrelay"
+    shared=/opt/cmrelay/.staging
+fi
 
 hash=${CMRELAY_CLOSURE##*/}
 hash=${hash%%-*}
@@ -91,10 +117,19 @@ cleanup() {
     if [ -n "${CMRELAY_KEEP_STAGE:-}" ] || [ -z "$stage" ]; then
         return 0
     fi
-    if [ -n "$canonical" ] && [ -f "$stage/$ready" ]; then
+    # A whole tree is worth keeping so the next run skips the unpack -- but
+    # only on a host that already had /opt/cmrelay. When this run created it
+    # and then refused, leaving the tree behind would make "nothing was
+    # modified" false about the one directory the refusal itself created.
+    if [ -n "$canonical" ] && [ -f "$stage/$ready" ] && [ -n "$opt_existed" ]; then
         return 0
     fi
     discard "$stage"
+    # rmdir, not rm -rf: it succeeds only while the directory is still empty,
+    # so a run that got as far as installing keeps everything it installed.
+    if [ -z "$opt_existed" ] && [ ! -d /opt/cmrelay/nix/store ]; then
+        rmdir /opt/cmrelay/.staging /opt/cmrelay 2>/dev/null || true
+    fi
     return 0
 }
 trap cleanup EXIT INT TERM
@@ -134,9 +169,9 @@ else
         discard "$shared/$hash"
         scratch=$(mktemp -d "$shared/$hash.incoming.XXXXXXXX")
     else
-        scratch=$(mktemp -d "$parent/cmrelay-stage.XXXXXXXX")
+        scratch=$(mktemp -d "${TMPDIR:-/var/tmp}/cmrelay-stage.XXXXXXXX")
     fi
-    [ -n "$scratch" ] || fail "cannot create a staging directory under $parent"
+    [ -n "$scratch" ] || fail "cannot create a staging directory under $shared"
     stage=$scratch
 
     # The tools live apart from the staging tree, because that tree is
@@ -238,6 +273,20 @@ export PYTHONPATH
 PYTHONNOUSERSITE=1
 export PYTHONNOUSERSITE
 
-# The CLI installs the store out of $stage and re-execs itself from the
-# installed copy, so this process must not hold the staging tree open.
-exec "$ld" --library-path "$libs" "$python" -m cmrelay "$@"
+# Deliberately not exec: this shell's EXIT trap is what removes the staging
+# tree, and exec would replace the shell before it could run. The CLI re-execs
+# itself from the installed store once that store is in place, which is a
+# separate handover and unaffected.
+#
+# The explicit exit is load-bearing rather than tidy. Everything past this
+# line in the file is the zstd binary, and a shell that runs off the end of
+# its last command reads straight on into it:
+#
+#     /tmp/cmrelay: 284: Syntax error: "(" unexpected
+#
+# `set -e` hid that for a long time -- a run that failed exited on the failing
+# command and never got there, so only successful runs reported the error, and
+# reported it after doing all their work correctly.
+status=0
+"$ld" --library-path "$libs" "$python" -m cmrelay "$@" || status=$?
+exit "$status"

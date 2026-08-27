@@ -94,6 +94,7 @@ Everything holding live *state* stays where it already is.
 
 ```
 /opt/cmrelay/
+├── .staging/               # the closure, unpacked, before it is installed
 ├── chatmail.ini            # source of truth, written once, never overwritten
 ├── config/                 # rendered config, one directory per component
 ├── systemd/                # an index: one symlink per unit cmrelay owns
@@ -130,7 +131,7 @@ binaries run unchanged, and uninstall is `rm /nix && rm -rf /opt/cmrelay`.
 ## Supported platforms
 
 systemd, a Linux kernel, x86_64 or aarch64, a POSIX shell,
-coreutils, and a writable `/` so `/nix` can be created.
+coreutils, root, and a writable `/` so `/nix` can be created.
 The host's libc is irrelevant, because the closure carries its own,
 and so is its `tar`: the payload brings one.
 
