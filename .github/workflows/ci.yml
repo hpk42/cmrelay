@@ -109,11 +109,23 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Build the closure
-        run: nix build --print-build-logs '.?submodules=1#closure'
-
-      - name: Build the single file
-        run: nix build --print-build-logs '.?submodules=1#payload'
+      # Retried because the closure contains fixed-output derivations, which
+      # fetch from the network on every cold run: proxy.golang.org cut one of
+      # acmetool's module downloads short with an HTTP/2 INTERNAL_ERROR and
+      # took a sixteen-minute build down with it. Nix keeps whatever it
+      # already built, so a second attempt only redoes what failed. Both
+      # targets share the loop because #payload builds #closure anyway.
+      - name: Build the closure and the single file
+        run: |
+          for attempt in 1 2 3; do
+            if nix build --print-build-logs '.?submodules=1#closure' &&
+               nix build --print-build-logs '.?submodules=1#payload'; then
+              exit 0
+            fi
+            echo "::warning::nix build attempt $attempt failed, retrying"
+            sleep 20
+          done
+          exit 1
 
       # Copied out of the store: result/ is a symlink into /nix/store, and the
       # name carries the commit so a downloaded file says which one it is.
