@@ -714,11 +714,21 @@ class Deployment:
         # defaults to /etc/postfix and is not where cmrelay keeps them.
         self.write_postfix_store_settings(conf_dir)
 
-        tls_map = conf_dir / "smtp_tls_policy_map"
-        if self.put_file("postfix", "config/postfix/smtp_tls_policy_map", tls_map):
-            self.shell(
-                self.bin("postfix", "postmap"), "-c", str(conf_dir), str(tls_map)
-            )
+        # No postmap. relay declares this one as
+        #
+        #     smtp_tls_policy_maps = regexp:.../smtp_tls_policy_map
+        #
+        # and postfix reads a regexp table as text at lookup time; only the
+        # indexed types -- hash, btree, lmdb, cdb -- are compiled. Running
+        # postmap on it built a .db that nothing ever opened.
+        # tests/test_render.py asserts the declaration is still regexp, so a
+        # change to an indexed type fails there rather than silently needing
+        # this back.
+        self.put_file(
+            "postfix",
+            "config/postfix/smtp_tls_policy_map",
+            conf_dir / "smtp_tls_policy_map",
+        )
 
         self.ensure_aliases()
 

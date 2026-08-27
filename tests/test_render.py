@@ -222,3 +222,20 @@ def test_a_missing_drop_in_directory_is_not_an_anchor(tmp_path):
     from cmrelay.deploy import Deployment
 
     assert Deployment.anchor_already_configured(tmp_path / "absent") is False
+
+
+def test_the_tls_policy_map_is_a_regexp_table():
+    """cmrelay does not compile it, because postfix reads it as text.
+
+    Only the indexed table types are compiled. If this declaration ever
+    becomes hash: or lmdb:, postfix would look up an index nobody built, and
+    the postmap call removed for costing two seconds of the install would
+    have to come back.
+    """
+    template = (REPO / "vendor/config/postfix/main.cf.j2").read_text()
+    line = next(
+        ln for ln in template.splitlines() if ln.startswith("smtp_tls_policy_maps")
+    )
+    assert "regexp:" in line, line
+    for indexed in ("hash:", "btree:", "lmdb:", "cdb:"):
+        assert indexed not in line, line
