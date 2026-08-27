@@ -21,20 +21,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Everything except pytest. The shared workflow checks out without
-  # submodules, and this repo's test dependencies include chatmaild from the
-  # pinned relay submodule, so `uv pip install --group test` cannot resolve
-  # there. The tests job below does that part with the submodule in place.
-  py-checks:
-    uses: chatmail/workflows/.github/workflows/py-checks.yml@main
-    with:
-      pytest: false
-
-  tests:
-    name: pytest
-    needs: py-checks
+  # These steps are chatmail/workflows' py-checks, inlined. That workflow
+  # checks out without submodules, and this repo takes chatmaild from the
+  # pinned relay submodule -- so its pytest step cannot resolve the test
+  # dependencies, and using it meant disabling that step and repeating it in
+  # a second job anyway. Inlined, one job does the lot with the submodule
+  # present. The cost is that RUFF_VERSION is pinned here rather than
+  # centrally; the saving is a job, a workflow input, and a dependency on a
+  # repository this one cannot change.
+  checks:
+    name: ruff, build and tests
     runs-on: ubuntu-latest
+    env:
+      RUFF_VERSION: "0.16.0"
     steps:
+      # fetch-depth: 0 so setuptools-git-versioning derives the version from
+      # tags rather than falling back to 0.0.x.
       - uses: actions/checkout@v7
         with:
           submodules: true
@@ -45,7 +47,20 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Same steps py-checks would run, with chatmaild resolvable.
+      - name: Ruff lint
+        run: uvx ruff@$RUFF_VERSION check .
+
+      - name: Ruff format check
+        run: uvx ruff@$RUFF_VERSION format --check .
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Check package metadata
+        run: uvx twine check dist/*
+
+      # Options come from [tool.pytest.ini_options] and dependencies from
+      # [dependency-groups] test, both in pyproject.toml.
       - name: Install project and test dependencies
         run: |
           uv venv
@@ -57,7 +72,7 @@ jobs:
 
   vendor:
     name: vendor/ matches vendor.lock
-    needs: py-checks
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -81,7 +96,7 @@ jobs:
     name: nix build
     # Last, and only if everything cheap passed. Compiling the closure from
     # source takes about a quarter of an hour; ruff takes eighteen seconds.
-    needs: [py-checks, tests, vendor]
+    needs: [checks, vendor]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -100,5 +115,17 @@ jobs:
       - name: Build the single file
         run: nix build --print-build-logs '.?submodules=1#payload'
 
-      - name: Report the payload size
-        run: ls -lh result/bin/
+      # Copied out of the store: result/ is a symlink into /nix/store, and the
+      # name carries the commit so a downloaded file says which one it is.
+      - name: Name the payload after the commit
+        run: |
+          cp result/bin/cmrelay-*.run "cmrelay-${GITHUB_SHA:0:7}-x86_64-linux.run"
+          ls -lh cmrelay-*.run
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cmrelay-payload
+          path: cmrelay-*.run
+          if-no-files-found: error
+          # It is 61 MiB a push; keep a fortnight rather than the default 90.
+          retention-days: 14
