@@ -19,12 +19,38 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Everything except pytest. The shared workflow checks out without
+  # submodules, and this repo's test dependencies include chatmaild from the
+  # pinned relay submodule, so `uv pip install --group test` cannot resolve
+  # there. The tests job below does that part with the submodule in place.
   py-checks:
     uses: chatmail/workflows/.github/workflows/py-checks.yml@main
     with:
-      # The test dependency group installs chatmaild from the pinned relay
-      # submodule, which is where every other consumer of it gets it too.
-      submodules: true
+      pytest: false
+
+  tests:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          python-version: "3.11"
+
+      # Same steps py-checks would run, with chatmaild resolvable.
+      - name: Install project and test dependencies
+        run: |
+          uv venv
+          uv pip install -e . pytest
+          uv pip install --group test
+
+      - name: Run pytest
+        run: uv run --no-sync pytest
 
   vendor:
     name: vendor/ matches vendor.lock
