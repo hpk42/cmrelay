@@ -98,6 +98,10 @@ jobs:
     # source takes about a quarter of an hour; ruff takes eighteen seconds.
     needs: [checks, vendor]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # cache-nix-action drops superseded caches through the Actions API.
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -106,8 +110,33 @@ jobs:
 
       - uses: cachix/install-nix-action@v31
         with:
+          # keep-outputs and keep-env-derivations stop the pre-save garbage
+          # collection from throwing away the build-time inputs, which are
+          # exactly what a later run needs in order not to compile again.
           extra_nix_config: |
             experimental-features = nix-command flakes
+            keep-env-derivations = true
+            keep-outputs = true
+
+      # Nix rebuilds a derivation only when its output path is missing, so a
+      # restored store turns the quarter-hour compile into an evaluation. It
+      # also takes the network off the common path: the Go module fetches that
+      # flake are reached only when the cache misses.
+      #
+      # The key covers what determines the closure. A source-only commit keeps
+      # it, which is deliberate -- that run hits the cache, rebuilds the two
+      # cheap derivations that changed, and saves nothing.
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', '**/*.nix', 'vendor.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 4G
+          # Keep one cache rather than accumulating a version per closure
+          # change; the repository shares a 10 GB budget across all of them.
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
 
       # Retried because the closure contains fixed-output derivations, which
       # fetch from the network on every cold run: proxy.golang.org cut one of
@@ -126,6 +155,9 @@ jobs:
             sleep 20
           done
           exit 1
+
+      - name: Store size, against the 4G cap above
+        run: du -sh /nix/store
 
       # Copied out of the store: result/ is a symlink into /nix/store, and the
       # name carries the commit so a downloaded file says which one it is.
