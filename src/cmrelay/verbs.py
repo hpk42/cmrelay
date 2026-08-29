@@ -1,28 +1,12 @@
 """install, status and uninstall.
 
-The four verbs differ mainly in what they are allowed to touch.
+The verbs differ mainly in what they are allowed to touch. `install` bails
+out on any conflict having modified nothing, except the resolver: every stock
+Debian and Fedora has systemd-resolved on port 53, so refusing over it would
+make `install` useless on exactly the hosts it targets.
 
-`install` is for fresh hosts. It runs the preflight and bails out on any
-conflicting unit or occupied port having modified nothing at all, because a
-half-installed mail server is worse than none.
-
-The one thing it does take over is the resolver: every stock Debian and
-Fedora has systemd-resolved on port 53, cmdeploy stops and masks it as an
-ordinary part of every deploy, and refusing over it would make `install`
-useless on exactly the hosts it targets. That is recorded for uninstall to
-reverse. Any other holder of port 53 still refuses.
-
-`install --take-over` is the only way to touch existing services, and the only
-one that may act on a conflict. When it does it stops, disables *and masks*:
-disabling alone loses to the next apt or dnf upgrade re-enabling the unit.
-
-`status` re-runs the detector and modifies nothing, so a conflict introduced
-later -- a distribution upgrade re-enabling postfix -- becomes visible
-instead of silently fighting for port 25.
-
-`uninstall` reverses exactly what --take-over did. The unmask is load-bearing
-part: `systemctl enable` fails on a masked unit, so a `cmdeploy run` against
-a host still carrying cmrelay's masks would not come back up.
+`install --take-over` is the only verb that may act on a conflict, `status`
+modifies nothing, and `uninstall` reverses what --take-over did.
 """
 
 import json
@@ -33,10 +17,8 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-# chatmaild is a hard dependency and deliberately not a PyPI one: it is
-# relay's code, built from the vendored commit into the same interpreter as
-# the rest of the closure. Importing it here is what makes cmrelay render
-# relay's templates with relay's own Config rather than a copy of it.
+# Deliberately not a PyPI dependency: relay's own code, built from the
+# vendored commit into the same interpreter as the rest of the closure.
 from chatmaild.config import read_config as _read_config
 from chatmaild.config import write_initial_config as _write_initial_config
 
@@ -65,7 +47,7 @@ def load_port_table(bundle) -> list:
     return data["port_table"]
 
 
-def read_config(bundle, inipath: Path = paths.INI):
+def read_config(inipath: Path = paths.INI):
     """relay's own Config, read by relay's own code."""
     return _read_config(inipath)
 
@@ -76,15 +58,9 @@ def write_initial_config(mail_domain: str, overrides: dict | None = None):
     _write_initial_config(paths.INI, mail_domain, overrides or {})
 
 
-# ----------------------------------------------------------------------
-# install
-# ----------------------------------------------------------------------
-
-
 def cmd_install(args, out) -> int:
-    """One entry point, because an operator should not have to know in advance
-    which kind of host they are on. The preflight already knows, so the
-    refusal names the flag rather than a second verb."""
+    """One entry point: the preflight already knows which kind of host this
+    is, so the refusal names the flag rather than a second verb."""
     require_root()
     bundle = Bundle.discover()
     if args.take_over:
@@ -146,14 +122,9 @@ def install_fresh(args, bundle, out) -> int:
 
 
 def apply_configuration(bundle, args, out, config=None):
-    """Everything from chatmail.ini onwards, which both paths share.
-
-    They differ only in what they may do to a host *before* this point: a
-    plain install refuses to touch anything, --take-over stops and masks what
-    is in the way. From here they are the same run.
-    """
+    """Everything from chatmail.ini onwards, which both install paths share."""
     if config is None:
-        config = read_config(bundle)
+        config = read_config()
     deployment = Deployment(bundle, config, out, disable_mail=args.disable_mail)
     deployment.configure()
     deployment.install_daemon_units()
@@ -177,22 +148,16 @@ def parse_overrides(pairs) -> dict:
 def install_store(bundle, out):
     """Move the closure into place, then continue from the installed copy.
 
-    Installing the store empties the staging tree this process is running
-    out of, so everything it has not imported yet would vanish underneath
-    it -- chatmaild's own data files first. Re-execing the installed CLI is
-    the boundary: from here on, every path resolves to what the binaries
-    were built for.
+    Installing empties the staging tree this process runs out of, so anything
+    not yet imported would vanish underneath it. The re-exec is the boundary.
     """
     if bundle.prefix is None:
         return
     out.section("Installing the closure")
     stage_store = bundle.prefix / "nix/store"
     paths.ROOT.mkdir(parents=True, exist_ok=True)
-    # Before the first rename rather than after the last. install() moves
-    # store paths out of the staging tree, so a run interrupted halfway
-    # through leaves a tree that is missing some of them; dropping the marker
-    # first is what stops the stub offering that husk to the next run as
-    # though it were whole.
+    # Before the first rename, so an interrupted run leaves no marker on a
+    # staging tree the stub would otherwise offer to the next run as whole.
     (bundle.prefix / READY_MARKER).unlink(missing_ok=True)
     moved = store.install(stage_store)
     store.link_nix()
@@ -223,11 +188,8 @@ def exec_installed(bundle, out):
 def report_dns(config, bundle, out):
     """The records the operator still has to publish.
 
-    An install cannot finish the job on its own: the relay needs DNS pointing
-    at it before acmetool can complete a challenge, and mail sent from it is
-    worthless without SPF, DKIM and DMARC. `cmdeploy dns` generates a full
-    zone file from a live host; this is the short version, printed where the
-    operator will see it.
+    acmetool cannot complete a challenge until DNS points here, and mail is
+    worthless without SPF, DKIM and DMARC.
     """
     domain = config.mail_domain
     out.print(f"\nPublish these records for {domain}:\n")
@@ -264,11 +226,6 @@ def link_cli(bundle, out):
     out.print(f"  {paths.CLI} -> {target}")
 
 
-# ----------------------------------------------------------------------
-# install --take-over
-# ----------------------------------------------------------------------
-
-
 def install_over_existing(args, bundle, out) -> int:
     # install_store() ends in a re-exec of this same verb from the installed
     # closure. Without this the second run would prompt again and, having
@@ -295,7 +252,7 @@ def install_over_existing(args, bundle, out) -> int:
         out.section("Stopping the existing stack")
         masked = mask_existing(out)
         if masked:
-            systemd.record_disabled_units(masked)
+            systemd.record_units(paths.DISABLED_UNITS, masked)
     else:
         findings = describe_existing(bundle, out)
 
@@ -312,7 +269,7 @@ def install_over_existing(args, bundle, out) -> int:
 
     out.section("Configuration")
     adopt_config(out, findings)
-    config = read_config(bundle)
+    config = read_config()
     users.verify_mailbox_ownership(config.mailboxes_dir)
 
     apply_configuration(bundle, args, out, config=config)
@@ -344,12 +301,8 @@ def describe_existing(bundle, out) -> dict:
                 " its configuration may not match any relay commit"
             )
         if commit and commit != bundle.relay_commit:
-            # Reported, not warned about. Two commit hashes say which is
-            # newer only against a shared history, and there is no relay
-            # checkout here to ask -- the host's marker may name a branch,
-            # a fork or a tree cmrelay has never seen. Differing is also the
-            # normal case, since a cmrelay release pins one relay commit and
-            # a deployed host tracks whatever it was deployed from.
+            # Reported, not warned about: two hashes say which is newer only
+            # against a shared history, and differing is the normal case.
             out.print(f"  cmrelay vendored relay {bundle.relay_commit[:12]}")
     else:
         findings["host_relay_commit"] = None
@@ -361,15 +314,11 @@ def describe_existing(bundle, out) -> dict:
 def mask_existing(out) -> list[str]:
     """Take the existing stack out of the way. Returns what was masked.
 
-    Two different treatments, because masking a name cmrelay wants to use
-    would make that name unusable: `systemctl mask` writes
-    /etc/systemd/system/<name> -> /dev/null, which is the exact path
-    cmrelay's own unit symlink needs.
+    Two treatments: see preflight.SHADOWED_UNITS for why the names cmrelay
+    reuses are shadowed rather than masked.
     """
-    # One call, not thirteen. unit_states enumerates every unit file on the
-    # host to learn which of these exist, and `systemctl list-unit-files`
-    # costs 942 ms on a two-core VPS -- so asking per unit spent twelve
-    # seconds of a take-over re-reading the same answer.
+    # One call, not thirteen: asking per unit spent twelve seconds of a
+    # take-over re-reading the same answer.
     states = preflight.unit_states(
         preflight.SHADOWED_UNITS + preflight.MASKED_UNITS + preflight.RESOLVER_UNITS
     )
@@ -388,7 +337,7 @@ def mask_existing(out) -> list[str]:
         systemd.ensure_service(name, running=False, enabled=False, reload=False)
         systemd.unmask(name, reload=False)
     if shadowed:
-        systemd.record_shadowed_units(shadowed)
+        systemd.record_units(paths.SHADOWED_UNITS_STATE, shadowed)
 
     for name in preflight.MASKED_UNITS + preflight.RESOLVER_UNITS:
         if name not in states or states[name][0] == "masked":
@@ -398,9 +347,7 @@ def mask_existing(out) -> list[str]:
         systemd.stop_disable_mask(name, reload=False)
         masked.append(name)
 
-    # The one reload the thirteen above deferred. Nothing has read the unit
-    # graph in between: cmrelay writes its own units afterwards and activate()
-    # reloads again before starting anything.
+    # The one reload the units above deferred.
     systemd.daemon_reload()
     return masked
 
@@ -462,15 +409,10 @@ def verify(bundle, config, out):
         out.ok("  DKIM key present, TLS material present, services running")
 
 
-# ----------------------------------------------------------------------
-# status
-# ----------------------------------------------------------------------
-
-
 def cmd_status(args, out) -> int:
     bundle = Bundle.discover()
 
-    out.section(f"cmrelay {version_line(bundle)}")
+    out.section(f"cmrelay {__version__}")
     out.print(f"  relay commit   {bundle.relay_commit}")
     out.print(f"  closure        {bundle.closure}")
     out.print(f"  config         {paths.INI}")
@@ -478,20 +420,15 @@ def cmd_status(args, out) -> int:
     if not paths.INI.is_file():
         out.warn(f"{paths.INI} does not exist; this host is not installed")
         out.print("  `cmrelay install --mail-domain <domain>` installs one")
-        # Everything below reports on an installation, and there is none. The
-        # conflict check especially: on a host cmrelay has never touched it
-        # lists the distribution's own services and advises masking them,
-        # which is advice for an install nobody asked for. `install` already
-        # refuses and changes nothing when something is in the way, so the
-        # question "would it install here" is answered by running it.
-        #
-        # What is still worth printing is anything upgrade masked. An upgrade
-        # that stopped before writing the ini leaves masked units and no other
-        # record of them, and that is exactly when the list is needed.
+        # Everything below reports on an installation, and there is none;
+        # the conflict check would just advise masking the distribution's own
+        # services. What masked units remain is still worth printing, because
+        # an upgrade that stopped before writing the ini leaves no other
+        # record of them.
         report_masked(out)
         return 1
 
-    config = read_config(bundle)
+    config = read_config()
     out.print(f"  mail domain    {config.mail_domain}")
     out.print(f"  tls mode       {config.tls_cert_mode}")
     out.print(f"  mailboxes      {config.mailboxes_dir}")
@@ -503,12 +440,8 @@ def cmd_status(args, out) -> int:
     out.section("Units")
     report_units(out)
 
-    # Not "Preflight". The detector is the one install uses, but the question
-    # it answers here is different: nothing is about to take off, so this is
-    # asking whether something has appeared since. A distribution package
-    # installed later, or a distro upgrade re-enabling systemd-resolved, does
-    # not disturb a running relay -- it collides at the next reboot, which is
-    # the worst moment to find out.
+    # Not "Preflight": the same detector, but asking whether something has
+    # appeared since. It collides at the next reboot, not today.
     out.section("Conflicts")
     report = run_preflight(bundle, out, config=config)
     if report.ok:
@@ -523,19 +456,11 @@ def cmd_status(args, out) -> int:
 def report_masked(out) -> bool:
     """What cmrelay masked, and whether it has stayed that way.
 
-    Checked rather than listed, because nothing else here would notice one
-    coming back. These are the units cmrelay takes over instead of refusing
-    on -- systemd-resolved and the other resolver managers -- so they are
-    deliberately absent from CONFLICTING_UNITS: an install that refused
-    merely because systemd-resolved was running could never proceed on a
-    stock Debian. The cost of that choice is that the conflict detector is
-    blind to them afterwards, and this is where it is paid back.
-
-    A resolver that has been re-enabled disturbs nothing today. It takes
-    /etc/resolv.conf at the next boot, and a relay that cannot resolve
-    anything is a relay that cannot deliver mail.
+    The resolver units are absent from CONFLICTING_UNITS, because refusing
+    over systemd-resolved would never proceed on a stock Debian. The detector
+    is blind to them afterwards, and this is where that is paid back.
     """
-    masked = systemd.read_disabled_units()
+    masked = systemd.read_units(paths.DISABLED_UNITS)
     if not masked:
         return True
     out.section("Masked by cmrelay")
@@ -576,9 +501,8 @@ def report_units(out):
 def healthy(name: str, enabled: str, active: str) -> bool:
     """Whether a unit being in this state is what cmrelay intended.
 
-    Not everything is meant to be running. The expire and fsreport services
-    are started by their timers, so `static`/`inactive` is the correct state
-    for them and flagging it would train the reader to ignore the report.
+    Timer-driven services are correctly `static`/`inactive`, and flagging
+    them would train the reader to ignore the report.
     """
     if active == "active":
         return True
@@ -591,8 +515,8 @@ def run_preflight(bundle, out, config=None, mail_domain=None):
     """Resolve relay's port table against this host's config, then look."""
     table = load_port_table(bundle)
     if config is None:
-        # Before the ini exists, resolve config-dependent ports against
-        # relay's own defaults rather than skipping those entries.
+        # Before the ini exists, resolve against relay's defaults rather
+        # than skipping the config-dependent entries.
         config = default_config(mail_domain or "example.org")
     if isinstance(config, dict):
         config = SimpleNamespace(**config)
@@ -608,14 +532,10 @@ def default_config(mail_domain: str):
         return _read_config(path)
 
 
-def version_line(bundle) -> str:
-    return __version__
-
-
 def cmd_version(args, out) -> int:
     """The runtime face of vendor.lock, and what a bug report should paste."""
     bundle = Bundle.discover()
-    out.print(f"cmrelay {version_line(bundle)}")
+    out.print(f"cmrelay {__version__}")
     out.print(f"relay {bundle.relay_commit}")
     lock = bundle.lock
     if lock.get("patches"):
@@ -643,25 +563,20 @@ def cmd_uninstall(args, out) -> int:
     stop_our_units(out)
 
     out.section("Unmasking what --take-over masked")
-    masked = systemd.read_disabled_units()
+    masked = systemd.read_units(paths.DISABLED_UNITS)
     for name in masked:
         systemd.unmask(name, reload=False)
         out.print(f"  unmasked {name}")
     if not masked:
         out.print("  nothing to unmask")
 
-    # Enabled, not started: `cmdeploy run` starts what it wants, and starting
-    # a stack here would race the one being torn down. Enabling is not
-    # cosmetic -- relay's unbound deployer runs
-    #
-    #     systemctl reset-failed unbound.service
-    #
-    # through pyinfra's server.shell, which fails the host on a non-zero
-    # exit, and systemd answers "Unit unbound.service not loaded" for a unit
-    # that is disabled. So a host left disabled cannot be rolled back at all:
-    # `cmdeploy run` aborts before it reaches its own enable step.
+    # Enabled, not started: starting here would race the stack being torn
+    # down. Enabling is not cosmetic, though -- relay's unbound deployer runs
+    # `systemctl reset-failed unbound.service` through pyinfra's server.shell,
+    # and systemd answers "not loaded" for a disabled unit, failing the host
+    # before `cmdeploy run` reaches its own enable step.
     out.section("Re-enabling what --take-over disabled")
-    shadowed = systemd.read_shadowed_units()
+    shadowed = systemd.read_units(paths.SHADOWED_UNITS_STATE)
     for name in shadowed:
         systemd.enable(name, reload=False)
         out.print(f"  enabled {name}")
@@ -733,9 +648,7 @@ def remove_profile_script(out):
 def is_ours(link: Path) -> bool:
     """Whether cmrelay put this in /usr/local/bin, or something else did.
 
-    Removing by name alone would delete whatever had since taken the name.
-    Both shapes cmrelay writes are recognisable: a symlink into the store,
-    and a wrapper carrying the line it generates.
+    Removing by name alone would delete whatever had since taken it.
     """
     if link.is_symlink():
         return str(link.readlink()).startswith(("/nix/store/", str(paths.ROOT)))
@@ -749,21 +662,17 @@ def is_ours(link: Path) -> bool:
 
 def diff_configs(out):
     """A courtesy: say what a rollback would lose."""
-    ours, theirs = paths.INI, paths.CMDEPLOY_INI
-    if not (ours.is_file() and theirs.is_file()):
+    mine, theirs = paths.INI, paths.CMDEPLOY_INI
+    if not (mine.is_file() and theirs.is_file()):
         return
-    if ours.read_bytes() == theirs.read_bytes():
+    if mine.read_bytes() == theirs.read_bytes():
         return
     out.warn(
-        f"{ours} differs from {theirs}."
+        f"{mine} differs from {theirs}."
         " `cmdeploy run` regenerates its own ini from its checkout, so"
         " configuration edits made under cmrelay will not survive a rollback."
     )
 
-
-# ----------------------------------------------------------------------
-# dispatch
-# ----------------------------------------------------------------------
 
 VERBS = {
     "install": cmd_install,

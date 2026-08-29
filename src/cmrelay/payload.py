@@ -1,39 +1,21 @@
 """Where a pip-installed cmrelay finds its payload: inside itself.
 
-A wheel is a convenient way to *reach* cmrelay and a useless way to *be* it.
-The relay is a Nix closure, and the installer has to run on the interpreter
-from inside it rather than whatever pip installed the CLI into. So a
-pip-installed cmrelay does one thing: it execs the payload beside it, and
-everything proceeds exactly as if the operator had copied the .run file
-across themselves, which is the only path that is actually tested.
-
-    pip install cmrelay
-    cmrelay install --mail-domain relay.example.org
-
-Every published wheel is per-architecture and carries its own payload, so the
-second line reaches nothing. There is deliberately no wheel that downloads
-one, and therefore no code here that could: cmrelay never makes a network
-request, on any path, and an installer that never fetches has nothing to
-intercept. `pip` is the one step that talks to the internet, and after it a
-firewalled or air-gapped host is fully served.
-
-A wheel built straight from a source checkout has no payload, because only
-scripts/wheel-cmrelay.py puts one in. That wheel says so and stops.
+The installer has to run on the interpreter from inside the closure rather
+than whatever pip installed the CLI into, so a pip-installed cmrelay execs
+the payload beside it and proceeds as if the operator had copied the .run
+file across themselves. Every published wheel is per-architecture and carries
+its own payload, so nothing here ever makes a network request.
 """
 
-# RHEL 9 and its rebuilds ship Python 3.9 as the system interpreter, and
-# a wheel-installed cmrelay only has to parse this far before it execs a
-# payload carrying its own 3.14. `X | None` in an annotation is 3.10+ at
-# runtime; deferring annotations costs nothing and keeps the pip path
-# open on the whole family.
+# Deferred so `X | None` parses on the 3.9 that RHEL 9 ships: a wheel-installed
+# cmrelay parses this far before exec'ing a payload carrying its own 3.14.
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
 
-# Written here by scripts/wheel-cmrelay.py. Its absence means this is a
-# development build rather than a release.
+# Written here by scripts/wheel-cmrelay.py; absent in a development build.
 BUNDLED = Path(__file__).parent / "_payload" / "cmrelay.run"
 
 
@@ -42,7 +24,6 @@ class PayloadError(Exception):
 
 
 def bundled_payload() -> Path | None:
-    """The payload inside this wheel, if this wheel has one."""
     return BUNDLED if BUNDLED.is_file() else None
 
 
@@ -53,10 +34,7 @@ def exec_payload(payload: Path, argv: list[str]) -> int:
     several of the target distributions while the closure is ~250 MiB open.
     """
     if not os.access(payload, os.X_OK):
-        # The wheel records mode 755, but an installer that flattens modes --
-        # or an unzip into a noexec-adjacent tree -- would leave it unrunnable,
-        # and `Permission denied` from execve does not say which of the two
-        # went wrong.
+        # execve's `Permission denied` would not say the mode was flattened.
         try:
             payload.chmod(payload.stat().st_mode | 0o111)
         except OSError as exc:
@@ -70,7 +48,6 @@ def exec_payload(payload: Path, argv: list[str]) -> int:
 
 
 def run_from_wheel(args_list: list[str], out) -> int:
-    """Handle a verb that needs the closure, from a CLI that has no closure."""
     if sys.platform != "linux":
         raise PayloadError(f"cmrelay installs relays on Linux, not {sys.platform}")
     payload = bundled_payload()

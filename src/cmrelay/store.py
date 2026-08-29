@@ -1,19 +1,6 @@
 """Move the closure into place, and make /nix resolve to it.
 
-Store paths are baked into the binaries: an executable names its ELF
-interpreter as an absolute /nix/store/... path and finds its libraries by
-absolute RPATH. Relocating the store directory is not a way around that,
-because the store directory is an input to every derivation hash, so building
-for /opt/cmrelay/nix/store yields entirely different hashes that
-cache.nixos.org holds none of. That turns a download into building glibc,
-gcc, postfix, dovecot and python from source.
-
-So keep the paths and move the bytes: /nix is a symlink to /opt/cmrelay/nix.
-The kernel resolves the interpreter through it and ld.so resolves RPATH
-through it, so binaries built for /nix/store/... run unchanged while
-everything cmrelay writes lives under /opt/cmrelay. Exactly one thing sits
-outside that tree, the symlink itself, and uninstall becomes `rm /nix`
-followed by `rm -rf /opt/cmrelay`.
+See cmrelay.paths for why the store keeps its paths and only the bytes move.
 """
 
 import os
@@ -44,8 +31,7 @@ def install(stage_store: Path, target: Path = paths.STORE) -> int:
     for entry in sorted(stage_store.iterdir()):
         dest = target / entry.name
         if dest.exists():
-            # Store paths are content-addressed, so an existing one is the
-            # same bytes. Re-installing over a previous cmrelay is normal.
+            # Content-addressed, so an existing path is the same bytes.
             continue
         try:
             os.rename(entry, dest)
@@ -77,27 +63,23 @@ def unlink_nix(root: Path = paths.NIX_ROOT, target: Path = paths.NIX) -> bool:
     return False
 
 
-def selinux_enforcing() -> bool:
-    if not shutil.which("getenforce"):
-        return False
-    try:
-        result = subprocess.run(
-            ["getenforce"], capture_output=True, text=True, check=False
-        )
-    except OSError:
-        return False
-    return result.stdout.strip() == "Enforcing"
-
-
 def label_for_selinux(target: Path = paths.NIX) -> str | None:
     """Label the store so systemd will execute out of it.
 
-    Binaries unpacked into an unlabelled directory are exactly what the
-    default RHEL-family policy exists to stop. Returns a message when
-    labelling was attempted, so the caller can report it rather than have it
-    happen invisibly.
+    Binaries unpacked into an unlabelled directory are what the default
+    RHEL-family policy exists to stop. Returns a message when labelling was
+    attempted, so the caller can report it rather than have it happen
+    invisibly.
     """
-    if not selinux_enforcing():
+    if not shutil.which("getenforce"):
+        return None
+    try:
+        status = subprocess.run(
+            ["getenforce"], capture_output=True, text=True, check=False
+        )
+    except OSError:
+        return None
+    if status.stdout.strip() != "Enforcing":
         return None
     chcon = shutil.which("chcon")
     if not chcon:

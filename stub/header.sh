@@ -1,38 +1,21 @@
 #!/bin/sh
 # The whole of cmrelay that is not Python: a shell header with a store
-# archive, a zstd and a tar bolted onto the end of it.
+# archive, a zstd and a tar bolted onto the end of it. A Python CLI needs an
+# interpreter and the interpreter is inside the payload; resolving that
+# circularity is all this script does.
 #
-# The premise is a single file copied to a fresh host, but a Python CLI needs
-# an interpreter, and the interpreter is inside the payload. That is circular,
-# and resolving it is all this script does.
+# Extraction goes to staging first and only a passing preflight touches
+# /nix/store or /opt/cmrelay, which is what keeps "modified nothing" true.
 #
-# It does as little as possible: unpack the store into a staging directory,
-# then exec the *bundled* interpreter, never the host's, so behaviour is
-# pinned by flake.lock rather than by whatever the distribution ships. A bare
-# Debian container has no python3 at all, which is the case this exists for.
+# Two tricks make it work. The file is its own archive: everything after this
+# header is binary at offsets nix/payload.nix patches into the fields below,
+# and `head -c END | tail -c +START` slices a piece out. That is why there is
+# no makeself, whose stub needs the host's tar before any of our code runs and
+# fails with "Extraction failed" on an image that has none.
 #
-# Ordering is what preserves the install guarantee. Extraction goes to
-# staging first, the preflight runs from there, and only after it passes does
-# anything touch /nix/store or /opt/cmrelay. A temporary directory is not the
-# system, so "modified nothing at all" stays literally true.
-#
-# Two tricks make it work.
-#
-# The file is its own archive. Everything after this header is binary, at
-# offsets nix/payload.nix computes and patches into the fixed-width fields
-# below, and `head -c END | tail -c +START` slices a piece out. That is why
-# there is no makeself here: its stub unpacks with the host's tar before
-# any of our code runs, so a host without tar -- AlmaLinux's minimal image,
-# among others -- fails with "Extraction failed" and no way for cmrelay to
-# say why. Every tool this needs instead is coreutils, which those hosts do
-# have. Owning the format also means the offsets are ours, which is what a
-# signature trailer would need.
-#
-# The other: a store binary names its ELF interpreter as an absolute
-# /nix/store/... path that does not exist yet, so it cannot simply be
-# executed. Invoking ld.so directly with the target as an argument bypasses
-# PT_INTERP, and --library-path takes precedence over the DT_RUNPATH nix
-# writes, so the staged interpreter resolves its own libraries out of staging.
+# And a store binary names an ELF interpreter that does not exist yet, so it
+# cannot be executed directly. Invoking ld.so with the target as an argument
+# bypasses PT_INTERP, and --library-path outranks the DT_RUNPATH nix writes.
 
 set -eu
 
@@ -55,9 +38,9 @@ fail() {
     exit 1
 }
 
-# `cmrelay.run --quiet -- install ...` is how the wheel and cmlxc invoke
-# this, from when a makeself stub was parsing those. Both are accepted and
-# ignored rather than passed to the CLI, which knows neither.
+# The wheel and cmlxc still invoke `cmrelay.run --quiet -- install ...`, from
+# when a makeself stub parsed those. Accepted and ignored; the CLI knows
+# neither.
 while [ $# -gt 0 ]; do
     case $1 in
         --quiet) shift ;;
@@ -66,26 +49,18 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Root only. Everything cmrelay does -- writing /opt/cmrelay, creating users,
-# installing units -- needs it, and the alternative was a second staging path
-# for verbs that do not.
+# Root only: everything cmrelay does needs it, and the alternative was a
+# second staging path for the verbs that do not.
 if [ "$(id -u)" != 0 ]; then
     fail "cmrelay must run as root"
 fi
 
 ready=.cmrelay-ready
 
-# Stage inside cmrelay's own tree. The store is renamed from staging into
-# /opt/cmrelay/nix/store, and a rename only stays a rename within one
-# filesystem: store.install() catches EXDEV and silently copies instead, which
-# is 2171 ms against 292 for a 232 MiB store. /var/tmp is usually the same
-# filesystem as /opt and sometimes is not, and nothing in the output said
-# which had happened. Under /opt/cmrelay it cannot be otherwise.
-#
-# This is still a staging tree, and install still refuses having written
-# nothing outside it -- /opt/cmrelay is cmrelay's own directory, not the
-# system's, and a refusal takes it back down to whatever was there before.
-#
+# Stage inside cmrelay's own tree, so the publish stays a rename: across
+# filesystems store.install() falls back to copying, 2171 ms against 292 for
+# a 232 MiB store, and nothing in the output said which had happened. This is
+# still staging, and a refusal takes /opt/cmrelay back down to what was there.
 opt_existed=1
 [ -d /opt/cmrelay ] || opt_existed=
 
@@ -117,10 +92,9 @@ cleanup() {
     if [ -n "${CMRELAY_KEEP_STAGE:-}" ] || [ -z "$stage" ]; then
         return 0
     fi
-    # A whole tree is worth keeping so the next run skips the unpack -- but
-    # only on a host that already had /opt/cmrelay. When this run created it
-    # and then refused, leaving the tree behind would make "nothing was
-    # modified" false about the one directory the refusal itself created.
+    # Worth keeping so the next run skips the unpack, but only where
+    # /opt/cmrelay already existed: keeping a directory this run created and
+    # then refused over would make "nothing was modified" false.
     if [ -n "$canonical" ] && [ -f "$stage/$ready" ] && [ -n "$opt_existed" ]; then
         return 0
     fi
@@ -174,19 +148,14 @@ else
     [ -n "$scratch" ] || fail "cannot create a staging directory under $shared"
     stage=$scratch
 
-    # The tools live apart from the staging tree, because that tree is
-    # published by rename and must contain nothing but the store.
+    # Apart from the staging tree, which is published by rename and must
+    # contain nothing but the store.
     tools=$(mktemp -d "${TMPDIR:-/tmp}/cmrelay-tools.XXXXXXXX") \
         || fail "cannot create a directory for the bundled tools"
 
-    # head first, then tail. The other way round -- tail to the offset, head
-    # for the length -- has head close the pipe while tail is still streaming
-    # the remaining 60 MiB, and tail says so on stderr:
-    #
-    #     tail: error writing 'standard output': Broken pipe
-    #
-    # which is harmless and reads exactly like a failure. This way head stops
-    # at a byte count of a regular file and tail sees an ordinary EOF.
+    # head first, then tail. The other way round has head close the pipe
+    # while tail still streams the remaining 60 MiB, and tail reports a broken
+    # pipe on stderr, which is harmless and reads exactly like a failure.
     zstd_at=$((CMRELAY_HEADER_BYTES + 1))
     zstd_end=$((CMRELAY_HEADER_BYTES + CMRELAY_ZSTD_BYTES))
     tar_at=$((zstd_end + 1))
@@ -210,11 +179,10 @@ else
     "$tools/tar" --version >/dev/null 2>&1 || fail "the bundled tar will not run"
 
     echo "cmrelay: unpacking the closure into $scratch ..."
-    # A pipeline reports only its last command, so a truncated file would
-    # decompress partially, tar would succeed on what it got, and the install
-    # would proceed against a store quietly missing files. zstd verifies its
-    # own frame checksums, which makes its exit status the integrity check,
-    # so carry it out of the pipeline by hand. POSIX sh has no PIPESTATUS.
+    # A pipeline reports only its last command, so a truncated payload would
+    # decompress partially and tar would succeed on what it got. zstd verifies
+    # its own frame checksums, so its status is the integrity check; POSIX sh
+    # has no PIPESTATUS, hence carrying it out by hand.
     status_file="$tools/zstd-status"
     {
         head -c "$store_end" "$self" | tail -c "+$store_at" \
@@ -250,12 +218,10 @@ fi
 discard "$tools"
 tools=
 
-# Written by nix/closure.nix, because neither piece can be found by globbing.
-# python3.withPackages produces an env whose bin/python3 is a wrapper that
-# execs an absolute store path, so during staging only the raw interpreter is
-# runnable; and the env's site-packages is a symlink farm pointing at absolute
-# store paths that do not exist yet, so CMRELAY_SITE names each module's own
-# store path instead.
+# Written by nix/closure.nix, because neither piece can be globbed for:
+# withPackages' bin/python3 is a wrapper execing an absolute store path, and
+# its site-packages is a symlink farm into paths that do not exist yet, so
+# CMRELAY_SITE names each module's own store path.
 . "$stage$CMRELAY_CLOSURE/bootstrap.env"
 
 ld="$stage$CMRELAY_LD"
@@ -273,20 +239,13 @@ export PYTHONPATH
 PYTHONNOUSERSITE=1
 export PYTHONNOUSERSITE
 
-# Deliberately not exec: this shell's EXIT trap is what removes the staging
-# tree, and exec would replace the shell before it could run. The CLI re-execs
-# itself from the installed store once that store is in place, which is a
-# separate handover and unaffected.
+# Deliberately not exec: the EXIT trap above removes the staging tree, and
+# exec would replace the shell before it could run.
 #
 # The explicit exit is load-bearing rather than tidy. Everything past this
-# line in the file is the zstd binary, and a shell that runs off the end of
-# its last command reads straight on into it:
-#
-#     /tmp/cmrelay: 284: Syntax error: "(" unexpected
-#
-# `set -e` hid that for a long time -- a run that failed exited on the failing
-# command and never got there, so only successful runs reported the error, and
-# reported it after doing all their work correctly.
+# line is the zstd binary, and a shell running off the end of its last command
+# reads straight on into it and reports a syntax error. `set -e` hid that for
+# a long time, because only successful runs got far enough to hit it.
 status=0
 "$ld" --library-path "$libs" "$python" -m cmrelay "$@" || status=$?
 exit "$status"

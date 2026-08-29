@@ -1,29 +1,12 @@
 """System users and groups, created the way cmdeploy creates them.
 
-cmrelay must create the same users and groups under the same names, because
-it shares /home/vmail/mail/<domain> with whatever ran before it, and because
-chatmaild and the units refer to them by name rather than by number:
-config.get_user() returns User(..., uid="vmail", gid="vmail"), nine units
-declare User=vmail and one declares User=iroh.
-
-The sharp edge is that cmdeploy creates these with system=True and pins no
-numeric IDs, so vmail has a different UID on every host and the mailboxes on
-disk are owned by that host's particular number. Three rules follow, and the
-third prevents a disaster:
-
-- On upgrade, never create a user that exists. Resolve it and reuse the uid
-  that is there. Creating a differently named user, or assuming a number,
-  breaks access to every mailbox on the host. Upgrade does create the ones
-  that are genuinely absent, because a host part way through a cmdeploy run
-  may be missing some, and it reports which.
-
-- On a bare install, create them exactly as cmdeploy does: same names,
-  system-allocated. Matching that keeps a later `cmdeploy run` from
-  conflicting.
-
-- Never chown the mailbox tree. Read the ownership that is there and adapt.
-  A recursive chown across a populated relay is slow at best and destructive
-  on a mismatch.
+Same names, because the maildir root is shared with whatever ran before and
+because chatmaild and the units refer to them by name. cmdeploy pins no
+numeric IDs, so vmail has a different uid on every host and the mailboxes are
+owned by that host's particular number. Hence: never create a user that
+exists, resolve and reuse its uid; create the genuinely absent ones the way
+cmdeploy would; and never chown the mailbox tree, which on a mismatch is
+destructive.
 """
 
 import grp
@@ -32,8 +15,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-# (user, primary group, secondary groups), matching the required_users
-# declarations spread across relay's deployers.
+# (user, primary group, secondary groups), matching relay's required_users.
 REQUIRED_USERS = [
     ("vmail", "vmail", []),
     ("iroh", None, []),
@@ -46,9 +28,8 @@ REQUIRED_USERS = [
     ("unbound", "unbound", []),
 ]
 
-# Accounts relay's configuration names but no deployer declares, because on
-# Debian the distribution packages create them. cmrelay installs no packages,
-# so these are its job: dovecot refuses to even parse a config whose
+# Named by relay's configuration but declared by no deployer, because Debian's
+# packages create them. dovecot will not even parse a config whose
 # default_login_user does not resolve.
 PACKAGE_USERS = [
     ("dovecot", "dovecot", []),
@@ -134,15 +115,15 @@ def ensure_required_users() -> list[str]:
 
 
 def check_all_present() -> list[str]:
-    """Names that upgrade expected to find and did not."""
+    """Names --take-over expected to find and did not."""
     return [name for name, _, _ in ALL_USERS if not user_exists(name)]
 
 
 def verify_mailbox_ownership(mailboxes_dir: Path, user: str = "vmail") -> None:
     """Refuse to run if the resolved vmail does not own the maildir root.
 
-    That mismatch is the signature of a restored backup or a hand-modified
-    host, and it is exactly the case where continuing would do damage.
+    The signature of a restored backup or a hand-modified host, which is
+    exactly where continuing would do damage.
     """
     path = Path(mailboxes_dir)
     if not path.exists():

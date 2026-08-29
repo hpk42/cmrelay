@@ -1,24 +1,14 @@
 """The effects of relay's deployers, reproduced without pyinfra or apt.
 
-cmrelay never vendors the forty pyinfra deployer modules, because that is the
-part that would rot. It reimplements what they *do*. The structure below
-follows cmdeploy/src/cmdeploy/deployers.py closely enough that a reviewer can
-read the two side by side: the same components in the same order, each with
-the same three stages, and the same templates rendered with the same
-arguments.
+The pyinfra deployer modules are reimplemented rather than vendored, because
+they are the part that would rot. The order below follows
+cmdeploy/src/cmdeploy/deployers.py so the two can be read side by side, and
+the comments name the deployer each block mirrors.
 
-Three kinds of effect do not carry over:
-
-- Package installation. Every apt.packages() call is replaced by the
-  component already being in the closure.
-
-- Debian mechanics. policy-rc.d exists to stop dpkg starting daemons
-  mid-install and cmrelay installs no packages; the apt pin on dovecot-* has
-  no meaning without apt.
-
-- Binary paths. Where cmdeploy writes /usr/local/bin/filtermail, cmrelay
-  writes a store path. Every unit already takes that as a template variable,
-  which is what makes the units vendor verbatim.
+What does not carry over: apt.packages(), because the component is already in
+the closure; Debian mechanics like policy-rc.d and the dovecot apt pin, which
+mean nothing without apt; and binary paths, which are store paths here and
+already template variables in every unit.
 """
 
 import os
@@ -31,9 +21,7 @@ from .render import Changes, copy, ensure_directory, remove_file, write
 from .version import __version__
 from .website import build_website
 
-# The chatmaild units, and which of them the timers own rather than systemd.
-# Matches ChatmailVenvDeployer.units plus activate_remote_units()'s rule that
-# chatmail-expire and chatmail-fsreport are started by their timers.
+# Matches ChatmailVenvDeployer.units; the timers own the last two.
 CHATMAILD_UNITS = [
     "doveauth",
     "chatmail-metadata",
@@ -52,8 +40,8 @@ AUTHORED_UNITS = ["postfix", "dovecot", "nginx", "unbound", "opendkim"]
 
 DKIM_SELECTOR = "opendkim"
 
-# Where relay's acmetool hook lives. Debian's acmetool is patched to read
-# this; upstream reads /usr/libexec/acme/hooks, so cmrelay has to say so.
+# Debian patches acmetool to read this; upstream reads
+# /usr/libexec/acme/hooks, so cmrelay has to say so.
 ACME_HOOKS_DIR = "/etc/acme/hooks"
 
 # opendkim-genkey defaults to 1024, which is weak by current practice.
@@ -65,13 +53,7 @@ class DeployError(Exception):
 
 
 class Deployment:
-    """One install or upgrade run against one host.
-
-    Holds the three things every step needs -- the bundle it was unpacked
-    from, the relay Config read out of /opt/cmrelay/chatmail.ini, and a
-    change tracker driving restarts -- so the steps themselves stay readable
-    as a transcription of relay's deployers.
-    """
+    """One install or upgrade run against one host."""
 
     def __init__(self, bundle, config, out, disable_mail=False):
         self.bundle = bundle
@@ -79,10 +61,6 @@ class Deployment:
         self.out = out
         self.disable_mail = disable_mail
         self.changes = Changes()
-
-    # ------------------------------------------------------------------
-    # paths derived from the closure and the config
-    # ------------------------------------------------------------------
 
     @property
     def mail_domain(self) -> str:
@@ -97,9 +75,7 @@ class Deployment:
     def template_vars(self) -> dict:
         """The values the patched templates need beyond relay's own Config.
 
-        Every entry here corresponds to a hunk in patches/: a path that was
-        hardcoded to Debian's layout upstream and is a variable in the
-        vendored copy.
+        Every entry corresponds to a hunk in patches/.
         """
         return {
             "postfix_config_dir": str(paths.config_dir("postfix")),
@@ -115,18 +91,13 @@ class Deployment:
     def ca_path(self) -> str:
         """Where the host keeps its trusted CA bundle.
 
-        postfix's smtp_tls_CApath is a host path rather than a store path:
-        the store's own bundle would freeze the trust store at build time,
-        and the distributions that matter all keep one of these two.
+        A host path, not a store path: the store's own bundle would freeze
+        the trust store at build time.
         """
         for candidate in ("/etc/ssl/certs", "/etc/pki/tls/certs"):
             if Path(candidate).is_dir():
                 return candidate
         return "/etc/ssl/certs"
-
-    # ------------------------------------------------------------------
-    # helpers mirroring basedeploy.Deployer
-    # ------------------------------------------------------------------
 
     def put_template(self, component, src, dest, **data):
         content = render.render_template(self.vendor(src), **data)
@@ -162,10 +133,6 @@ class Deployment:
             )
         return result
 
-    # ==================================================================
-    # stage: configure
-    # ==================================================================
-
     def configure(self):
         """Write every file a chatmail relay needs, and no service state."""
         self.configure_base()
@@ -191,7 +158,7 @@ class Deployment:
         self.link_host_tools()
         self.configure_version_marker()
 
-    # --- ChatmailDeployer ---------------------------------------------
+    # ChatmailDeployer
 
     def configure_base(self):
         # metadata crashes if the mailboxes dir does not exist
@@ -203,7 +170,7 @@ class Deployment:
         # Used by the auth proxy. https://wiki.debian.org/EtcMailName
         write(paths.MAILNAME, f"{self.mail_domain}\n", mode=0o644)
 
-    # --- LegacyRemoveDeployer -----------------------------------------
+    # LegacyRemoveDeployer
 
     def remove_legacy(self):
         for path in (
@@ -214,7 +181,7 @@ class Deployment:
         ):
             remove_file(Path(path))
 
-    # --- FiltermailDeployer -------------------------------------------
+    # FiltermailDeployer
 
     def configure_filtermail(self):
         for name in FILTERMAIL_UNITS:
@@ -225,12 +192,12 @@ class Deployment:
                 config_path=str(paths.INI),
             )
 
-    # --- JournaldDeployer ---------------------------------------------
+    # JournaldDeployer
 
     def configure_journald(self):
         self.put_file("journald", "config/journald.conf", "/etc/systemd/journald.conf")
 
-    # --- UnboundDeployer ----------------------------------------------
+    # UnboundDeployer
 
     def configure_unbound(self):
         self.write_unbound_anchor_seed()
@@ -240,7 +207,7 @@ class Deployment:
         for unit in ("systemd-resolved.service", "unbound-resolvconf.service"):
             if systemd.available():
                 systemd.stop_disable_mask(unit)
-                systemd.record_disabled_units([unit])
+                systemd.record_units(paths.DISABLED_UNITS, [unit])
 
         # Quad9 fallback, with the trailing newline a SolusVM bug needs.
         write(Path("/etc/resolv.conf"), "nameserver 127.0.0.1\nnameserver 9.9.9.9\n")
@@ -259,36 +226,20 @@ class Deployment:
     def write_unbound_base(self, conf_dir: Path, drop_in_dir: Path):
         """The top-level unbound.conf, which relay never supplies.
 
-        relay only writes a drop-in, because Debian's unbound package ships
-        the main config that includes the drop-in directory, plus a
-        /usr/libexec/unbound-helper that sets up a chroot and seeds the root
-        trust anchor from dns-root-data. A store unbound has none of that, so
-        cmrelay writes the small amount of configuration that was Debian's.
-
-        /etc/unbound/unbound.conf.d is included as well, deliberately: it is
-        where other tooling drops files -- cmlxc's localchat forwarder among
-        them -- and honouring the conventional path is cheaper than teaching
-        every such tool a new one. On a converted host it also still holds
-        the unbound package's own conffiles, which is why the trust anchor
-        below is conditional.
+        relay writes only a drop-in, because Debian's package ships the main config,
+        a chroot helper and the root anchor. A store unbound has none of that.
+        /etc/unbound/unbound.conf.d is included deliberately: other tooling drops
+        files there, and on a converted host it still holds the package's conffiles,
+        which is why the anchor below is conditional.
         """
         ensure_directory(Path("/var/lib/unbound"), owner=("unbound", "unbound"))
         ensure_directory(Path("/etc/unbound/unbound.conf.d"))
 
-        # Debian's unbound package ships root-auto-trust-anchor-file.conf,
-        # setting the very directive below. Two anchors for the same zone is
-        # not additive, it is fatal:
-        #
-        #     error: trust anchor for '.' presented twice
-        #     fatal error: failed to init modules
-        #
-        # and unbound does not start, which takes DNS and therefore mail
-        # delivery down on a host that was working a moment earlier. A fresh
-        # install has an empty conf.d and never sees it, so this is only
-        # reachable by taking a host over -- the path that gets tested least.
-        #
-        # Yielding rather than removing their file: it is a dpkg conffile,
-        # and `cmdeploy run` has to find this host as it left it.
+        # Debian's unbound ships root-auto-trust-anchor-file.conf, setting
+        # the very directive below, and two anchors for one zone is fatal:
+        # "trust anchor for '.' presented twice" and unbound does not start.
+        # Only reachable by taking a host over. Yielding rather than removing
+        # their file, which is a dpkg conffile `cmdeploy run` must find.
         anchor_line = '    auto-trust-anchor-file: "/var/lib/unbound/root.key"\n'
         if self.anchor_already_configured():
             self.out.print(
@@ -312,7 +263,7 @@ class Deployment:
             ),
         )
 
-    # --- TurnDeployer --------------------------------------------------
+    # TurnDeployer
 
     def configure_turn(self):
         content = render.render_format(
@@ -326,7 +277,7 @@ class Deployment:
             "turnserver", systemd.install_unit("turnserver.service", content)
         )
 
-    # --- IrohDeployer --------------------------------------------------
+    # IrohDeployer
 
     def configure_iroh(self):
         config_path = paths.config_dir("iroh") / "iroh-relay.toml"
@@ -338,7 +289,7 @@ class Deployment:
             config_path=str(config_path),
         )
 
-    # --- the TLS deployers ---------------------------------------------
+    # the TLS deployers
 
     def configure_tls(self):
         mode = self.config.tls_cert_mode
@@ -397,13 +348,9 @@ class Deployment:
         )
         self.unit_verbatim("acmetool", "systemd/acmetool-reconcile.timer")
 
-        # relay writes its reload hook to /etc/acme/hooks because Debian
-        # patches acmetool to look there. Upstream defaults to
-        # /usr/libexec/acme/hooks, so on a cmrelay host nothing would reload
-        # nginx or dovecot after a renewal and the relay would serve an
-        # expired certificate until somebody noticed. A drop-in points the
-        # binary at the path the vendored configuration already assumes,
-        # which keeps the units themselves verbatim.
+        # Without this the upstream hook directory applies, nothing reloads
+        # after a renewal, and the relay serves an expired certificate. The
+        # drop-in keeps the units themselves verbatim.
         for unit in ("acmetool-reconcile.service", "acmetool-redirector.service"):
             systemd.install_dropin(
                 unit,
@@ -458,7 +405,7 @@ class Deployment:
         )
         self.unit_verbatim("external-tls", "systemd/tls-cert-reload.service")
 
-    # --- WebsiteDeployer -----------------------------------------------
+    # WebsiteDeployer
 
     def configure_website(self):
         ensure_directory(paths.WWW_ROOT)
@@ -471,7 +418,7 @@ class Deployment:
             if src.is_file():
                 copy(src, paths.WWW_ROOT / src.name)
 
-    # --- ChatmailVenvDeployer ------------------------------------------
+    # ChatmailVenvDeployer
 
     def configure_chatmaild(self):
         for unit in CHATMAILD_UNITS:
@@ -486,7 +433,7 @@ class Deployment:
             )
             self.changes.note("chatmaild", systemd.install_unit(basename, content))
 
-    # --- MtastsDeployer -------------------------------------------------
+    # MtastsDeployer
 
     def configure_mtasts(self):
         # postfix-mta-sts-resolver is dead. This is a pure removal step.
@@ -494,7 +441,7 @@ class Deployment:
         render.remove_directory(Path("/usr/local/lib/postfix-mta-sts-resolver"))
         remove_file(Path("/etc/systemd/system/mta-sts-daemon.service"))
 
-    # --- OpendkimDeployer ------------------------------------------------
+    # OpendkimDeployer
 
     def configure_opendkim(self):
         opendkim_config = {
@@ -552,17 +499,10 @@ class Deployment:
     def generate_dkim_key(self):
         """Make the DKIM keypair with openssl rather than opendkim-genkey.
 
-        opendkim-genkey is a Perl script, and it is the only thing in the
-        closure that needs Perl: 55 MiB carried by every operator to run one
-        command once per host. openssl is already here, and relay's own DNS
-        tooling reads the key back with
-        `openssl rsa -in ... -pubout`, so the private key is the only
-        artefact anything downstream actually depends on.
-
-        The key is 2048 bits. opendkim-genkey defaults to 1024, which is
-        weak by current practice, and relay already splits a public key
-        across several quoted strings when it exceeds the 255 characters a
-        single TXT string allows, so the longer key needs nothing new.
+        opendkim-genkey is the only thing in the closure that would need Perl, 55 MiB
+        to run one command once per host, and the private key is the only artefact
+        anything downstream depends on. relay already splits a public key across
+        quoted strings, so 2048 bits needs nothing new.
         """
         self.out.print(f"Generating DKIM key for {self.mail_domain} ...")
         private = paths.DKIM_KEYS / f"{DKIM_SELECTOR}.private"
@@ -576,9 +516,8 @@ class Deployment:
     def write_dkim_record(self, private: Path):
         """The .txt file opendkim-genkey leaves beside the key.
 
-        Nothing reads it: relay derives the record from the private key, and
-        so does `cmrelay install`. It is written because a cmdeploy host has
-        one and an operator looking for their DNS record will look here.
+        Nothing reads it; it exists because an operator looking for their DNS record
+        will look here.
         """
         record = paths.DKIM_KEYS / f"{DKIM_SELECTOR}.txt"
         pubkey = self.dkim_public_key(private)
@@ -600,7 +539,7 @@ class Deployment:
             line for line in result.stdout.splitlines() if not line.startswith("-")
         )
 
-    # --- DovecotDeployer --------------------------------------------------
+    # DovecotDeployer
 
     def configure_dovecot(self):
         conf_dir = paths.config_dir("dovecot")
@@ -642,9 +581,7 @@ class Deployment:
     def ensure_timezone_env(self):
         """dovecot wants TZ set, and reads it from /etc/environment.
 
-        cmdeploy adds the line with pyinfra's files.line; there is no
-        equivalent here, so append it if it is not already there rather than
-        rewriting a file the host owns.
+        Appended rather than rewritten, because the host owns this file.
         """
         path = Path("/etc/environment")
         line = "TZ=:/etc/localtime"
@@ -679,7 +616,7 @@ class Deployment:
                 "fs.inotify.max_user_watches = 65535\n",
             )
 
-    # --- PostfixDeployer ---------------------------------------------------
+    # PostfixDeployer
 
     def configure_postfix(self):
         conf_dir = paths.config_dir("postfix")
@@ -714,16 +651,10 @@ class Deployment:
         # defaults to /etc/postfix and is not where cmrelay keeps them.
         self.write_postfix_store_settings(conf_dir)
 
-        # No postmap. relay declares this one as
-        #
-        #     smtp_tls_policy_maps = regexp:.../smtp_tls_policy_map
-        #
-        # and postfix reads a regexp table as text at lookup time; only the
-        # indexed types -- hash, btree, lmdb, cdb -- are compiled. Running
-        # postmap on it built a .db that nothing ever opened.
-        # tests/test_render.py asserts the declaration is still regexp, so a
-        # change to an indexed type fails there rather than silently needing
-        # this back.
+        # No postmap: postfix reads a regexp table as text at lookup time,
+        # and only the indexed types are compiled. test_render.py asserts the
+        # declaration is still regexp, so a change to an indexed type fails
+        # there rather than silently needing this back.
         self.put_file(
             "postfix",
             "config/postfix/smtp_tls_policy_map",
@@ -732,11 +663,9 @@ class Deployment:
 
         self.ensure_aliases()
 
-        # dovecot binds its LMTP and auth sockets inside postfix's queue
-        # directory and starts first, so the queue tree has to exist before
-        # any service does. postfix builds it while setting permissions.
-        # Debian's package does this in its postinst, which is why the
-        # ordering never shows up there.
+        # dovecot binds its sockets inside postfix's queue directory and
+        # starts first, so the tree has to exist before any service does.
+        # Debian does this in its postinst, so the ordering never shows there.
         self.shell(
             self.bin("postfix", "postfix"), "-c", str(conf_dir), "set-permissions"
         )
@@ -760,18 +689,13 @@ class Deployment:
     def write_postfix_store_settings(self, conf_dir: Path):
         """The directory settings a store-installed postfix cannot infer.
 
-        Debian's package compiles these in; a Nix postfix has to be told
-        where its own daemons live and where the spool is. They go in a
-        separate file appended to main.cf so relay's template stays verbatim
+        In a separate file appended to main.cf, so relay's template stays verbatim
         apart from its declared patches.
         """
-        # nixpkgs' postfix already points command_directory,
-        # daemon_directory and meta_directory at its own store paths, so only
-        # the state directories and the config directory need saying. In
-        # particular queue_directory has to be /var/spool/postfix: relay's
-        # dovecot.conf puts the LMTP socket at
-        # /var/spool/postfix/private/dovecot-lmtp and opendkim's socket
-        # underneath it too, and those are queue-relative by construction.
+        # nixpkgs' postfix already points its own directories at store
+        # paths, so only state and config need saying. queue_directory has to
+        # be /var/spool/postfix: relay's dovecot and opendkim sockets live
+        # under it and are queue-relative by construction.
         settings = {
             "config_directory": str(conf_dir),
             "queue_directory": str(paths.POSTFIX_SPOOL),
@@ -785,9 +709,8 @@ class Deployment:
         self.changes.note("postfix", write(main_cf, f"{base}\n{marker}{body}\n"))
 
         users.ensure_group("postdrop")
-        # postfix's own set-permissions fixes data/ but not its parent, which
-        # Debian's package ships at 755. Without that the mail_owner cannot
-        # traverse into it and master(8) dies opening its lock file.
+        # set-permissions fixes data/ but not its parent, without which
+        # mail_owner cannot traverse in and master(8) dies on its lock file.
         ensure_directory(Path("/var/lib/postfix"), mode=0o755)
         ensure_directory(
             Path("/var/lib/postfix/data"), mode=0o700, owner=("postfix", "root")
@@ -816,14 +739,11 @@ class Deployment:
                 check=False,
             )
 
-    # --- FcgiwrapDeployer ---------------------------------------------------
+    # FcgiwrapDeployer
 
     def configure_fcgiwrap(self):
-        """Both units: the service is socket-activated, so the socket is not optional.
-
-        nginx names /run/fcgiwrap.socket, which is systemd's to create, and
-        the service declares Requires=fcgiwrap.socket -- so installing only
-        the service gives a unit that cannot start.
+        """Both units: the service is socket-activated, so the socket is not
+        optional and installing only the service cannot start.
         """
         for name in ("fcgiwrap.socket", "fcgiwrap.service"):
             content = (
@@ -833,7 +753,7 @@ class Deployment:
             )
             self.changes.note("fcgiwrap", systemd.install_unit(name, content))
 
-    # --- NginxDeployer ------------------------------------------------------
+    # NginxDeployer
 
     def configure_nginx(self):
         conf_dir = paths.config_dir("nginx")
@@ -872,18 +792,16 @@ class Deployment:
     def install_newemail_cgi(self):
         """nginx runs chatmaild's newemail.py through fcgiwrap.
 
-        The script comes out of the installed chatmaild package rather than
-        the vendor set, because it is chatmaild's own code and travels with
-        the interpreter that runs it.
+        Taken from the installed chatmaild rather than the vendor set, because it
+        travels with the interpreter that runs it.
         """
         source = self.find_chatmaild_resource("newemail.py")
         ensure_directory(paths.CGI_BIN)
         target = paths.CGI_BIN / "newemail.py"
         body = source.read_text()
 
-        # newemail.py names cmdeploy's venv layout twice: in its shebang and
-        # in CONFIG_PATH. Rewriting only the first gives a CGI that starts and
-        # then reads a chatmail.ini that is not there.
+        # Twice: the shebang and CONFIG_PATH. Rewriting only the shebang
+        # gives a CGI that starts and then reads an ini that is not there.
         if body.startswith("#!"):
             body = body.split("\n", 1)[1]
         old_config = 'CONFIG_PATH = "/usr/local/lib/chatmaild/chatmail.ini"'
@@ -910,14 +828,12 @@ class Deployment:
             raise DeployError(f"chatmaild does not ship {name}")
         return path
 
-    # --- MtailDeployer ------------------------------------------------------
+    # MtailDeployer
 
     def configure_mtail(self):
         """The unit always, the programs only when mtail is actually wanted.
 
-        relay gates the programs on mtail_address because a relay with mtail
-        disabled has no use for rules it will never evaluate, and validating
-        them costs a subprocess.
+        Validating rules that will never be evaluated costs a subprocess.
         """
         progs_dir = paths.config_dir("mtail")
         ensure_directory(progs_dir)
@@ -934,8 +850,7 @@ class Deployment:
 
         for prog in sorted((self.bundle.vendor / "config/mtail").glob("*.mtail")):
             self.changes.note("mtail", copy(prog, progs_dir / prog.name))
-        # relay downloads this from the filtermail release it pins; cmrelay
-        # has it in the closure for the same reason and by the same hash.
+        # In the closure by the same hash relay downloads it under.
         self.changes.note(
             "mtail",
             copy(
@@ -965,7 +880,7 @@ class Deployment:
             "0",
         )
 
-    # --- tools on the operator's PATH ---------------------------------------
+    # tools on the operator's PATH
 
     @staticmethod
     def anchor_already_configured(
@@ -984,16 +899,9 @@ class Deployment:
     def write_unbound_anchor_seed(self):
         """Seed unbound's root trust anchor, but only when there is none.
 
-        Seeding is only ever needed once. From then on the file is unbound's
-        own: auto-trust-anchor-file means unbound rewrites it as the root
-        rolls its key, per RFC 5011. On a host converted from cmdeploy it is
-        already such a file, maintained by the distribution's unbound across
-        however many rollovers, and `unbound-anchor -a` would probe and
-        rewrite it on every start of a daemon that maintains it perfectly
-        well itself.
-
-        Guarding on absence keeps the self-healing -- a host that loses the
-        file still gets one -- without touching an anchor that is not ours.
+        From then on the file is unbound's own, rewritten as the root rolls its key
+        per RFC 5011. Guarding on absence keeps the self-healing without touching an
+        anchor the daemon maintains perfectly well.
         """
         paths.BIN.mkdir(parents=True, exist_ok=True)
         anchor = "/var/lib/unbound/root.key"
@@ -1009,22 +917,13 @@ class Deployment:
     def link_host_tools(self):
         """Put the tools relay invokes by bare name where PATH will find them.
 
-        A store path is enough for a unit file and not enough for anything
-        else. relay's own remote helpers run `doveadm quota get`, its test
-        suite runs `dovecot --version`, and its DNS check runs
-        `acmetool account-url`; on a Debian relay those come from the
-        distribution packages. cmrelay installs no packages, so it puts the
-        same names into /usr/local/bin -- which is where cmdeploy puts
-        filtermail and the other fetched binaries too.
-
-        dovecot's and postfix's tools get a wrapper rather than a symlink,
-        because cmrelay's configuration is not at the path they were compiled
-        to look in. Symlinking cmrelay's config into /etc/dovecot would avoid
-        the wrappers and cost the rollback: on an upgraded host that file is
-        cmdeploy's, and `cmdeploy run` has to find it as it left it.
-
-        Every entry is recorded so uninstall removes exactly these and leaves
-        anything else in /usr/local/bin alone.
+        A store path suffices for a unit file and for nothing else: relay's helpers
+        and test suite run `doveadm quota get`, `dovecot --version` and
+        `acmetool account-url`. dovecot's and postfix's get a wrapper rather than a
+        symlink, because cmrelay's configuration is not where they were compiled to
+        look; symlinking it into /etc/dovecot would cost the rollback, since that
+        file is cmdeploy's. Every entry is recorded so uninstall removes exactly
+        these.
         """
         dovecot_conf = paths.config_dir("dovecot") / "dovecot.conf"
         postfix_conf = paths.config_dir("postfix")
@@ -1067,20 +966,10 @@ class Deployment:
     def put_profile_script(self):
         """Put cmrelay's own bin directory on root's PATH.
 
-        The tools above are already reachable, because /usr/local/bin is on
-        every distribution's default PATH. This is for what cmrelay owns
-        rather than what it borrows: /opt/cmrelay/bin is the directory whose
-        contents are cmrelay's to change, and having it on PATH means adding
-        something there later needs no second mechanism.
-
-        Appended rather than prepended, so nothing here can shadow a
-        distribution tool of the same name. The names that must win --
-        dovecot, postfix and the rest, which need cmrelay's config rather than
-        /etc's -- win in /usr/local/bin, which already precedes /usr/bin.
-
-        Only login shells read this: `ssh root@relay`, `su -`, `sudo -i`. A
-        systemd unit does not, which is why every unit cmrelay writes names an
-        absolute store path instead of relying on PATH.
+        Appended rather than prepended, so nothing here shadows a distribution tool
+        of the same name; the ones that must win are in /usr/local/bin, which already
+        precedes /usr/bin. Only login shells read this, which is why every unit names
+        an absolute store path.
         """
         if not paths.PROFILE_D.is_dir():
             self.out.print(
@@ -1116,24 +1005,19 @@ class Deployment:
             link.unlink()
         link.symlink_to(target)
 
-    # --- GithashDeployer ----------------------------------------------------
+    # GithashDeployer
 
     def configure_version_marker(self):
         """The marker cmdeploy writes from its working tree.
 
-        cmrelay installs a released artefact rather than a checkout, so it
-        writes the cmrelay version and the relay commit vendor.lock names.
-        The upgrade verb reads this file back to tell whether a host is
-        running a newer relay than cmrelay vendored.
+        cmrelay installs a released artefact rather than a checkout, so it writes its
+        own version and the relay commit vendor.lock names. `install --take-over`
+        reads it back to report what the host ran.
         """
         write(
             paths.VERSION_MARKER,
             f"{self.bundle.relay_commit}\n# installed by cmrelay {__version__}\n",
         )
-
-    # ==================================================================
-    # stage: the five units cmrelay authors
-    # ==================================================================
 
     def install_daemon_units(self):
         for name in AUTHORED_UNITS:
@@ -1158,10 +1042,6 @@ class Deployment:
             "opendkim_config": str(paths.config_dir("opendkim") / "opendkim.conf"),
             "fcgiwrap_bin": self.bin("fcgiwrap"),
         }
-
-    # ==================================================================
-    # stage: activate
-    # ==================================================================
 
     def activate(self):
         systemd.daemon_reload()

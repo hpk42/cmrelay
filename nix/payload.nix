@@ -1,20 +1,7 @@
 # The single file: a shell header with the store bolted onto the end of it.
-#
-# There is no makeself here, and no host tar. makeself's stub unpacks with
-# the host's tar before any cmrelay code runs, so a host without tar --
-# AlmaLinux's minimal image among them -- fails with "Extraction failed" and
-# no way to say why. The header below slices its own zstd and tar out of
-# itself by byte offset instead, using only coreutils, and streams the store
-# straight through them without landing it on disk twice.
-#
-# Owning the format has three other effects. The offsets are ours, which is
-# what a signature trailer needs. The stub is ours, which is where `umask
-# 077` silently breaking /var/lib/postfix, and a spawned xterm asking an
-# unattended install to press Return, both came from. And zstd checks its own
-# frames, so nothing has to re-verify what the decompressor already did.
-#
-# Layout, with every offset patched into fixed-width fields in the header so
-# that patching cannot change the size of the header they are measured from:
+# See stub/header.sh for why the format is cmrelay's own rather than
+# makeself's. Offsets are patched into fixed-width fields, so that patching
+# cannot change the size of the header they are measured from:
 #
 #     [ header ][ zstd ][ tar.zst ][ store.tar.zst ]
 
@@ -37,28 +24,17 @@
 let
   info = closureInfo { rootPaths = [ closure ]; };
   staticZstd = pkgsStatic.zstd;
-  # Files a relay never reads, dropped on the way into the payload.
+  # Files a relay never reads, dropped on the way into the payload. This
+  # departs from Nix's usual contract: the installed paths are no longer
+  # byte-for-byte what their hashes name. Sound only because the host has no
+  # Nix at all, nothing that verifies or rebuilds a path, and an uninstall
+  # that deletes the tree; the cost is that such a store cannot be an input to
+  # Nix again, which nothing does. Overriding the interpreter with nixpkgs'
+  # stripConfig instead would rebuild 48 Python derivations on every nixpkgs
+  # bump to save less, and only for Python.
   #
-  # This is a deliberate departure from Nix's usual contract, and worth being
-  # explicit about: the store paths a cmrelay host ends up with are no longer
-  # byte-for-byte what their hashes name. That is sound here and nowhere else,
-  # because the host has no Nix: no daemon, no database, nothing that verifies
-  # a path or rebuilds from one, a store that is written once and read-only
-  # afterwards, and an uninstall that deletes the whole tree. The one thing it
-  # costs is that such a store cannot be used as an input to Nix again, which
-  # nothing does.
-  #
-  # The alternative is overriding the interpreter with nixpkgs' stripConfig
-  # and friends. That rebuilds the entire Python package set from source --
-  # measured at 48 derivations including cython, cffi and the pytest tooling,
-  # over half an hour, and again on every nixpkgs bump -- to save less than
-  # this does, and only for Python. Excluding by pattern costs nothing at
-  # build time and covers every component at once.
-  #
-  # libtool .la files are deliberately kept: dovecot's module loader has
-  # historically read them, and they are 0.2 MiB.
-  #
-  # __pycache__ goes too, it's not worth some megabytes.
+  # libtool .la files are kept: dovecot's module loader has historically read
+  # them, and they are 0.2 MiB.
   deadWeight = [
     "*.a" # static libraries, 63 MiB of it libpython
     "*/include/*" # C headers
@@ -66,16 +42,30 @@ let
     "*/share/*/doc/*" # postfix keeps its 5.4 MiB of it one level deeper
     "*/share/man/*"
     "*/share/locale/*" # gettext catalogues; a relay logs in English
-    # glibc's locale *sources*: 16 MiB of text that only localedef reads, and
-    # localedef lives in glibc's bin output, which this closure does not have.
-    # Nothing here can consume them. share/terminfo and share/zoneinfo look
-    # similar and are not: readline and python read the first, python, mtail
-    # and acmetool the second, and both cost under 0.3 MiB compressed anyway.
+    # glibc's locale *sources*, which only localedef reads and localedef is
+    # not in this closure. share/terminfo and share/zoneinfo look similar and
+    # are not: readline, python, mtail and acmetool read those.
     "*/share/i18n/*"
     "*/lib/python3.14/test/*" # CPython's own test suite
     "*/idlelib/*" # the Tk IDE
+    "*/lib/python3.14/tkinter/*" # no Tk in the closure to import
+    "*/lib/python3.14/ensurepip/*" # bundled wheels; nothing here makes a venv
+    "*/lib/python3.14/pydoc_data/*" # help() topic text
     "*/pkgconfig/*"
     "*/__pycache__/*" # unrefillable on a read-only store
+    # gcc's runtime output ships every sanitizer and the OpenMP, quad-math and
+    # transactional-memory runtimes beside libstdc++, and a relay links none of
+    # them: across the 903 ELF files in the closure only libstdc++ and
+    # libgcc_s appear in any DT_NEEDED, and the sole other mention of libasan
+    # is a comment in CPython's own test suite, which is excluded above.
+    "*/lib/lib*san.so*" # asan, tsan, hwasan, lsan, ubsan
+    "*/lib/libgomp.so*"
+    "*/lib/libquadmath.so*"
+    "*/lib/libitm.so*"
+    "*/lib/libatomic.so*"
+    "*/lib/libssp.so*"
+    # postfix uses db's C API; nothing links the C++ one.
+    "*/lib/libdb_cxx*"
   ];
 in
 runCommand "cmrelay-${version}"
@@ -98,18 +88,23 @@ runCommand "cmrelay-${version}"
     cp ${staticZstd}/bin/zstd zstd
     chmod +w zstd
 
-    # tar travels compressed, unpacked by the zstd above: 0.83 MiB becomes
-    # 0.36. zstd itself cannot, since nothing exists yet that could unpack it.
+    # tar travels compressed, unpacked by the zstd above. zstd itself cannot,
+    # since nothing exists yet that could unpack it.
     zstd -${toString zstdLevel} -q -o tar.zst ${bsdtar-minimal}/bin/bsdtar
 
-    # Paths are stored relative to /, so unpacking under a staging directory
-    # yields <staging>/nix/store/... and unpacking under / would yield the
-    # real thing.
+    # Relative to /, so unpacking under a staging directory yields
+    # <staging>/nix/store/...
     sed 's|^/||' ${info}/store-paths > paths.txt
     echo "packing $(wc -l < paths.txt) store paths"
 
     # The excludes have to precede --files-from: GNU tar applies them only to
     # names that come after them on the command line.
+    #
+    # --long=27 buys 6% over the same level with the default 8 MiB window,
+    # because the closure repeats itself across store paths at distances a
+    # small window cannot reach. It costs a 128 MiB decompression window,
+    # which is exactly zstd's default memory ceiling, so the bundled 1.5.7
+    # takes the frame without being asked for extra flags.
     tar --create \
         --directory=/ \
         ${lib.concatMapStringsSep " " (p: "--exclude='${p}'") deadWeight} \
@@ -117,12 +112,11 @@ runCommand "cmrelay-${version}"
         --owner=0 --group=0 --numeric-owner \
         --sort=name \
         --mtime=@1 \
-      | zstd -${toString zstdLevel} -T0 -q -o store.tar.zst
+      | zstd -${toString zstdLevel} --long=27 -T0 -q -o store.tar.zst
 
     patch_size() {
       # Same width in, same width out; the header's length must not move.
-      # Padded on the right, not the left: a POSIX shell reads a leading zero
-      # as the start of an octal literal, and $((0000008395)) is not octal.
+      # Padded right, not left: a POSIX shell reads a leading zero as octal.
       value=$(printf '%-10s' "$2")
       sed -i "s|^$1=0\{10\}$|$1=$value|" header.sh
       grep -q "^$1=$2 *$" header.sh || {

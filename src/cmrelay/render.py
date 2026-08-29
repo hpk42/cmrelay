@@ -1,16 +1,7 @@
-"""Render relay's own templates, with relay's own renderer and relay's own Config.
+"""Render relay's own templates, with relay's own renderer and Config.
 
-This is the part of cmrelay that could have been a rewrite and deliberately
-is not. cmdeploy renders its templates with Jinja2 using a Config object it
-imports from chatmaild rather than from cmdeploy, and chatmaild is in the
-cmrelay closure. So cmrelay renders the same templates, with the same Config,
-from the same chatmail.ini, using the bundled interpreter, and there is no
-semantic transformation anywhere in the pipeline.
-
-The Jinja environment matches pyinfra's `files.template` exactly --
-StrictUndefined and keep_trailing_newline -- so a template that renders under
-cmdeploy renders identically here, and one that would have raised an
-undefined-variable error still does.
+Deliberately not a rewrite: same templates, same chatmaild Config, same
+chatmail.ini, so there is no semantic transformation in the pipeline.
 """
 
 import os
@@ -19,9 +10,8 @@ from pathlib import Path
 
 from jinja2 import Environment, StrictUndefined
 
-# Same as pyinfra.api.util.get_template. StrictUndefined is the important
-# half: a missing variable must be a loud failure, not a silently empty
-# postfix directive.
+# Same as pyinfra.api.util.get_template. StrictUndefined is the load-bearing
+# half: a missing variable must fail loudly, not yield an empty directive.
 _ENV = Environment(undefined=StrictUndefined, keep_trailing_newline=True)
 
 
@@ -38,8 +28,8 @@ def render_format(src: Path, **params) -> str:
 def write(dest: Path, content: str | bytes, mode: int = 0o644, owner=None) -> bool:
     """Write a file if its content differs, returning whether it changed.
 
-    Change detection is what drives service restarts, exactly as pyinfra's
-    `.changed` does, so it has to be content-based rather than always-write.
+    Content-based rather than always-write because this drives service
+    restarts, exactly as pyinfra's `.changed` does.
     """
     dest = Path(dest)
     data = content.encode() if isinstance(content, str) else content
@@ -96,10 +86,8 @@ def remove_directory(path: Path) -> bool:
 class Changes:
     """Tracks whether anything a service depends on was rewritten.
 
-    cmdeploy threads a `need_restart` flag through each deployer for this;
-    cmrelay keeps one object per component so the activate step can ask
-    "did my configuration change" without every writer remembering to
-    propagate a boolean.
+    One object per component, so activate can ask "did my configuration
+    change" without every writer propagating a boolean.
     """
 
     def __init__(self):

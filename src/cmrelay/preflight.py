@@ -1,19 +1,12 @@
 """Detect what already owns the ports and unit names cmrelay wants.
 
-cmrelay faces a conflict class cmdeploy never does. cmdeploy installs
-Debian's postfix, dovecot, nginx and unbound, so it *owns* those unit names
-by construction. cmrelay ships its own builds under the same service names --
-sameness is a contract, because the acceptance suite greps journald by unit
-name -- onto a host where the distro packages may already be installed,
-enabled and listening.
+cmrelay ships its own builds under the distribution's service names, onto a
+host where the distribution's packages may already be installed and
+listening. Two detectors, because a name collision catches the package about
+to fight us for port 25 while port occupancy catches the daemon cmrelay has
+never heard of.
 
-Two detectors, because names and ports catch different things. A unit name
-collision catches the distro package that is about to fight us for port 25;
-port occupancy catches the daemon cmrelay has never heard of.
-
-Nothing here modifies the host. `install` reports and refuses; only
-`install --take-over`
-may act on what this finds.
+Nothing here modifies the host: only `install --take-over` acts on it.
 """
 
 import re
@@ -22,11 +15,9 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Names cmrelay ships its own unit under, which a distribution may already
-# own. These are *shadowed* on upgrade -- stopped and disabled, then the
-# symlink replaced -- and never masked: masking writes
-# /etc/systemd/system/<name> -> /dev/null, which is the exact path cmrelay's
-# own symlink needs, so a masked name is a name cmrelay cannot install.
+# Shadowed rather than masked: masking writes /etc/systemd/system/<name> ->
+# /dev/null, the exact path cmrelay's own unit needs, so a masked name is one
+# cmrelay cannot install.
 SHADOWED_UNITS = [
     "postfix.service",
     "dovecot.service",
@@ -36,9 +27,8 @@ SHADOWED_UNITS = [
     "fcgiwrap.service",
 ]
 
-# Names cmrelay does not provide and must therefore put out of the way for
-# good. Debian's postfix@-.service is the instance that actually binds port
-# 25, so leaving it enabled would give a rebooted host two postfixes.
+# Not provided by cmrelay, so out of the way for good. postfix@-.service is
+# the instance that binds port 25; leaving it gives a reboot two postfixes.
 MASKED_UNITS = [
     "postfix@-.service",
     "exim4.service",
@@ -47,23 +37,18 @@ MASKED_UNITS = [
 
 CONFLICTING_UNITS = SHADOWED_UNITS + MASKED_UNITS
 
-# Resolver managers that compete for /etc/resolv.conf with relay's unbound.
-# cmdeploy stops and masks systemd-resolved because it cannot be purged for
-# dependency reasons; cmrelay needs the same treatment.
+# Compete for /etc/resolv.conf with relay's unbound, and cannot be purged for
+# dependency reasons, so they are masked.
 RESOLVER_UNITS = [
     "systemd-resolved.service",
-    # Fedora 43 splits resolved's IPC out into socket units. Masking only the
-    # service leaves these to fail the moment anything touches them, which
-    # puts a permanent entry in `systemctl --failed` -- noise that makes a
-    # real fault harder to see. Absent on Debian, where unit_states skips
-    # them.
+    # Fedora 43 splits resolved's IPC into sockets; masking only the service
+    # leaves these to fail into `systemctl --failed`. Absent on Debian.
     "systemd-resolved-varlink.socket",
     "systemd-resolved-monitor.socket",
     "unbound-resolvconf.service",
 ]
 
-# The squatters a first-time installer actually meets, named so the refusal
-# can say something more useful than "port 25 is busy".
+# Named so the refusal says more than "port 25 is busy".
 KNOWN_SQUATTERS = {
     "exim4": "Debian's default MTA",
     "master": "an already-running postfix",
@@ -76,8 +61,7 @@ KNOWN_SQUATTERS = {
     "systemd-r": "systemd-resolved",
 }
 
-# Process names belonging to the resolver units cmrelay takes over rather
-# than refuses. `ss` truncates to 15 characters, hence the short forms.
+# `ss` truncates to 15 characters, hence the short forms.
 RESOLVER_PROCESSES = {"systemd-resolve", "systemd-r", "systemd-resolved"}
 
 
@@ -130,13 +114,10 @@ def systemd_available() -> bool:
 def unit_states(names) -> dict[str, tuple[str, str]]:
     """Return name -> (enabled-state, active-state) for units that exist.
 
-    Existence comes from is-enabled itself: for a unit systemd has it prints
-    the state on stdout; for one it does not, stdout is empty and the
-    complaint goes to stderr. Enumerating every unit file to answer the same
-    question cost 942 ms on a two-core VPS against 20 ms for the query, and
-    got instantiated units wrong -- postfix@-.service has no unit file of its
-    own, only its template does, so a listing of unit files could not see the
-    instance Debian actually runs its postfix as.
+    Existence comes from is-enabled: it prints the state for a unit systemd
+    has and nothing for one it does not. Listing unit files instead cost
+    942 ms against 20 ms, and missed instantiated units, which have no unit
+    file of their own.
     """
     if not systemd_available():
         return {}
@@ -156,9 +137,8 @@ _SS_LINE = re.compile(r'users:\(\("([^"]+)"')
 def port_holder(port: int, ss_argv=("ss",)) -> str | None:
     """Return the process name holding *port*, or None.
 
-    Store paths do not change argv[0] basenames, so `master`, `smtpd`,
-    `dovecot`, `imap-login`, `nginx`, `unbound`, `filtermail`, `iroh-relay`,
-    `mtail` and `acmetool` all still match relay's table unchanged.
+    Store paths do not change argv[0] basenames, so relay's table matches
+    cmrelay's own processes unchanged.
     """
     out = _run([*ss_argv, "-lptnH", f"sport = :{port}"])
     for line in out.splitlines():
@@ -171,9 +151,8 @@ def port_holder(port: int, ss_argv=("ss",)) -> str | None:
 def resolve_port_table(entries, config) -> list[tuple[list[str], int]]:
     """Turn relay's extracted port table into concrete (names, port) pairs.
 
-    Six of the nineteen entries reference a `config.<attr>` rather than a
-    literal, and one is conditional on acme mode; both are resolved here
-    against the relay's own Config object.
+    Some entries reference a `config.<attr>` rather than a literal and one is
+    conditional on acme mode, both resolved against relay's own Config.
     """
     resolved = []
     for entry in entries:
@@ -197,9 +176,7 @@ def resolve_port_table(entries, config) -> list[tuple[list[str], int]]:
 def check_ports(port_table, ss_argv=("ss",)) -> Report:
     """Whoever actually holds each port, which catches daemons by no name.
 
-    Store paths do not change argv[0] basenames, so cmrelay's own postfix
-    answers to `master` exactly as a distribution's does. That is why this
-    needs no equivalent of check_units' *ours*: a port held by the process
+    Needs no equivalent of check_units' *ours*: a port held by the process
     relay's table expects is right whoever installed it.
     """
     report = Report()
@@ -225,11 +202,9 @@ def check_ports(port_table, ss_argv=("ss",)) -> Report:
 def check_units(names=None, ours=None) -> Report:
     """Which of the names cmrelay wants are held by somebody else.
 
-    *ours* answers "is this unit already cmrelay's own", and without it the
-    detector cannot tell a distribution's postfix from the one cmrelay just
-    installed. Reporting the latter would be worse than useless: the remedy
-    it prints masks the name, and a masked name is one cmrelay can no longer
-    install.
+    Without *ours* the detector cannot tell a distribution's postfix from the
+    one cmrelay just installed, and would print a remedy that masks the name
+    out of cmrelay's own reach.
     """
     ours = ours or (lambda name: False)
     report = Report()
@@ -248,8 +223,7 @@ def check_units(names=None, ours=None) -> Report:
 def check_store(nix_root=Path("/nix")) -> Report:
     """A real /nix directory means the host runs Nix already.
 
-    cmrelay stops rather than mingling closures with somebody else's store,
-    because uninstall removes the whole tree.
+    Uninstall removes the whole tree, so cmrelay will not mingle closures.
     """
     report = Report()
     if nix_root.is_symlink():
@@ -286,9 +260,8 @@ def run(port_table, ss_argv=("ss",), nix_root=Path("/nix"), ours=None) -> Report
 def format_report(report: Report, remedies: bool = True) -> str:
     """The findings, and per-finding remedies unless something else fixes them.
 
-    A caller about to say "re-run with --take-over" suppresses them: telling
-    an operator to mask five services by hand, immediately above an offer to
-    do exactly that, reads as two alternatives when only one is meant.
+    A caller about to offer --take-over suppresses them, so that manual
+    remedies do not read as an alternative to the offer directly below.
     """
     lines = []
     for finding in report.findings:

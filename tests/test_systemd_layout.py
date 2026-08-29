@@ -47,7 +47,7 @@ def test_installing_over_a_mask_replaces_the_dev_null_symlink(fake_root):
 
 
 def test_installing_over_a_distribution_unit_replaces_it(fake_root):
-    """Only reached after `upgrade` has stopped and disabled the original."""
+    """Only reached after --take-over has stopped and disabled the original."""
     distro = paths.SYSTEMD_SYSTEM / "nginx.service"
     distro.write_text("# Debian's\n")
 

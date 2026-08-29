@@ -1,23 +1,13 @@
 """Unit files, and the systemctl calls that make them real.
 
-cmrelay writes the real unit files into /etc/systemd/system and keeps a
-directory of symlinks to them under /opt/cmrelay/systemd, so `ls` there still
-shows exactly cmrelay's units and following any of them lands on the file
-systemd loads.
+Real files go in /etc/systemd/system, indexed by symlinks under
+/opt/cmrelay/systemd. The reverse does not survive contact with systemd:
+`systemctl disable` removes a unit that is itself a symlink in the search
+path, so disabling chatmail-expire.service would delete its own installation.
 
-The obvious arrangement is the other way round -- real files under
-/opt/cmrelay, symlinked into /etc/systemd/system -- and it does not survive
-contact with systemd. `systemctl disable` removes a unit that is itself a
-symlink in the unit search path, so disabling `chatmail-expire.service`
-(which cmrelay does deliberately, because its timer owns it) would delete the
-installation of that unit, and the timer would then refuse to start against a
-target that is no longer loaded. Real files are not removed by `disable`.
-
-Unit names are a contract, not a coincidence. The acceptance suite tails
-`journalctl -u dovecot` and `-t postfix/smtpd`, so renaming dovecot.service
-to cmrelay-dovecot.service would silently cost the entire oracle. It is also
-why the preflight exists: identical names are exactly what makes the
-distribution's own packages collide.
+Unit names are a contract. The acceptance suite tails `journalctl -u dovecot`
+and `-t postfix/smtpd`, which is also why the preflight exists: identical
+names are what makes the distribution's own packages collide.
 """
 
 import shutil
@@ -54,8 +44,8 @@ def install_unit(name: str, content: str) -> bool:
     """Write a unit where systemd loads it, and index it under /opt/cmrelay."""
     real = paths.unit_file(name)
     if real.is_symlink():
-        # Either a mask (-> /dev/null) or an older cmrelay layout. Both have
-        # to go before a real file can take the name.
+        # A mask (-> /dev/null) or an older layout; either way it must go
+        # before a real file can take the name.
         real.unlink()
 
     changed = write(real, content, mode=0o644)
@@ -102,13 +92,9 @@ def ensure_service(
 def _no_reload(reload: bool) -> tuple:
     """`--no-reload`, when the caller will reload once at the end itself.
 
-    enable, disable, mask and unmask each ask systemd to reload its
-    configuration after rewriting the symlinks, and a reload costs 391 ms on
-    a two-core VPS against about 20 ms for the symlink work. Taking a host
-    over touches thirteen units two or three times each, so the reloads were
-    most of the sixteen seconds that step took -- all of them redundant,
-    because nothing reads the unit graph until cmrelay starts services, and
-    activate() reloads before it does.
+    A reload costs 391 ms on a two-core VPS against about 20 ms for the
+    symlink work, and a take-over touches thirteen units two or three times
+    each. Nothing reads the unit graph until activate() reloads.
     """
     return ("--no-reload",) if not reload else ()
 
@@ -116,34 +102,25 @@ def _no_reload(reload: bool) -> tuple:
 def stop_disable_mask(name: str, reload: bool = True) -> None:
     """Take a unit out of the way for good.
 
-    Disable alone loses to the next apt or dnf upgrade re-enabling the unit,
-    which is why cmdeploy masks systemd-resolved rather than disabling it.
+    Disable alone loses to the next apt or dnf upgrade re-enabling it.
     """
     flags = _no_reload(reload)
     systemctl("stop", name, check=False)
     systemctl("disable", *flags, name, check=False)
     systemctl("mask", *flags, name, check=False)
-    # A unit that was already failed stays in `systemctl --failed` after
-    # masking, so a converted host reports a fault it no longer has and an
-    # operator cannot tell it from one that matters.
+    # An already-failed unit stays in `systemctl --failed` after masking, so
+    # a converted host would report a fault it no longer has.
     systemctl("reset-failed", name, check=False)
 
 
 def tmpfiles_create() -> bool:
     """Recreate the /run directories the distribution's packages declare.
 
-    systemd deletes a RuntimeDirectory= when its service stops, and cmrelay's
-    units declare one because a fresh host has no package to declare it for
-    them. On a host taken over from a distribution the same path is usually
-    tmpfiles' -- Debian's opendkim.service has no RuntimeDirectory and relies
-    on /usr/lib/tmpfiles.d/opendkim.conf creating /run/opendkim at boot -- so
-    stopping cmrelay's unit removes a directory the distribution's unit needs
-    and does not create. `cmdeploy run` then fails on
-
-        can't write pid to /run/opendkim/opendkim.pid: No such file or directory
-
-    until the next reboot, which is when tmpfiles would run anyway. This is
-    that reboot's effect, without the reboot.
+    systemd deletes a RuntimeDirectory= when its service stops. On a
+    taken-over host that same path usually belongs to tmpfiles instead
+    (Debian's opendkim.service relies on it), so stopping cmrelay's unit
+    leaves the distribution's unit without a directory it never creates.
+    This is the next reboot's effect, without the reboot.
     """
     if not shutil.which("systemd-tmpfiles"):
         return False
@@ -160,38 +137,16 @@ def unmask(name: str, reload: bool = True) -> None:
     systemctl("unmask", *_no_reload(reload), name, check=False)
 
 
-def read_disabled_units() -> list[str]:
-    if not paths.DISABLED_UNITS.is_file():
-        return []
-    return [
-        line.strip()
-        for line in paths.DISABLED_UNITS.read_text().splitlines()
-        if line.strip()
-    ]
-
-
-def read_shadowed_units() -> list[str]:
-    if not paths.SHADOWED_UNITS_STATE.is_file():
-        return []
-    return [
-        line.strip()
-        for line in paths.SHADOWED_UNITS_STATE.read_text().splitlines()
-        if line.strip()
-    ]
-
-
-def record_shadowed_units(names) -> None:
-    paths.SHADOWED_UNITS_STATE.parent.mkdir(parents=True, exist_ok=True)
-    merged = sorted(set(read_shadowed_units()) | set(names))
-    paths.SHADOWED_UNITS_STATE.write_text("\n".join(merged) + "\n")
-
-
 def enable(name: str, reload: bool = True) -> None:
     systemctl("enable", *_no_reload(reload), name, check=False)
 
 
-def record_disabled_units(names) -> None:
-    paths.DISABLED_UNITS.parent.mkdir(parents=True, exist_ok=True)
-    existing = read_disabled_units()
-    merged = sorted(set(existing) | set(names))
-    paths.DISABLED_UNITS.write_text("\n".join(merged) + "\n")
+def read_units(state: Path) -> list[str]:
+    if not state.is_file():
+        return []
+    return [line.strip() for line in state.read_text().splitlines() if line.strip()]
+
+
+def record_units(state: Path, names) -> None:
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text("\n".join(sorted(set(read_units(state)) | set(names))) + "\n")

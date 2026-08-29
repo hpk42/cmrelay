@@ -1,22 +1,12 @@
 """Finding the payload's own pieces, in staging and once installed.
 
-The installer runs twice from two different roots. The first time it runs out
-of a staging directory that the stub extracted to, before anything has
-touched the host; the second time it runs out of the installed store, after
-the closure has been moved into place. Both times it needs the same four
-things: the component manifest, the vendored relay configuration, the units
-cmrelay authors, and vendor.lock.
-
-`prefix` is what separates the two. In staging every store path has the
-staging root in front of it; once installed the prefix is empty and the paths
-are what the binaries themselves were built for.
+The installer runs once out of the stub's staging directory and again out of
+the installed store, needing the same manifest, vendored configuration, units
+and vendor.lock both times. `prefix` separates them: in staging every store
+path has the staging root in front of it, and once installed it is empty.
 """
 
-# RHEL 9 and its rebuilds ship Python 3.9 as the system interpreter, and
-# a wheel-installed cmrelay only has to parse this far before it execs a
-# payload carrying its own 3.14. `X | None` in an annotation is 3.10+ at
-# runtime; deferring annotations costs nothing and keeps the pip path
-# open on the whole family.
+# Deferred so `X | None` parses on the 3.9 that RHEL 9 ships.
 from __future__ import annotations
 
 import json
@@ -25,16 +15,15 @@ from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
-# The stub exports these before handing over.
+# Exported by the stub before it hands over.
 ENV_STAGE = "CMRELAY_STAGE"
-
-# The stub keeps a complete staging tree under a canonical name so the next
-# run can reuse it, and tells a complete tree from a consumed one by this
-# marker. Shared with stub/setup.sh.
-READY_MARKER = ".cmrelay-ready"
 ENV_CLOSURE = "CMRELAY_CLOSURE"
 
-# The stub writes these into the closure; see nix/closure.nix.
+# How the stub tells a complete staging tree from a consumed one. Shared with
+# stub/header.sh.
+READY_MARKER = ".cmrelay-ready"
+
+# Written into the closure by nix/closure.nix.
 BOOTSTRAP = "bootstrap.env"
 
 
@@ -99,9 +88,8 @@ class Bundle:
     def bin(self, component: str, name: str | None = None) -> str:
         """A component's executable, as the *installed* path.
 
-        Unit files and rendered configuration must name the path the binary
-        will have once the store is in place, never the staging path, so this
-        deliberately does not go through resolve().
+        Units and rendered configuration must name the path the binary will
+        have once installed, so this deliberately skips resolve().
         """
         entry = self.component(component)
         key = name or component
@@ -129,16 +117,10 @@ class Bundle:
     def command(self, component: str, name: str | None = None) -> list[str]:
         """An argv that runs one of the closure's binaries right now.
 
-        Installed, that is just the binary. In staging it cannot be: the
-        binary names an absolute /nix/store path as its ELF interpreter and
-        that path does not exist yet. Invoking ld.so with the binary as an
-        argument bypasses PT_INTERP, and --library-path outranks the
-        DT_RUNPATH nix writes, which is the same trick the stub uses to start
-        the interpreter in the first place.
-
-        This matters most for the preflight: without it, every store binary
-        it wants to run would simply fail, and a detector that cannot run
-        looks exactly like a detector that found nothing.
+        In staging the binary's ELF interpreter does not exist yet, so this
+        goes through ld.so, the same trick the stub uses. It matters most for
+        the preflight, where a detector that cannot run would look exactly
+        like one that found nothing.
         """
         binary = self.resolve(self.bin(component, name))
         if self.prefix is None:

@@ -1,18 +1,8 @@
 """Build the relay's web pages, the way cmdeploy's www.py builds them.
 
-This is one of the few places cmrelay reimplements rather than reuses, for
-the same reason it reimplements the deployers: www.py is cmdeploy's code, and
-vendoring cmdeploy's Python is what the vendoring model exists to avoid.
-What it produces is the same tree from the same sources -- the markdown pages
-under vendor/www rendered through page-layout.html, plus the invite QR code.
-
-The QR code is the one deliberate difference, and it is an SVG rather than
-relay's composited PNG. Where relay's web pages end up is an open question,
-so cmrelay should not carry 74 MiB of image codecs on their behalf while it
-is undecided.
-
-Rendering is recursive because relay's pages contain jinja expressions inside
-the markdown, which land inside the layout and have to be expanded again.
+Reimplemented rather than reused because www.py is cmdeploy's code, which is
+what the vendoring model exists to avoid carrying. Same tree from the same
+sources.
 """
 
 import io
@@ -22,9 +12,6 @@ import markdown
 import qrcode
 import qrcode.image.svg
 from jinja2 import Template
-
-QR_BORDER = 4
-QR_BOX_SIZE = 10
 
 
 def int_to_english(number: int) -> str:
@@ -41,16 +28,14 @@ def int_to_english(number: int) -> str:
 def gen_qr_svg(mail_domain: str) -> str:
     """The DCACCOUNT invite code, as an SVG.
 
-    relay draws this as a PNG with the Delta Chat logo composited into the
-    middle and the domain written underneath, which needs Pillow. Pillow
-    costs 74 MiB of image codecs in the closure, almost all of it formats a
-    relay never touches, to produce one picture per host. An SVG carries the
-    same code, scales better, and needs nothing beyond qrcode itself.
+    relay composites this into a PNG with Pillow, which costs 74 MiB of image
+    codecs in the closure for one picture per host. The SVG carries the same
+    code and needs nothing beyond qrcode.
     """
     qr = qrcode.QRCode(
         error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=QR_BOX_SIZE,
-        border=QR_BORDER,
+        box_size=10,
+        border=4,
     )
     qr.add_data(f"DCACCOUNT:https://{mail_domain}/new")
     qr.make(fit=True)
@@ -66,9 +51,8 @@ def render_page(source: Path, layout: str, config, extra: dict) -> str:
         **extra,
     }
     content = layout
-    # relay's pages carry jinja inside the markdown, which only becomes
-    # visible to the template engine once the layout has been expanded, so
-    # render until the output stops changing.
+    # Jinja inside the markdown only becomes visible once the layout has been
+    # expanded, so render until the output stops changing.
     while True:
         new = Template(content).render(config=config, **render_vars)
         if new == content:

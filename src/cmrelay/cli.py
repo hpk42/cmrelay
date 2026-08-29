@@ -1,24 +1,11 @@
 """The cmrelay command line.
 
-Four verbs and a version. `install --mail-domain <domain>` is the primary
-path and takes exactly one required argument, because everything else has a
-default that relay's own write_initial_config supplies.
-
-The same CLI runs from two places, and the difference decides what it can do.
-Out of the closure -- which is how the .run payload starts it -- everything
-works. Out of a pip-installed wheel there is no closure, no chatmaild and no
-relay to install, so every verb hands over to the payload the wheel carries.
-That is why the verb implementations are imported inside `main()`: importing
-them from a wheel would fail on chatmaild before the CLI could explain
-itself.
+The same CLI runs out of the closure, where everything works, and out of a
+pip-installed wheel, where there is no chatmaild and every verb hands over to
+the bundled payload. That is why the verb implementations are imported inside
+`main()`: importing them from a wheel would fail on chatmaild before the CLI
+could explain itself.
 """
-
-# RHEL 9 and its rebuilds ship Python 3.9 as the system interpreter, and
-# a wheel-installed cmrelay only has to parse this far before it execs a
-# payload carrying its own 3.14. `X | None` in an annotation is 3.10+ at
-# runtime; deferring annotations costs nothing and keeps the pip path
-# open on the whole family.
-from __future__ import annotations
 
 import argparse
 import os
@@ -109,7 +96,6 @@ def build_parser():
 
 
 def installed_in_a_closure() -> bool:
-    """Whether this CLI is the one inside a cmrelay payload."""
     from .bundle import Bundle, BundleError
 
     try:
@@ -120,11 +106,8 @@ def installed_in_a_closure() -> bool:
 
 
 def main(argv=None):
-    # The modes of everything cmrelay creates must not depend on who invoked
-    # it. makeself's stub runs with `umask 077`, which silently made
-    # /var/lib/postfix unreadable to the postfix user and stopped the mail
-    # system from starting -- the sort of failure that only shows up on the
-    # path nobody runs by hand.
+    # Modes must not depend on who invoked cmrelay: makeself's `umask 077`
+    # silently made /var/lib/postfix unreadable to the postfix user.
     os.umask(0o022)
 
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -139,9 +122,7 @@ def main(argv=None):
         parser.print_help()
         return 2
 
-    # --mail-domain names a domain for a relay being created. --take-over
-    # adopts the one the host already serves, so supplying both asks cmrelay
-    # to rename a live relay, which is not what either flag means.
+    # Both flags together would ask cmrelay to rename a live relay.
     if args.verb == "install":
         if args.take_over and (args.mail_domain or args.config or args.set):
             parser.error(
@@ -151,8 +132,6 @@ def main(argv=None):
         if not args.take_over and not (args.mail_domain or args.config):
             parser.error("install needs --mail-domain (or --config, or --take-over)")
 
-    # A pip-installed cmrelay is the CLI and the payload. Every verb needs the
-    # closure, so there is one thing to do: hand over to it.
     if not installed_in_a_closure():
         from .payload import PayloadError, run_from_wheel
 
