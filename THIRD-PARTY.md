@@ -1,9 +1,10 @@
 # What the payload ships, and under what terms
 
-cmrelay's own code is GPL-3.0-or-later; see [LICENSE](LICENSE). The installer
-it produces is a Nix closure of about 110 store paths, and everything in it is
-somebody else's software under somebody else's terms. This file lists what a
-`cmrelay-installer-*.run` contains.
+cmrelay's own licensing is a work in progress;
+see [LICENSE](LICENSE). The installer it produces is
+a Nix closure of about 110 store paths, and everything
+in it is somebody else's software under somebody else's terms.
+This file lists what a `cmrelay-installer-*.run` contains.
 
 Where two licences are named with **or**, the component is offered under
 either and the choice is yours. Where several are named with a comma, parts of
