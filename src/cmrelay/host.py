@@ -74,7 +74,7 @@ def classify(
     store: Path = paths.STORE,
     cmdeploy_ini: Path = paths.CMDEPLOY_INI,
     marker: Path = paths.VERSION_MARKER,
-    units: Path = None,
+    units: Path = paths.UNITS,
 ) -> Host:
     """One detector pass, no writes, before anything else happens.
 
@@ -87,7 +87,6 @@ def classify(
     deploy that started and did not finish: the ini, or a unit file. Not
     `state/`, which taking the deploy lock creates before this runs.
     """
-    units = units if units is not None else paths.UNITS
     commit, modified, version = read_marker(marker)
     store_populated = store.is_dir() and any(store.iterdir())
     deployed_before = units.is_dir()

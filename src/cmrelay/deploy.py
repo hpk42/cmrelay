@@ -18,7 +18,7 @@ issuing a systemctl call.
 import subprocess
 from pathlib import Path
 
-from . import installer, paths, render, systemd, users, www
+from . import fsops, installer, paths, render, systemd, users, www
 from .version import __version__
 
 # Matches ChatmailVenvDeployer.units; the timers own the last two.
@@ -745,7 +745,7 @@ class Deployment:
             owner=("postfix", "root"),
         )
         created = self.j.ensure_directory("postfix", paths.POSTFIX_SPOOL, mode=0o755)
-        self.spool_created = created is not None and created.kind == "+"
+        self.spool_created = created is not None and created.kind == fsops.ADDED
         # postfix looks for postfix-files beside main.cf when it sets
         # permissions; nixpkgs keeps it in the package.
         self.j.symlink(

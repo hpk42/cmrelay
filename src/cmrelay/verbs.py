@@ -87,7 +87,7 @@ def cmd_deploy(args, out) -> int:
 
 def deploy(args, bundle, out) -> int:
     started = time.monotonic()
-    journal = fsops.Journal(dry_run=args.dry_run, written=state.read_written())
+    journal = fsops.Journal(dry_run=args.dry_run, prior=state.read_written())
 
     where = host.classify()
     existing = load_existing_config(where)
@@ -154,7 +154,7 @@ def deploy(args, bundle, out) -> int:
             deployment.configure()
             deployment.install_daemon_units()
         state.save_intent(journal, {**intent, "disable_mail": disable_mail})
-        state.save_written(journal, journal.written)
+        state.save_written(journal)
         report_components(out, journal)
 
     report_system_files(out, journal)
@@ -317,21 +317,21 @@ def mask_existing(out):
     )
     masked, shadowed = [], []
     for name in preflight.SHADOWED_UNITS:
-        state_ = states.get(name)
-        if owned_unit(name) or state_ is None or not state_.exists:
+        unit = states.get(name)
+        if owned_unit(name) or unit is None or not unit.exists:
             continue
-        out.changed(f"{name} ({state_.enabled}/{state_.active}) stopped and disabled")
-        if state_.enabled in ("enabled", "enabled-runtime"):
+        out.changed(f"{name} ({unit.enabled}/{unit.active}) stopped and disabled")
+        if unit.enabled in ("enabled", "enabled-runtime"):
             shadowed.append(name)
         systemd.systemctl("stop", name, check=False)
         systemd.systemctl("disable", "--no-reload", name, check=False)
         systemd.unmask(name, reload=False)
 
     for name in preflight.MASKED_UNITS + preflight.RESOLVER_UNITS:
-        state_ = states.get(name)
-        if state_ is None or not state_.exists or state_.is_masked:
+        unit = states.get(name)
+        if unit is None or not unit.exists or unit.is_masked:
             continue
-        out.changed(f"{name} ({state_.enabled}/{state_.active}) stopped and masked")
+        out.changed(f"{name} ({unit.enabled}/{unit.active}) stopped and masked")
         systemd.stop_disable_mask(name, reload=False)
         masked.append(name)
     return masked, shadowed
@@ -377,13 +377,13 @@ def activate(deployment, journal, out) -> list:
 
     # acmetool answers the HTTP challenge, and dovecot, postfix and nginx
     # will not start without the certificate it fetches.
-    issued = report_calls(out, plan.only(ACME_UNITS).calls(states))
+    issued = issue_calls(out, plan.only(ACME_UNITS).calls(states))
     if deployment.config.tls_cert_mode == "acme" and deployment.needs_reconcile():
         deployment.run_acmetool()
     if not tls_material_present(deployment, out):
         return issued
 
-    issued += report_calls(out, plan.without(ACME_UNITS).calls(states))
+    issued += issue_calls(out, plan.without(ACME_UNITS).calls(states))
     if not issued:
         out.unchanged(f"{len(plan.intents)} units, all as intended")
     if any(call[0] in ("enable", "disable") for call in issued) and not reloaded:
@@ -391,7 +391,7 @@ def activate(deployment, journal, out) -> list:
     return issued
 
 
-def report_calls(out, calls) -> list:
+def issue_calls(out, calls) -> list:
     issued = systemd.run_calls(calls, out=out)
     for call in issued:
         names = [a for a in call[1:] if not a.startswith("--")]
@@ -611,12 +611,12 @@ def report_masked(out) -> bool:
     out.section("Masked by cmrelay")
     ok = True
     for name in masked:
-        state_ = systemd.query("is-enabled", name) or "-"
-        if state_ == "masked":
+        enabled = systemd.query("is-enabled", name) or "-"
+        if enabled == "masked":
             out.print(f"  {name:<36} masked")
             continue
         ok = False
-        out.error(f"  {name:<36} {state_} -- no longer masked")
+        out.error(f"  {name:<36} {enabled} -- no longer masked")
         out.print(
             f"      remedy: systemctl disable --now {name} && systemctl mask {name}"
         )

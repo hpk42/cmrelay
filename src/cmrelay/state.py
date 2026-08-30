@@ -40,9 +40,9 @@ def read_written() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def save_written(journal, previous: dict) -> None:
+def save_written(journal) -> None:
     """Fold this run's writes into the record, keeping what it did not touch."""
-    merged = dict(previous)
+    merged = dict(journal.prior)
     merged.update(journal.wrote)
     for path in list(merged):
         if not Path(path).exists():

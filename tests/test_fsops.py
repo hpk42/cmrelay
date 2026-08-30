@@ -159,7 +159,7 @@ def test_an_owned_file_edited_by_hand_is_replaced_and_the_original_kept(tmp_path
     first.write("x", target, "one\n")
 
     target.write_text("edited by somebody\n")
-    second = fsops.Journal(written=first.wrote)
+    second = fsops.Journal(prior=first.wrote)
     change = second.write("x", target, "two\n")
 
     assert change.detail == "was edited by hand"
@@ -173,7 +173,7 @@ def test_a_guest_file_edited_by_hand_is_left_alone(tmp_path):
     first.write("x", target, "one\n")
 
     target.write_text("the operator's retention\n")
-    second = fsops.Journal(written=first.wrote)
+    second = fsops.Journal(prior=first.wrote)
 
     assert second.write("x", target, "two\n", guest=True) is None
     assert target.read_text() == "the operator's retention\n"
@@ -322,7 +322,7 @@ def test_a_second_deploy_against_the_same_root_changes_nothing(deployment, fake_
     deployment.install_daemon_units()
 
     before = snapshot(fake_root)
-    deployment.j = fsops.Journal(written=deployment.j.wrote)
+    deployment.j = fsops.Journal(prior=deployment.j.wrote)
     deployment.configure()
     deployment.install_daemon_units()
     after = snapshot(fake_root)

@@ -66,7 +66,7 @@ def upgrade_verb(args, bundle, out) -> int:
         out.print("aborted; nothing was modified")
         return 1
 
-    journal = fsops.Journal(written=state.read_written())
+    journal = fsops.Journal(prior=state.read_written())
     number = publish(staged, journal, out)
     record_signature(journal, verdict, new_version)
     exec_installed(
@@ -264,7 +264,7 @@ def record_signature(journal, verdict, version: str) -> None:
 def finish(args, out) -> int:
     """Migrations, the flip, and the deploy that does the rest."""
     number = int(args.finish)
-    journal = fsops.Journal(written=state.read_written())
+    journal = fsops.Journal(prior=state.read_written())
     previous = args.previous_version or ""
 
     steps = migrations.pending(previous, __version__, state.read_migrations())
@@ -275,7 +275,7 @@ def finish(args, out) -> int:
 
     generations.flip(journal, number)
     generations.prune(journal, out)
-    state.save_written(journal, journal.written)
+    state.save_written(journal)
     out.ok(f"generation {number} is live; deploying {__version__}")
     sys.stdout.flush()
     exec_installed(["deploy"])
@@ -295,10 +295,10 @@ def rollback(args, out) -> int:
         out.print("aborted; nothing was modified")
         return 1
 
-    journal = fsops.Journal(written=state.read_written())
+    journal = fsops.Journal(prior=state.read_written())
     if not generations.restore_state(journal, target):
         out.warn(f"generation {target} has no saved state; keeping the current one")
     generations.flip(journal, target)
-    state.save_written(journal, journal.written)
+    state.save_written(journal)
     exec_installed(["deploy"])
     return 1

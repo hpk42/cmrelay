@@ -89,7 +89,7 @@ class Journal:
     """What this run changed, and the only way to change anything."""
 
     dry_run: bool = False
-    written: dict = field(default_factory=dict)
+    prior: dict = field(default_factory=dict)
     changes: list = field(default_factory=list)
     wrote: dict = field(default_factory=dict)
     hand_edited: list = field(default_factory=list)
@@ -142,7 +142,7 @@ class Journal:
         Without a recorded hash there is no evidence either way, so a
         pre-existing file never counts as edited.
         """
-        recorded = self.written.get(str(path))
+        recorded = self.prior.get(str(path))
         if recorded is None:
             return False
         current = file_digest(path)
