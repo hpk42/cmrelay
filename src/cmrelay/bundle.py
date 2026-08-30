@@ -18,6 +18,7 @@ from pathlib import Path
 # Exported by the stub before it hands over.
 ENV_STAGE = "CMRELAY_STAGE"
 ENV_CLOSURE = "CMRELAY_CLOSURE"
+ENV_INSTALLER = "CMRELAY_INSTALLER"
 
 # How the stub tells a complete staging tree from a consumed one. Shared with
 # stub/header.sh.

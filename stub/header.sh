@@ -1,11 +1,11 @@
 #!/bin/sh
-# The whole of cmrelay that is not Python: a shell header with a store
+# The whole of the installer that is not Python: a shell header with a store
 # archive, a zstd and a tar bolted onto the end of it. A Python CLI needs an
 # interpreter and the interpreter is inside the payload; resolving that
 # circularity is all this script does.
 #
-# Extraction goes to staging first and only a passing preflight touches
-# /nix/store or /opt/cmrelay, which is what keeps "modified nothing" true.
+# Extraction goes to staging first, and `cmrelay installer` publishes it only
+# after the operator has agreed, which is what keeps "modified nothing" true.
 #
 # Two tricks make it work. The file is its own archive: everything after this
 # header is binary at offsets nix/payload.nix patches into the fields below,
@@ -38,9 +38,8 @@ fail() {
     exit 1
 }
 
-# The wheel and cmlxc still invoke `cmrelay.run --quiet -- install ...`, from
-# when a makeself stub parsed those. Accepted and ignored; the CLI knows
-# neither.
+# The wheel still invokes `--quiet -- ...`, from when a makeself stub parsed
+# those. Accepted and ignored; the CLI knows neither.
 while [ $# -gt 0 ]; do
     case $1 in
         --quiet) shift ;;
@@ -134,7 +133,10 @@ if [ -n "$shared" ]; then
     done
 fi
 
-if [ -n "$shared" ] && [ -f "$shared/$hash/$ready" ]; then
+# The marker alone is not enough: publishing moves the store out, and a tree
+# whose closure has gone would fail much later on a missing bootstrap.env.
+if [ -n "$shared" ] && [ -f "$shared/$hash/$ready" ] \
+    && [ -f "$shared/$hash$CMRELAY_CLOSURE/bootstrap.env" ]; then
     stage=$shared/$hash
     canonical=1
     echo "cmrelay: reusing the closure already unpacked in $stage"
@@ -232,7 +234,10 @@ python="$stage$CMRELAY_PYTHON"
 libs=$(ls -d "$stage"/nix/store/*/lib 2>/dev/null | tr '\n' ':')
 
 CMRELAY_STAGE="$stage"
-export CMRELAY_STAGE CMRELAY_CLOSURE
+# The installer's own path, which argv cannot carry once the CLI is running
+# out of the staged closure.
+CMRELAY_INSTALLER="$self"
+export CMRELAY_STAGE CMRELAY_CLOSURE CMRELAY_INSTALLER
 staged_site=$(printf '%s' "$CMRELAY_SITE" | sed "s|:|:$stage|g")
 PYTHONPATH="$stage$CMRELAY_CLOSURE:$stage$staged_site"
 export PYTHONPATH
@@ -247,5 +252,5 @@ export PYTHONNOUSERSITE
 # reads straight on into it and reports a syntax error. `set -e` hid that for
 # a long time, because only successful runs got far enough to hit it.
 status=0
-"$ld" --library-path "$libs" "$python" -m cmrelay "$@" || status=$?
+"$ld" --library-path "$libs" "$python" -m cmrelay installer "$@" || status=$?
 exit "$status"

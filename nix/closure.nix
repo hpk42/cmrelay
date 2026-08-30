@@ -28,10 +28,13 @@
   fetched,
   acmetool,
   dovecot,
+  ldns,
   pythonEnv,
   pythonDeps,
   python3Packages,
   cmrelaySrc,
+  version,
+  commit,
 }:
 
 let
@@ -137,6 +140,10 @@ let
     # Tools the installer shells out to. Taking them from the store rather
     # than the host is what keeps behaviour identical across distributions.
     coreutils = component coreutils { };
+    # `cmrelay dns` queries the authoritative nameservers. drill is one
+    # 0.6 MiB store path against seven for bind's dnsutils, and its -Q output
+    # is byte-identical to `dig +short` for every type the zone check reads.
+    ldns = component ldns { drill = "${ldns}/bin/drill"; };
     openssl = component openssl { openssl = "${openssl}/bin/openssl"; };
     iproute2 = component iproute2 { ss = "${iproute2}/bin/ss"; };
   };
@@ -144,7 +151,7 @@ let
   manifest = writeText "cmrelay-manifest.json" (
     builtins.toJSON {
       schema = 1;
-      inherit components;
+      inherit version commit components;
     }
   );
 
@@ -178,12 +185,15 @@ runCommand "cmrelay-closure"
 
     mkdir -p $out
     cp ${manifest} $out/manifest.json
+    # So a host has the terms of everything running on it, on the host.
+    cp ${cmrelaySrc}/LICENSE ${cmrelaySrc}/THIRD-PARTY.md $out/
     cp ${cmrelaySrc}/vendor.lock $out/vendor.lock
     # the preflight port table, extracted from relay's deployers at build time
     cp ${cmrelaySrc}/nix/generated/relay-pins.json $out/relay-pins.json
 
     cp -r ${cmrelaySrc}/vendor $out/vendor
     cp -r ${cmrelaySrc}/units $out/units
+    cp -r ${cmrelaySrc}/release-keys $out/release-keys
     cp -r ${cmrelaySrc}/src/cmrelay $out/cmrelay
     chmod -R u+w $out
     find $out -name __pycache__ -prune -exec rm -rf {} +

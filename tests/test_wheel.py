@@ -122,3 +122,54 @@ def test_the_wheel_declares_no_dependencies(built):
     with zipfile.ZipFile(built) as zf:
         name = next(n for n in zf.namelist() if n.endswith("/METADATA"))
         assert "Requires-Dist" not in zf.read(name).decode()
+
+
+def test_the_signature_travels_inside_the_wheel(script, tmp_path):
+    """`cmrelay upgrade --source pypi` has nothing to verify without it."""
+    payload = tmp_path / "cmrelay.run"
+    payload.write_bytes(b"#!/bin/sh\n")
+    signature = tmp_path / "cmrelay.run.sig"
+    signature.write_text("cmrelay-signature-v1\nalg  ed25519\nsig  AAAA\n")
+
+    built = script.build(
+        payload,
+        "x86_64",
+        "0.4.0",
+        ROOT / "src",
+        ROOT,
+        tmp_path / "out",
+        signature=signature,
+    )
+    with zipfile.ZipFile(built) as archive:
+        names = set(archive.namelist())
+        assert script.PAYLOAD_MEMBER in names
+        assert script.SIGNATURE_MEMBER in names
+        assert archive.read(script.SIGNATURE_MEMBER) == signature.read_bytes()
+
+
+def test_a_wheel_without_a_signature_still_builds(script, tmp_path):
+    payload = tmp_path / "cmrelay.run"
+    payload.write_bytes(b"#!/bin/sh\n")
+    built = script.build(
+        payload, "x86_64", "0.4.0", ROOT / "src", ROOT, tmp_path / "out"
+    )
+    with zipfile.ZipFile(built) as archive:
+        assert script.SIGNATURE_MEMBER not in set(archive.namelist())
+
+
+def test_the_wheel_carries_the_terms_of_what_it_ships(built):
+    """The payload travels in the wheel, so its licences travel with it."""
+    import zipfile
+
+    with zipfile.ZipFile(built) as archive:
+        names = set(archive.namelist())
+    dist_info = "cmrelay-1.2.3.dist-info/licenses"
+    assert f"{dist_info}/LICENSE" in names
+    assert f"{dist_info}/THIRD-PARTY.md" in names
+
+
+def test_the_licence_names_the_gpl_and_the_bundled_components():
+    text = (ROOT / "LICENSE").read_text()
+    assert "GNU GENERAL PUBLIC LICENSE" in text
+    assert "THIRD-PARTY.md" in text
+    assert "patches/" in text

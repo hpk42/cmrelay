@@ -12,7 +12,7 @@ import stat
 import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 
-from cmrelay import preflight
+from cmrelay import preflight, systemd
 
 
 def fake_tool(tmp_path, name, script) -> str:
@@ -121,7 +121,7 @@ def test_store_check_passes_on_a_bare_host(tmp_path):
 
 
 def test_unit_check_is_quiet_without_systemd(monkeypatch):
-    monkeypatch.setattr(preflight, "systemd_available", lambda: False)
+    monkeypatch.setattr(systemd, "available", lambda: False)
     assert preflight.check_units().ok
 
 
@@ -131,19 +131,22 @@ def test_unit_check_flags_an_enabled_distro_unit(tmp_path, monkeypatch):
     fake_tool(
         bindir,
         "systemctl",
-        # systemd prints the state on stdout for a unit it has, and nothing
-        # on stdout for one it does not -- which is the whole existence test.
         """
-case "$1 $2" in
-  "is-enabled postfix.service") echo enabled ;;
-  "is-active postfix.service") echo active ;;
-  "is-enabled "*) echo "Failed to get unit file state for $2." >&2; exit 1 ;;
-  "is-active "*) echo inactive ;;
-esac
+cat <<'OUT'
+Id=postfix.service
+LoadState=loaded
+ActiveState=active
+UnitFileState=enabled
+
+Id=dovecot.service
+LoadState=not-found
+ActiveState=inactive
+UnitFileState=
+OUT
 """,
     )
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
-    monkeypatch.setattr(preflight, "systemd_available", lambda: True)
+    monkeypatch.setattr(systemd, "available", lambda: True)
 
     report = preflight.check_units(["postfix.service", "dovecot.service"])
     assert [f.subject for f in report.findings] == ["postfix.service"]

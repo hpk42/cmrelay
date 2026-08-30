@@ -29,8 +29,32 @@ DISABLED_UNITS = STATE / "disabled-units"
 
 LINKED_TOOLS = STATE / "linked-tools"
 
+# sha256 per file cmrelay wrote outside its own tree, to spot hand edits.
+WRITTEN = STATE / "written.json"
+
+# What the operator asked for and chatmail.ini cannot express.
+INTENT = STATE / "intent.json"
+
+# Held for the whole of any verb that writes.
+LOCK = STATE / "lock"
+
+# What deploy last published under /var/www/html, so stale pages go.
+WWW_FILES = STATE / "www-files"
+
+MIGRATIONS = STATE / "migrations"
+SIGNATURE = STATE / "signature.json"
+
 NIX = ROOT / "nix"
 STORE = NIX / "store"
+STAGING = ROOT / ".staging"
+
+# The operator's page source, and the release's own copy to diff against.
+WWW_SRC = ROOT / "www"
+WWW_DIST = ROOT / "www.dist"
+
+# One directory per installed closure, plus a `current` symlink.
+GENERATIONS = ROOT / "generations"
+CURRENT = GENERATIONS / "current"
 
 CGI_BIN = ROOT / "cgi-bin"
 
@@ -60,6 +84,38 @@ POSTFIX_SPOOL = Path("/var/spool/postfix")
 VERSION_MARKER = Path("/etc/chatmail-version")
 MAILNAME = Path("/etc/mailname")
 CMDEPLOY_INI = Path("/usr/local/lib/chatmaild/chatmail.ini")
+
+# Host paths cmrelay reads or writes. Named here rather than inline so that
+# this module is the whole list of what a deploy can touch.
+RESOLV_CONF = Path("/etc/resolv.conf")
+ENVIRONMENT = Path("/etc/environment")
+ALIASES = Path("/etc/aliases")
+ALIASES_DB = Path("/etc/aliases.db")
+SYSCTL_INOTIFY = Path("/etc/sysctl.d/60-cmrelay-inotify.conf")
+PROC_INOTIFY = Path("/proc/sys/fs/inotify")
+JOURNALD_CONF = Path("/etc/systemd/journald.conf")
+UNBOUND_STATE = Path("/var/lib/unbound")
+UNBOUND_DROPINS = Path("/etc/unbound/unbound.conf.d")
+UNBOUND_ANCHOR = UNBOUND_STATE / "root.key"
+OPENDKIM_ETC = Path("/etc/opendkim")
+NGINX_LIB = Path("/var/lib/nginx")
+NGINX_LOG = Path("/var/log/nginx")
+POSTFIX_LIB = Path("/var/lib/postfix")
+
+# Debian patches acmetool to read this; upstream reads /usr/libexec/acme/hooks.
+ACME_HOOKS = Path("/etc/acme/hooks")
+UPSTREAM_ACME_HOOK = Path("/usr/lib/acme/hooks/nginx")
+
+# Written by older chatmail deployments and removed by every deploy.
+LEGACY = [
+    Path("/etc/cron.d/expunge"),
+    Path("/etc/cron.d/chatmail-metrics"),
+    Path("/etc/cron.d/acmetool"),
+    Path("/etc/mta-sts-daemon.yml"),
+    Path("/etc/opendkim/screen.lua"),
+    Path("/etc/opendkim/final.lua"),
+]
+LEGACY_DIRS = [Path("/usr/local/lib/postfix-mta-sts-resolver")]
 
 
 def unit_file(name: str) -> Path:

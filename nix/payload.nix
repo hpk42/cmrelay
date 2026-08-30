@@ -7,6 +7,7 @@
 
 {
   lib,
+  stdenv,
   runCommand,
   zstd,
   pkgsStatic,
@@ -22,6 +23,8 @@
 }:
 
 let
+  # Both architectures land on one release page, so the file says which.
+  arch = if stdenv.hostPlatform.isAarch64 then "aarch64" else "x86_64";
   info = closureInfo { rootPaths = [ closure ]; };
   staticZstd = pkgsStatic.zstd;
   # Files a relay never reads, dropped on the way into the payload. This
@@ -129,7 +132,7 @@ runCommand "cmrelay-${version}"
     patch_size CMRELAY_STORE_BYTES  "$(stat -c%s store.tar.zst)"
 
     mkdir -p $out/bin
-    run=$out/bin/cmrelay-${version}.run
+    run=$out/bin/cmrelay-installer-${version}-${arch}-linux.run
     cat header.sh zstd tar.zst store.tar.zst > $run
     chmod 755 $run
 
@@ -143,5 +146,5 @@ runCommand "cmrelay-${version}"
     }
 
     ls -l $out/bin
-    ln -s cmrelay-${version}.run $out/bin/cmrelay.run
+    ln -s cmrelay-installer-${version}-${arch}-linux.run $out/bin/cmrelay.run
   ''

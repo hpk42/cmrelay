@@ -7,7 +7,7 @@ name = "cmrelay"
 description = "Single-file installer for a chatmail relay, built as a Nix closure"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-or-later"}
 # No dependencies, deliberately. A pip-installed cmrelay reaches four of its
 # own modules -- cli, output, version and fetch -- and then execs the payload,
 # which brings its own interpreter. jinja2, markdown, qrcode and chatmaild are
@@ -65,6 +65,9 @@ target-version = "py311"
 "src/cmrelay/cli.py" = ["PLC0415"]
 # verbs.py defers fetch for the same reason, in one place.
 "src/cmrelay/verbs.py" = ["PLC0415"]
+# version.py is imported by cmrelay/__init__.py, so it has to work under a
+# bare interpreter; packaging is only needed to order versions for `upgrade`.
+"src/cmrelay/version.py" = ["PLC0415"]
 # Tests import inside a test when the import itself is what is under test.
 "tests/*" = ["PLC0415"]
 

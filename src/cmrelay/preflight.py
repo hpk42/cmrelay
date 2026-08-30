@@ -16,6 +16,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import systemd
+
 # Shadowed rather than masked: masking writes /etc/systemd/system/<name> ->
 # /dev/null, the exact path cmrelay's own unit needs, so a masked name is one
 # cmrelay cannot install.
@@ -113,40 +115,39 @@ def systemd_available() -> bool:
 
 
 def unit_states(names) -> dict[str, tuple[str, str]]:
-    """Return name -> (enabled-state, active-state) for units that exist.
-
-    Existence comes from is-enabled: it prints the state for a unit systemd
-    has and nothing for one it does not. Listing unit files instead cost
-    942 ms against 20 ms, and missed instantiated units, which have no unit
-    file of their own.
-    """
-    if not systemd_available():
-        return {}
+    """Return name -> (enabled-state, active-state) for units that exist."""
     states = {}
-    for name in names:
-        enabled = _run(["systemctl", "is-enabled", name], required=False).strip()
-        if not enabled:
+    for name, state in systemd.unit_states(names).items():
+        if not state.exists:
             continue
-        active = _run(["systemctl", "is-active", name], required=False).strip()
-        states[name] = (enabled, active or "unknown")
+        states[name] = (state.enabled or "static", state.active or "unknown")
     return states
 
 
-_SS_LINE = re.compile(r'users:\(\("([^"]+)"')
+_SS_HOLDER = re.compile(r'\("([^"]+)"')
 
 
-def port_holder(port: int, ss_argv=("ss",)) -> str | None:
-    """Return the process name holding *port*, or None.
+def listening(ss_argv=("ss",)) -> dict[int, set]:
+    """port -> the process names listening on it, from one `ss` call.
 
-    Store paths do not change argv[0] basenames, so relay's table matches
-    cmrelay's own processes unchanged.
+    One listing costs 21 ms against 445 ms for twenty filtered ones. Store
+    paths do not change argv[0] basenames, so relay's table matches.
     """
-    out = _run([*ss_argv, "-lptnH", f"sport = :{port}"])
-    for line in out.splitlines():
-        match = _SS_LINE.search(line)
-        if match:
-            return match.group(1)
-    return None
+    holders: dict[int, set] = {}
+    for line in _run([*ss_argv, "-lptnH"]).splitlines():
+        fields = line.split(None, 5)
+        if len(fields) < 5:
+            continue
+        _, _, port = fields[3].rpartition(":")
+        try:
+            number = int(port)
+        except ValueError:
+            continue
+        users = fields[5] if len(fields) > 5 else ""
+        names = set(_SS_HOLDER.findall(users))
+        if names:
+            holders.setdefault(number, set()).update(names)
+    return holders
 
 
 def resolve_port_table(entries, config) -> list[tuple[list[str], int]]:
@@ -174,29 +175,33 @@ def resolve_port_table(entries, config) -> list[tuple[list[str], int]]:
     return resolved
 
 
-def check_ports(port_table, ss_argv=("ss",)) -> Report:
+def check_ports(port_table, ss_argv=("ss",), holders=None) -> Report:
     """Whoever actually holds each port, which catches daemons by no name.
 
     Needs no equivalent of check_units' *ours*: a port held by the process
     relay's table expects is right whoever installed it.
     """
+    if holders is None:
+        holders = listening(ss_argv)
     report = Report()
     for names, port in port_table:
-        holder = port_holder(port, ss_argv=ss_argv)
-        if holder in RESOLVER_PROCESSES:
-            # Taken over by configure_unbound(), and recorded for uninstall.
+        found = holders.get(port, set())
+        if not found or found & set(names):
             continue
-        if holder and holder not in names:
-            known = KNOWN_SQUATTERS.get(holder)
-            detail = f"port {port} is held by {holder!r}"
-            if known:
-                detail += f" ({known})"
-            detail += f", expected one of {', '.join(names)}"
-            report.add(
-                f"port {port}",
-                detail,
-                remedy=f"stop whatever runs {holder!r}, or free port {port}",
-            )
+        # Taken over by configure_unbound(), and recorded for uninstall.
+        if found & RESOLVER_PROCESSES:
+            continue
+        holder = sorted(found)[0]
+        known = KNOWN_SQUATTERS.get(holder)
+        detail = f"port {port} is held by {holder!r}"
+        if known:
+            detail += f" ({known})"
+        detail += f", expected one of {', '.join(names)}"
+        report.add(
+            f"port {port}",
+            detail,
+            remedy=f"stop whatever runs {holder!r}, or free port {port}",
+        )
     return report
 
 
@@ -265,14 +270,58 @@ def check_store(nix_root=Path("/nix")) -> Report:
     return report
 
 
-def run(port_table, ss_argv=("ss",), nix_root=Path("/nix"), ours=None) -> Report:
-    """The whole preflight. Modifies nothing."""
+def check_external_tls(config) -> Report:
+    """Both halves of an external certificate, before anything is written."""
     report = Report()
-    parts = (
+    if getattr(config, "tls_cert_mode", "") != "external":
+        return report
+    for path in (config.tls_cert_path, config.tls_key_path):
+        if not Path(path).is_file():
+            report.add(
+                "external TLS",
+                f"tls_external_cert_and_key names {path}, which is not a file",
+                remedy=f"put the certificate and key at {path}, or change the ini",
+            )
+    return report
+
+
+def check_free_space(needed_mib: int, path=Path("/opt")) -> Report:
+    """Refuse with a number rather than filling the disk."""
+    report = Report()
+    target = path if path.exists() else Path("/")
+    try:
+        usage = shutil.disk_usage(target)
+    except OSError:
+        return report
+    free_mib = usage.free // (1024 * 1024)
+    if free_mib < needed_mib:
+        report.add(
+            "disk space",
+            f"{target} has {free_mib} MiB free, and this needs {needed_mib} MiB",
+            remedy=f"free {needed_mib - free_mib} MiB on {target}",
+        )
+    return report
+
+
+def run(
+    port_table,
+    ss_argv=("ss",),
+    nix_root=Path("/nix"),
+    ours=None,
+    config=None,
+    needed_mib=0,
+) -> Report:
+    """The whole preflight, in three reads. Modifies nothing."""
+    report = Report()
+    parts = [
         check_store(nix_root),
         check_units(ours=ours),
         check_ports(port_table, ss_argv),
-    )
+    ]
+    if config is not None:
+        parts.append(check_external_tls(config))
+    if needed_mib:
+        parts.append(check_free_space(needed_mib))
     for part in parts:
         report.findings.extend(part.findings)
     return report

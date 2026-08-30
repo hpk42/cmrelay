@@ -142,3 +142,31 @@ def bundle(tmp_path):
         )
     )
     return Bundle(Path("/nix/store/deadbeef-cmrelay-closure"), prefix=tmp_path)
+
+
+@pytest.fixture
+def fake_root(tmp_path, monkeypatch):
+    """Every path cmrelay knows, redirected under a throwaway tree.
+
+    paths.py names every absolute path a deploy can reach, so redirecting
+    that module is what makes running a real `configure()` in a test safe.
+    """
+    from pathlib import Path
+
+    from cmrelay import paths
+
+    root = tmp_path / "root"
+    root.mkdir()
+
+    def under(path):
+        return root / str(path).lstrip("/")
+
+    for name in dir(paths):
+        if not name.isupper():
+            continue
+        value = getattr(paths, name)
+        if isinstance(value, Path):
+            monkeypatch.setattr(paths, name, under(value))
+        elif isinstance(value, list) and value and isinstance(value[0], Path):
+            monkeypatch.setattr(paths, name, [under(p) for p in value])
+    return root

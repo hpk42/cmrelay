@@ -1,37 +1,48 @@
 # cmrelay
 
-Install a [chatmail](https://chatmail.at) relay from one file.
+Install and maintain a [chatmail](https://chatmail.at) relay from one file.
 
-Copy `cmrelay.run` to a fresh machine, run it,
-and that machine becomes a working chatmail relay:
-postfix, dovecot, filtermail, OpenDKIM, nginx,
-unbound, chatmaild, acmetool, mtail, iroh-relay
-and chatmail-turn, all unpacked into `/opt/cmrelay`
+Copy `cmrelay-installer-<version>-x86_64-linux.run` to a fresh machine,
+run it, and that machine becomes a working chatmail relay:
+postfix, dovecot, filtermail, OpenDKIM, nginx, unbound, chatmaild, acmetool,
+mtail, iroh-relay and chatmail-turn, all unpacked into `/opt/cmrelay`
 with systemd units registered and services running.
 
-    ./cmrelay.run install --mail-domain relay.example.org
+    ./cmrelay-installer-0.4.0-x86_64-linux.run relay.example.org
 
-Or, if you would rather not move a 61 MiB file around by hand:
+From then on the installer is done and `cmrelay` is the tool:
+
+    cmrelay deploy          # make this host match its configuration
+    cmrelay dns             # what is still missing from your zone
+    cmrelay status          # units, versions, conflicts
+    cmrelay upgrade         # a newer signed release
+    cmrelay uninstall relay.example.org
+
+Two artefacts, one code path. Unpacking a 50 MiB archive happens once
+per host per release; deploying happens every time configuration changes.
+So the installer publishes the store, links the CLI and hands
+over to `cmrelay deploy`, and carries no deployment logic of its own.
+
+Or, if you would rather not move a 50 MiB file around by hand:
 
     pip install cmrelay
-    cmrelay install --mail-domain relay.example.org
+    cmrelay deploy relay.example.org
 
 `pip` is the last step that needs the network.
-The released wheels are per-architecture and carry the payload inside them,
-so the relay install itself reaches nothing:
-useful on a firewalled or air-gapped host,
-and the reason the wheel is the size of the payload rather than a few kilobytes.
+The released wheels are per-architecture and carry the payload
+inside them, so the relay install itself reaches nothing:
+useful on a firewalled or air-gapped host, and the reason
+the wheel is the size of the payload rather than a few kilobytes.
 
-The CLI still only ever hands over. The relay is a Nix closure and the
-installer has to run on the interpreter from inside it, not on whatever pip
-installed the CLI into, so `cmrelay install` execs the payload and everything
-proceeds exactly as if you had copied the `.run` file across yourself --
-which is the only path that is actually tested.
+The CLI still only ever hands over. The relay is a Nix closure
+and the installer has to run on the interpreter from inside it,
+not on whatever pip installed the CLI into,
+so a wheel-installed `cmrelay` execs the payload
+and everything proceeds exactly as if you had copied the `.run` file
+across yourself -- which is the only path that is actually tested.
 
-There is no wheel that downloads a payload, and therefore no code that could:
-cmrelay never makes a network request, on any path.
-A wheel built straight from a source checkout has no payload,
-says so, and stops.
+Installing and deploying never make a network request.
+`cmrelay upgrade` does, only when asked, and names the URL before it does.
 
 No apt, no pyinfra, no ssh orchestration, and nothing required
 of the host beyond a kernel, systemd and a POSIX shell.
@@ -55,7 +66,7 @@ so side by side means side by side in tooling rather than on a machine.
 
 cmrelay does not fork relay and does not become a second place
 where configuration lives. It vendors a pinned relay commit
-and derives its configuration and systemd units from it by script,
+and derives its configuration, systemd units and DNS checks from it by script,
 so a cmrelay release names an exact relay commit,
 and updating means re-running that script.
 
@@ -64,25 +75,169 @@ and updating means re-running that script.
 
 | | |
 |---|---|
-| `cmrelay install --mail-domain <domain>` | fresh hosts; refuses and modifies nothing if anything is in the way |
-| `cmrelay install --take-over` | convert a host already running chatmail; the only way cmrelay touches services it did not install |
-| `cmrelay status` | units, versions and conflicts; modifies nothing |
-| `cmrelay uninstall` | remove `/opt/cmrelay` and `/nix`, and unmask what `--take-over` masked |
-| `cmrelay --version` | the runtime face of `vendor.lock`, and what a bug report should paste |
+| `cmrelay-installer [-y] [ARGS]` | unpack into `/opt/cmrelay`, link the CLI, then `cmrelay deploy ARGS` |
+|
+| `cmrelay deploy [DOMAIN]` | make this host match its configuration; idempotent, fast, the workhorse |
+| `cmrelay dns [--zonefile PATH]` | check the published records against what this relay needs |
+| `cmrelay status [--json]` | units, versions, conflicts and drift; modifies nothing |
+| `cmrelay upgrade [FILE]` | install a newer signed release, with a rollback that works |
+| `cmrelay uninstall DOMAIN` | hand the host back, so `cmdeploy run` can take over |
+| `cmrelay version` | cmrelay version, relay commit, component versions, trusted keys |
 
-Rolling back is two steps, and the first one is not optional:
+`DOMAIN` is needed only on a host with no `chatmail.ini` yet.
+After that the domain is read from the ini
+and a supplied one is *checked* rather than obeyed:
+changing the mail domain strands every existing mailbox,
+and retyping it on each deploy is the only way a typo could ask for that.
+`--force` is reserved for exactly that override and is used for nothing else.
 
-    cmrelay uninstall
-    cmdeploy run
 
-`systemctl enable` fails on a masked unit, so a `cmdeploy run` against
-a host still carrying cmrelay's masks would not come back up.
-Uninstall therefore unmasks what `--take-over` masked, and re-enables
-what it disabled -- relay's unbound deployer runs
-`systemctl reset-failed unbound.service` through pyinfra,
-which fails the host when the unit is disabled and therefore not loaded,
-so a host left disabled cannot be rolled back at all.
-Starting the services is `cmdeploy run`'s job, not uninstall's.
+### deploy
+
+    cmrelay deploy [DOMAIN] [--take-over] [--force] [--yes]
+                   [--set KEY=VALUE] [--config PATH]
+                   [--website-only] [--disable-mail | --enable-mail]
+                   [--skip-dns-check] [--reconcile] [--dry-run]
+                   [--verbose] [--quiet]
+
+One verb for fresh hosts, re-deploys, take-overs
+and interrupted installs alike. It classifies the host first,
+and every row of that table is a normal code path rather than an exception:
+
+| state | how it is recognised | what happens |
+|---|---|---|
+| `installed` | `/opt/cmrelay/chatmail.ini` and a populated store | re-deploy; the fast path |
+| `partial` | `/opt/cmrelay` exists but the ini or the store does not | resume, then re-deploy |
+| `cmdeploy` | this host runs chatmail and has no cmrelay ini | offer take-over |
+| `foreign` | conflicting units or ports, no chatmail markers | refuse, modify nothing |
+| `bare` | nothing in the way | fresh deploy |
+
+`--disable-mail` is a standing decision rather than a flag on one run:
+it is recorded, honoured by every later deploy,
+reported by `status`, and cleared only by `--enable-mail`.
+
+A deploy prints what changed and what was already right:
+
+```
+Relay
+  Host        installed by cmrelay 0.4.0
+  Domain      relay.example.org  (acme, /home/vmail/mail/relay.example.org)
+  Version     cmrelay 0.4.0, relay cae03e2714
+
+Preflight                                                            0.07s
+    no conflicting units, no occupied ports, no existing store
+
+Configuration                                                        0.15s
+    84 files unchanged
+
+System files                                                         0.01s
+    nothing changed
+
+Services                                                             0.06s
+    22 units, all as intended
+
+Verify                                                               0.02s
+    DKIM key present, TLS material present, services running
+
+nothing to do; relay.example.org is up to date (0.29s)
+```
+
+A no-op deploy makes no network request, issues no `systemctl` call
+and takes under a second. That is an acceptance test, not an aspiration.
+
+
+### upgrade
+
+    cmrelay upgrade [FILE] [--check] [--rollback] [--auto]
+                    [--source github|pypi] [--allow-unsigned] [--yes]
+
+Generations, not snapshots. Store paths are content-addressed,
+so installing a new closure adds paths and removes none:
+the previous release stays complete and runnable
+at no copying cost, and rollback is one rename.
+
+```
+/opt/cmrelay/generations/
+├── 3 -> ../nix/store/<hash>-cmrelay-closure
+├── 3.state/                  # chatmail.ini, www/, state/
+├── 4 -> ../nix/store/<hash>-cmrelay-closure
+└── current -> 4
+```
+
+The sequence is arranged so that everything before the store is published
+modifies nothing a failure would leave broken, publishing is additive,
+and the flip is atomic. A failure after the flip reports
+and stops rather than rolling back by itself:
+the previous generation is intact either way,
+and an automatic rollback on a partial failure can turn one problem into two.
+
+Without a file, both GitHub and PyPI are asked
+and the highest version wins. Neither is authority:
+whatever answers, the candidate is verified against the release keys
+inside the installed closure before it is unpacked, let alone run.
+
+
+## Signing
+
+The trust root is the installed generation.
+The release public keys ship inside the closure at `<closure>/release-keys/`,
+and `upgrade` verifies any candidate against them
+before the candidate ever runs. Verification is Ed25519 through
+the closure's own openssl, over the whole `.run` file.
+
+The signature is an envelope rather than 64 raw bytes,
+so a host meeting a future scheme reports the algorithm by name
+instead of crying tampering, and one release can carry several signatures:
+
+```
+cmrelay-signature-v1
+alg  ed25519
+key  SHA256:0f3a9c...
+sig  bXlSZWxlYXNlU2lnbmF0dXJl...
+```
+
+Two keys ship. `ci.pem` is the key the release workflow signs with,
+so **the trust root is GitHub plus whoever can cause
+that workflow to run** -- weaker than a key held offline,
+much stronger than nothing. `offline.pem` is the recovery key,
+whose private half is never uploaded anywhere; it signs nothing routinely
+and exists so that losing the GitHub account does not mean losing
+every deployed relay's upgrade path. See `release-keys/README.md`.
+
+The installer verifies nothing about itself.
+The first installation has no trust root to check a signature against;
+obtaining that file from somewhere trustworthy is the operator's job.
+
+`--allow-unsigned` is the only way to install a locally built payload,
+and it prints a paragraph rather than a line.
+
+
+## Reporting every change
+
+Every mutation goes through one module, `cmrelay/fsops.py`, and lands
+in a journal. Files under `/opt/cmrelay` collapse into a count per component;
+every file outside it is named individually, because a rewritten `nginx.conf`
+is routine and a rewritten `/etc/systemd/system/postfix.service`
+is something an operator may have to explain to somebody later.
+
+That is checked mechanically rather than by review.
+One test walks the AST of every module and fails
+on any call that could write, remove, chmod or link outside `fsops.py`.
+A second runs a whole deploy against a fake root and asserts that the set
+of paths which differ is exactly the set the journal recorded --
+which catches a mutation that went through `fsops` and forgot to name itself.
+
+`--dry-run` is then a flag on the journal
+rather than a branch in forty call sites.
+
+cmrelay also records the sha256 of every file it
+writes outside its own tree, in `state/written.json`.
+On the next deploy a file matching neither the new render
+nor the recorded hash was edited by hand:
+for paths cmrelay owns it is overwritten,
+the previous content kept beside it as `<file>.replaced`,
+and the overwrite reported; for paths it does not own
+(`/etc/systemd/journald.conf`) it is left alone and reported.
 
 
 ## Where things go
@@ -98,7 +253,10 @@ Everything holding live *state* stays where it already is.
 ├── chatmail.ini            # source of truth, written once, never overwritten
 ├── config/                 # rendered config, one directory per component
 ├── systemd/                # an index: one symlink per unit cmrelay owns
-├── state/disabled-units    # what --take-over masked, for uninstall to unmask
+├── www/                    # your page source; seeded once, then yours
+├── www.dist/               # the release's own pages, to diff against
+├── generations/            # one per installed closure, plus `current`
+├── state/                  # what was masked, what was written, the lock
 └── nix/store/              # the closure
 
 /home/vmail/mail/<domain>   # mail and credentials
@@ -110,6 +268,10 @@ Those last three are shared in place with whatever ran
 before, never relocated and never copied.
 That is what makes converting back to `cmdeploy run` cost nothing:
 nothing was taken away, only which units are enabled changed.
+
+`src/cmrelay/paths.py` names every absolute path a deploy can reach.
+That is what lets the test suite redirect all of them under a temporary tree
+and run a real deploy without touching the machine it runs on.
 
 Unit files are the exception to "everything
 cmrelay defines lives in `/opt/cmrelay`":
@@ -123,9 +285,51 @@ which under the obvious layout would delete those units outright.
 `/nix` is a symlink to `/opt/cmrelay/nix`.
 Store paths are baked into every binary as its ELF interpreter and RPATH,
 and the store directory is an input to every derivation hash, so building
-for a different prefix would mean compiling glibc and everything above it
-from source. Keeping the paths and moving the bytes gets both properties:
+for a different prefix would mean compiling glibc and everything above
+it from source. Keeping the paths and moving the bytes gets both properties:
 binaries run unchanged, and uninstall is `rm /nix && rm -rf /opt/cmrelay`.
+
+
+## What deploy owns, and what it does not
+
+`/opt/cmrelay/config/**` and the unit files are cmrelay's outright
+and are regenerated every run. Everything else has a rule:
+
+| path | what happens |
+|---|---|
+| `/etc/resolv.conf` | left alone once `nameserver 127.0.0.1` is first |
+| `/etc/mailname` | content-compared write |
+| `/etc/environment` | appended once, guarded |
+| `/etc/aliases` | written only when absent |
+| `/etc/systemd/journald.conf` | a guest file: a hand edit is reported, not overwritten |
+| `/var/www/html` | a manifest; pages cmrelay no longer produces are removed, others left |
+| `/usr/local/bin/*` | recorded, and removed only if cmrelay put them there |
+
+cmrelay never walks the mailbox tree.
+The only reads permitted on `mailboxes_dir` are a `stat` of the root
+and a dirent count that stops at 10 000, because a production relay
+holds hundreds of thousands of maildirs and the only thing worth knowing
+before renaming a domain is the order of magnitude.
+
+
+## Web pages
+
+There is no build machine, so the page source lives on the relay:
+`/opt/cmrelay/www/` is seeded from the release once and belongs
+to the operator from then on. Editing `index.md` and running
+`cmrelay deploy --website-only` is the whole workflow.
+
+`/opt/cmrelay/www.dist/` always holds the installed release's
+own version of those pages, so after an upgrade a deploy can name
+which of yours have diverged and let you look. It never merges.
+
+`www_folder` stays honoured, reinterpreted as a path on the relay host:
+unset uses `/opt/cmrelay/www/`; `disabled` publishes nothing
+and leaves `/var/www/html` alone; an existing directory is used,
+applying cmdeploy's own `src/index.md` rule so a tree copied off
+a laptop works unchanged; and a path that does not exist warns loudly
+and skips, because an adopted `chatmail.ini` often names
+a directory that only ever existed on somebody's laptop.
 
 
 ## Supported platforms
@@ -157,18 +361,21 @@ The right NixOS story is a module consuming the same derivations.
     nix build .#closure        # just the store tree
     nix develop                # a shell with pytest, ruff, makeself, quilt
 
-The `.run` file is a shell header with three blobs after it --
-a static zstd, a static tar, and the zstd-compressed store --
-at byte offsets patched into the header at build time.
-It slices them out of itself with `tail -c` and `head -c`
-and streams the store straight through them, so the only host tools
-it needs are the ones in coreutils.
+`VERSION` is the release version. `nix/closure.nix` writes it
+and the commit into `manifest.json`, and an installed host reads it back
+from there, which is what gives `upgrade` something to compare against.
+
+The `.run` file is a shell header with three blobs after it -- a static zstd,
+a static tar, and the zstd-compressed store -- at byte offsets patched
+into the header at build time. It slices them out of itself with `tail -c`
+and `head -c` and streams the store straight through them,
+so the only host tools it needs are the ones in coreutils.
 That is why there is no makeself and no host `tar`:
 makeself unpacks with the host's tar before any cmrelay code runs,
 so a machine without it fails with `Extraction failed` and no way to say why.
 The bundled tar is libarchive built with one format and no codecs,
-which is 0.9 MiB rather than the 9.2 MiB it is when it can also
-do zip, 7z, xz, bzip2 and OpenSSL digests.
+which is 0.9 MiB rather than the 9.2 MiB it is
+when it can also do zip, 7z, xz, bzip2 and OpenSSL digests.
 
 
 ## Vendoring: relay stays the source of truth
@@ -195,9 +402,14 @@ which nixpkgs attribute, which systemd unit, which paths.
 What it guarantees is narrower and still worth having:
 nobody can miss the fact that a decision is due.
 
-Every patch in `patches/` does the same thing -- it turns a path upstream
-hardcodes to Debian's layout into a template variable, so cmrelay can point it
-at a store path. Nothing there changes what a directive means.
+Most patches turn a path upstream hardcodes to Debian's layout into a template
+variable, so cmrelay can point it at a store path. One does more:
+relay's `dns.py` and `remote/rdns.py` are pure functions over DNS
+that were written to run over an ssh connection on a Debian host,
+and `pycode-local-dns.patch` makes them run locally against `drill`.
+Vendoring them rather than reimplementing them means
+a relay bump that changes the zone shows up as a diff
+to review rather than as two divergent zone generators.
 
 `scripts/extract-from-relay` is a bridge. relay keeps its preflight port table
 and its pinned binary URLs inside Python function bodies,
@@ -221,11 +433,16 @@ Updating cmrelay is then one of exactly two kinds of change:
 Three ways in, and the tree is arranged so you can tell which at a glance.
 
 **Stock nixpkgs**, named only in `nix/closure.nix`:
-postfix, nginx, unbound, fcgiwrap, opendkim, mtail, python3
+postfix, nginx, unbound, fcgiwrap, opendkim, mtail, ldns, python3
 and its packages. The web pages are rendered with markdown and jinja2,
 and the invite QR code is an SVG rather than relay's composited PNG:
-drawing that needs Pillow, which costs 74 MiB of image codecs for one picture
-per host. Their *configuration* still arrives through `vendor/config/`,
+drawing that needs Pillow, which costs 74 MiB of image codecs
+for one picture per host. `ldns` is there for `drill`,
+which `cmrelay dns` queries the authoritative nameservers with:
+it is one 0.6 MiB store path against seven for bind's dnsutils,
+and `drill -Q` prints what `dig +short` prints
+for every record type the zone check compares.
+Their *configuration* still arrives through `vendor/config/`,
 which is why `vendor/config/opendkim/` exists
 while `nix/packages/opendkim.nix` does not.
 
@@ -262,6 +479,14 @@ so renaming `dovecot.service` to `cmrelay-dovecot.service` would silently cost
 the entire oracle. It is likewise why the preflight exists at all -- identical
 unit names are exactly what makes a distribution's own packages collide.
 
+The unit suite runs without root and without a container,
+and that constraint is worth keeping. It covers each row of the classification
+table, each cell of the domain-resolution table, the activate planner
+against a unit-state snapshot, the ownership rules, the `www_folder` cases,
+the migration selector, signature verification including an unknown algorithm
+and the offline key alone, `query_dns` against recorded `drill` output,
+release discovery with either source down, and the capped mailbox count.
+
 
 ## Developing
 
@@ -270,8 +495,3 @@ unit names are exactly what makes a distribution's own packages collide.
 
 `ruff check .` and `ruff format --check .`
 gate CI, along with `scripts/vendor-check`.
-
-
-## License
-
-MIT, matching relay.

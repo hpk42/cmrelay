@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Generate a release keypair, or sign an installer with one.
+
+    cmrelay-sign keygen release-keys/ci
+    cmrelay-sign sign --key ci.key --public release-keys/ci.pem INSTALLER.run
+
+`keygen` writes `<name>.key` under umask 077 and `<name>.pem` beside it. Only
+the `.pem` belongs in the repository; the `.key` is either a repository secret
+(the CI key) or is kept off every machine that could publish a release (the
+offline key). See release-keys/README.md.
+
+Standard library and openssl only, so the release workflow can run it right
+after `nix build` with whatever python3 is present.
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from cmrelay import signing  # noqa: E402
+
+
+def keygen(name: Path) -> int:
+    private, public = name.with_suffix(".key"), name.with_suffix(".pem")
+    if private.exists() or public.exists():
+        raise SystemExit(f"cmrelay-sign: {private} or {public} already exists")
+    name.parent.mkdir(parents=True, exist_ok=True)
+    previous = os.umask(0o077)
+    try:
+        subprocess.run(
+            ["openssl", "genpkey", "-algorithm", "ed25519", "-out", str(private)],
+            check=True,
+        )
+    finally:
+        os.umask(previous)
+    subprocess.run(
+        ["openssl", "pkey", "-in", str(private), "-pubout", "-out", str(public)],
+        check=True,
+    )
+    print(f"{private}  keep this off every machine that publishes a release")
+    print(f"{public}   {signing.fingerprint(public.read_bytes())}")
+    return 0
+
+
+def sign(key: Path, public: Path, artefact: Path, out: Path | None) -> int:
+    envelope = signing.sign(key, artefact, public)
+    target = out or Path(f"{artefact}.sig")
+    target.write_text(envelope)
+    print(f"{target}  signed by {signing.fingerprint(public.read_bytes())}")
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    generate = sub.add_parser("keygen", help="write a new Ed25519 release keypair")
+    generate.add_argument("name", type=Path, help="path without a suffix")
+
+    signer = sub.add_parser("sign", help="sign an installer")
+    signer.add_argument("artefact", type=Path)
+    signer.add_argument("--key", required=True, type=Path, help="the private half")
+    signer.add_argument("--public", required=True, type=Path, help="the public half")
+    signer.add_argument("--out", type=Path, help="default: <artefact>.sig")
+
+    args = parser.parse_args(argv)
+    if args.command == "keygen":
+        return keygen(args.name)
+    if not args.artefact.is_file():
+        raise SystemExit(f"cmrelay-sign: no file at {args.artefact}")
+    return sign(args.key, args.public, args.artefact, args.out)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

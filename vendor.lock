@@ -23,6 +23,9 @@
     "config/postfix/smtp_tls_policy_map": "9ca129d2514a183be170c7b9095f22f82aa52a824194143c9465887d38230a1b",
     "config/postfix/submission_header_cleanup": "43b72680fb4811a623aeb21b0971b8836f5d12ec53dbc5af377e8d0f2af9ffc5",
     "config/unbound/unbound.conf.j2": "65d7c862afbbd88c3802cc6501e08e48928f2dc0df87bfb8676599e579113223",
+    "pycode/dns.py": "59b50403777e820cd39d92919d8ed4c4a3e77ab8139947bd900c3949e6dccbea",
+    "pycode/rdns.py": "cd6c666544966cb70369327b8bdca1bb66e0c759e396b96fc149e9402029d456",
+    "pycode/rshell.py": "f59d548602e9978150dfb49897e4b2a26d1f80434eabffaa992011630df14679",
     "systemd/10_restart_on_failure.conf": "687cf8d8b7f1d2a7d3eb08ccc319528c7eb21adc51e9ebb51da6fb2645aa9641",
     "systemd/acmetool-reconcile.service.j2": "b29177d12538bb11fcaf5d7600eb5fc7c5b532eeb44d4290622af9aa1c04cf13",
     "systemd/acmetool-reconcile.timer": "c9fe0e37d121e3c9f4f03d486598f687b01c01ba191fb119aaa93fa5d463c8a3",
@@ -61,6 +64,7 @@
     "postfix-store-paths.patch",
     "dovecot-store-paths.patch",
     "opendkim-trust-anchor.patch",
+    "pycode-local-dns.patch",
     "www-qr-svg.patch"
   ],
   "relay_commit": "cae03e27149608aefe0e7e2a8be1d588f4ab476d",

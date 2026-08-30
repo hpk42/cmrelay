@@ -11,6 +11,12 @@ postfix-store-paths.patch
 dovecot-store-paths.patch
 opendkim-trust-anchor.patch
 
+# relay's DNS helpers are written for an ssh connection and a Debian host:
+# they install dnsutils with apt and shell out to dig. On a relay they run
+# locally, against the closure's drill, and the two sshexec entry points have
+# no caller here.
+pycode-local-dns.patch
+
 # The invite QR code is an SVG here, not relay's composited PNG: drawing
 # that PNG needs Pillow, which costs 74 MiB of image codecs in the closure
 # for one picture per host. Where relay's web pages live is an open

@@ -10,7 +10,7 @@ relay.
 import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 
-from cmrelay import render
+from cmrelay import fsops, render
 from cmrelay.deploy import CHATMAILD_UNITS, Deployment
 from cmrelay.output import Out
 
@@ -28,7 +28,7 @@ def config(tmp_path):
 
 @pytest.fixture
 def deployment(bundle, config, tmp_path):
-    return Deployment(bundle, config, Out(colour=False))
+    return Deployment(bundle, config, Out(colour=False), fsops.Journal())
 
 
 TEMPLATES_WITH_CONFIG = [
@@ -143,10 +143,11 @@ def test_authored_units_have_every_field_supplied(deployment):
 
 
 def test_write_reports_change_only_when_content_differs(tmp_path):
+    journal = fsops.Journal()
     target = tmp_path / "a.conf"
-    assert render.write(target, "one\n") is True
-    assert render.write(target, "one\n") is False
-    assert render.write(target, "two\n") is True
+    assert journal.write("x", target, "one\n").kind == fsops.ADDED
+    assert journal.write("x", target, "one\n") is None
+    assert journal.write("x", target, "two\n").kind == fsops.CHANGED
     assert target.read_text() == "two\n"
 
 

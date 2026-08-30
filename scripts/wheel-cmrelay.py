@@ -40,8 +40,12 @@ ARCH_TAGS = {
     "aarch64": ["manylinux_2_17_aarch64", "manylinux2014_aarch64"],
 }
 
-# Where the CLI looks for it. Shared with src/cmrelay/fetch.py.
+# Where the CLI looks for them. Shared with src/cmrelay/payload.py and,
+# for the signature, src/cmrelay/discovery.py: `cmrelay upgrade` can take a
+# candidate from PyPI, and a wheel with no signature in it is one nothing can
+# verify against the release keys.
 PAYLOAD_MEMBER = "cmrelay/_payload/cmrelay.run"
+SIGNATURE_MEMBER = "cmrelay/_payload/cmrelay.run.sig"
 
 # A fixed timestamp, so two builds of the same input give the same zip.
 EPOCH = (1980, 1, 1, 0, 0, 0)
@@ -62,10 +66,14 @@ def metadata(version: str, readme: str) -> str:
         ("Name", "cmrelay"),
         ("Version", version),
         ("Summary", "Single-file installer for a chatmail relay"),
-        ("License", "MIT"),
+        ("License", "GPL-3.0-or-later"),
         ("Requires-Python", ">=3.9"),
         ("Project-URL", "Repository, https://github.com/chatmail/cmrelay"),
-        ("Classifier", "License :: OSI Approved :: MIT License"),
+        (
+            "Classifier",
+            "License :: OSI Approved :: GNU General Public License v3 or later"
+            " (GPLv3+)",
+        ),
         ("Classifier", "Operating System :: POSIX :: Linux"),
         ("Classifier", "Topic :: Communications :: Email"),
         ("Description-Content-Type", "text/markdown"),
@@ -120,7 +128,15 @@ def add(zf: zipfile.ZipFile, record: list, name: str, data: bytes, mode: int):
     record.append((name, f"sha256={digest.decode()}", len(data)))
 
 
-def build(payload: Path, arch: str, version: str, src: Path, root: Path, outdir: Path):
+def build(
+    payload: Path,
+    arch: str,
+    version: str,
+    src: Path,
+    root: Path,
+    outdir: Path,
+    signature: Path | None = None,
+):
     tags = [f"py3-none-{t}" for t in ARCH_TAGS[arch]]
     filename = f"cmrelay-{version}-py3-none-{'.'.join(ARCH_TAGS[arch])}.whl"
     dist_info = f"cmrelay-{version}.dist-info"
@@ -138,6 +154,8 @@ def build(payload: Path, arch: str, version: str, src: Path, root: Path, outdir:
         # execs this file directly. Getting it wrong yields an installed
         # wheel whose payload cannot be run.
         add(zf, record, PAYLOAD_MEMBER, payload.read_bytes(), 0o755)
+        if signature is not None:
+            add(zf, record, SIGNATURE_MEMBER, signature.read_bytes(), 0o644)
 
         readme = (root / "README.md").read_text(encoding="utf-8")
         add(
@@ -155,13 +173,16 @@ def build(payload: Path, arch: str, version: str, src: Path, root: Path, outdir:
             b"[console_scripts]\ncmrelay = cmrelay.cli:main\n",
             0o644,
         )
-        add(
-            zf,
-            record,
-            f"{dist_info}/licenses/LICENSE",
-            (root / "LICENSE").read_bytes(),
-            0o644,
-        )
+        # The payload travels in this wheel, so the terms of everything
+        # inside it travel with it.
+        for name in ("LICENSE", "THIRD-PARTY.md"):
+            add(
+                zf,
+                record,
+                f"{dist_info}/licenses/{name}",
+                (root / name).read_bytes(),
+                0o644,
+            )
 
         buf = io.StringIO()
         writer = csv.writer(buf, lineterminator="\n")
@@ -184,6 +205,11 @@ def main(argv=None):
     parser.add_argument(
         "--version", required=True, help="PEP 440 version, without a '-'"
     )
+    parser.add_argument(
+        "--signature",
+        type=Path,
+        help="the .sig to carry beside the payload (default: <payload>.sig)",
+    )
     parser.add_argument("--outdir", type=Path, default=Path("dist"))
     parser.add_argument(
         "--root",
@@ -197,8 +223,20 @@ def main(argv=None):
     if not args.payload.is_file():
         raise SystemExit(f"cmrelay: no payload at {args.payload}")
 
+    signature = args.signature or Path(f"{args.payload}.sig")
+    if not signature.is_file():
+        if args.signature is not None:
+            raise SystemExit(f"cmrelay: no signature at {signature}")
+        signature = None
+
     target = build(
-        args.payload, args.arch, version, args.root / "src", args.root, args.outdir
+        args.payload,
+        args.arch,
+        version,
+        args.root / "src",
+        args.root,
+        args.outdir,
+        signature=signature,
     )
     size = target.stat().st_size / (1024 * 1024)
     print(f"{target}  ({size:.1f} MiB)")

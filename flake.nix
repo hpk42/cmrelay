@@ -64,10 +64,18 @@
           jinja2
           # the website build relay performs, reimplemented in cmrelay
           markdown
+          # PEP 440 ordering, which is what tells `upgrade` a candidate is newer
+          packaging
           qrcode
         ];
 
         pythonEnv = pkgs.python3.withPackages (_: pythonDeps);
+
+        # The release version, and the commit that produced it. A tag push
+        # is checked against VERSION in the release workflow, so the file
+        # name, the manifest and the tag cannot disagree.
+        version = lib.fileContents ./VERSION;
+        commit = self.rev or self.dirtyRev or "unknown";
 
         closure = pkgs.callPackage ./nix/closure.nix {
           inherit
@@ -80,19 +88,20 @@
             opendkim-milter
             pythonEnv
             pythonDeps
+            version
+            commit
             ;
           cmrelaySrc = ./.;
         };
 
         wheel = pkgs.callPackage ./nix/wheel.nix {
-          inherit payload;
+          inherit payload version;
           cmrelaySrc = ./.;
         };
 
         payload = pkgs.callPackage ./nix/payload.nix {
-          inherit closure bsdtar-minimal;
+          inherit closure bsdtar-minimal version;
           cmrelaySrc = ./.;
-          version = self.shortRev or self.dirtyShortRev or "dev";
         };
       in
       {

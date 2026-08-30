@@ -9,7 +9,7 @@ would delete them. These tests pin the direction that works.
 
 import pytest
 
-from cmrelay import paths, systemd
+from cmrelay import fsops, paths
 
 
 @pytest.fixture
@@ -21,8 +21,13 @@ def fake_root(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_the_unit_file_is_real_and_the_index_entry_is_the_symlink(fake_root):
-    assert systemd.install_unit("doveauth.service", "[Unit]\n") is True
+@pytest.fixture
+def journal():
+    return fsops.Journal()
+
+
+def test_the_unit_file_is_real_and_the_index_entry_is_the_symlink(fake_root, journal):
+    assert journal.install_unit("chatmaild", "doveauth.service", "[Unit]\n")
 
     real = paths.SYSTEMD_SYSTEM / "doveauth.service"
     index = paths.UNITS / "doveauth.service"
@@ -32,32 +37,32 @@ def test_the_unit_file_is_real_and_the_index_entry_is_the_symlink(fake_root):
     assert real.read_text() == "[Unit]\n"
 
 
-def test_reinstalling_identical_content_reports_no_change(fake_root):
-    systemd.install_unit("doveauth.service", "[Unit]\n")
-    assert systemd.install_unit("doveauth.service", "[Unit]\n") is False
-    assert systemd.install_unit("doveauth.service", "[Unit]\nX=1\n") is True
+def test_reinstalling_identical_content_reports_no_change(fake_root, journal):
+    journal.install_unit("chatmaild", "doveauth.service", "[Unit]\n")
+    assert journal.install_unit("chatmaild", "doveauth.service", "[Unit]\n") is None
+    assert journal.install_unit("chatmaild", "doveauth.service", "[Unit]\nX=1\n")
 
 
-def test_installing_over_a_mask_replaces_the_dev_null_symlink(fake_root):
+def test_installing_over_a_mask_replaces_the_dev_null_symlink(fake_root, journal):
     masked = paths.SYSTEMD_SYSTEM / "dovecot.service"
     masked.symlink_to("/dev/null")
 
-    assert systemd.install_unit("dovecot.service", "[Unit]\n") is True
+    assert journal.install_unit("dovecot", "dovecot.service", "[Unit]\n")
     assert masked.is_file() and not masked.is_symlink()
 
 
-def test_installing_over_a_distribution_unit_replaces_it(fake_root):
-    """Only reached after --take-over has stopped and disabled the original."""
+def test_installing_over_a_distribution_unit_replaces_it(fake_root, journal):
+    """Only reached after take-over has stopped and disabled the original."""
     distro = paths.SYSTEMD_SYSTEM / "nginx.service"
     distro.write_text("# Debian's\n")
 
-    assert systemd.install_unit("nginx.service", "# cmrelay's\n") is True
+    assert journal.install_unit("nginx", "nginx.service", "# cmrelay's\n")
     assert distro.read_text() == "# cmrelay's\n"
 
 
-def test_the_index_names_exactly_the_units_cmrelay_owns(fake_root):
+def test_the_index_names_exactly_the_units_cmrelay_owns(fake_root, journal):
     for name in ("doveauth.service", "chatmail-expire.timer"):
-        systemd.install_unit(name, "[Unit]\n")
+        journal.install_unit("chatmaild", name, "[Unit]\n")
     assert sorted(p.name for p in paths.UNITS.iterdir()) == [
         "chatmail-expire.timer",
         "doveauth.service",

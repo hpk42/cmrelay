@@ -1,36 +1,28 @@
-"""install, status and uninstall.
+"""deploy, status, uninstall and version.
 
-The verbs differ mainly in what they are allowed to touch. `install` bails
-out on any conflict having modified nothing, except the resolver: every stock
-Debian and Fedora has systemd-resolved on port 53, so refusing over it would
-make `install` useless on exactly the hosts it targets.
-
-`install --take-over` is the only verb that may act on a conflict, `status`
-modifies nothing, and `uninstall` reverses what --take-over did.
+`deploy` is the workhorse and the only verb that writes. It classifies the
+host, resolves the domain, and then runs five phases: preflight, render,
+reconcile, activate, verify. Take-over differs only by a preamble.
 """
 
 import json
 import os
 import platform
-import shutil
-import sys
-import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
-# Deliberately not a PyPI dependency: relay's own code, built from the
-# vendored commit into the same interpreter as the rest of the closure.
-from chatmaild.config import read_config as _read_config
-from chatmaild.config import write_initial_config as _write_initial_config
-
-from . import paths, preflight, store, systemd, users
-from .bundle import ENV_CLOSURE, ENV_STAGE, READY_MARKER, Bundle
-from .deploy import AUTHORED_UNITS, TIMER_DRIVEN, Deployment
+from . import config as cfg
+from . import fsops, host, paths, preflight, state, store, systemd, users
+from .bundle import Bundle
+from .deploy import ACME_UNITS, AUTHORED_UNITS, TIMER_DRIVEN, Deployment
 from .version import __version__
 
-# Set across the re-exec that follows installing the store, so the second
-# half of an install does not re-run a check the first half already passed.
-ENV_PREFLIGHT_PASSED = "CMRELAY_PREFLIGHT_PASSED"
+# The unpacked closure, for the free-space check.
+CLOSURE_MIB = 800
+
+# Shown individually before the report collapses the rest into a count.
+SYSTEM_LINES = 6
 
 
 class VerbError(Exception):
@@ -43,12 +35,7 @@ def require_root():
 
 
 def relay_pins(bundle) -> dict:
-    """relay's own pins, as extracted at build time and shipped in the closure."""
     return json.loads((bundle.root / "relay-pins.json").read_text())
-
-
-def load_port_table(bundle) -> list:
-    return relay_pins(bundle)["port_table"]
 
 
 def mtail_artifact(bundle) -> tuple:
@@ -64,519 +51,15 @@ def mtail_artifact(bundle) -> tuple:
         ) from None
 
 
-def read_config(inipath: Path = paths.INI):
-    """relay's own Config, read by relay's own code."""
-    return _read_config(inipath)
-
-
-def write_initial_config(mail_domain: str, overrides: dict | None = None):
-    """The same function `cmdeploy init` calls, so the ini is relay's, not ours."""
-    paths.INI.parent.mkdir(parents=True, exist_ok=True)
-    _write_initial_config(paths.INI, mail_domain, overrides or {})
-
-
-def cmd_install(args, out) -> int:
-    """One entry point: the preflight already knows which kind of host this
-    is, so the refusal names the flag rather than a second verb."""
-    require_root()
-    bundle = Bundle.discover()
-    if args.take_over:
-        return install_over_existing(args, bundle, out)
-    return install_fresh(args, bundle, out)
-
-
-def install_fresh(args, bundle, out) -> int:
-    if paths.INI.exists() and not args.force:
-        out.error(f"{paths.INI} already exists: this host has cmrelay on it already.")
-        out.print("Use --force to overwrite it.")
-        return 1
-
-    if not os.environ.get(ENV_PREFLIGHT_PASSED):
-        out.section("Preflight")
-        # The config this run will write, not relay's bare defaults: --set
-        # and --config can turn mtail on, and the refusal has to come before
-        # anything is written rather than after.
-        if args.config:
-            planned = read_config(Path(args.config))
-        else:
-            planned = None
-        report = run_preflight(
-            bundle,
-            out,
-            config=planned,
-            mail_domain=args.mail_domain,
-            overrides=parse_overrides(args.set),
-        )
-        if not report.ok:
-            # --take-over acts on units and ports, and would meet a missing
-            # mtail again, so only offer it when something it can act on
-            # is what failed.
-            conflicts = [f for f in report.findings if f.subject != "mtail"]
-            if not conflicts:
-                out.error("this configuration needs mtail, which cmrelay does not ship")
-                out.print(preflight.format_report(report))
-                out.print("\nNothing was modified.")
-                return 1
-
-            out.error("this host is not a fresh install target")
-            takeover = paths.CMDEPLOY_INI.is_file()
-            out.print(preflight.format_report(report, remedies=not takeover))
-            out.print("\nNothing was modified.")
-            if takeover:
-                out.print(
-                    f"This host already runs chatmail ({paths.CMDEPLOY_INI}"
-                    " exists).\nTo convert it, re-run with --take-over."
-                )
-            else:
-                out.print(
-                    "If this host is meant to keep the stack above, cmrelay is"
-                    " not\nfor it. To hand it over instead, re-run with"
-                    " --take-over."
-                )
-            return 1
-        out.ok("  no conflicting units, no occupied ports, no existing store")
-
-    install_store(bundle, out)
-
-    out.section("Creating users and directories")
-    created = users.ensure_required_users()
-    if created:
-        out.print(f"  created {', '.join(created)}")
-
-    out.section("Writing configuration")
-    if args.config:
-        source = Path(args.config)
-        if not source.is_file():
-            raise VerbError(f"--config {source} does not exist")
-        paths.INI.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, paths.INI)
-        out.print(f"  copied {source} -> {paths.INI}")
-    else:
-        write_initial_config(args.mail_domain, parse_overrides(args.set))
-        out.print(f"  {paths.INI}")
-
-    config = apply_configuration(bundle, args, out)
-    out.section("Done")
-    report_dns(config, bundle, out)
-    return 0
-
-
-def apply_configuration(bundle, args, out, config=None):
-    """Everything from chatmail.ini onwards, which both install paths share."""
-    if config is None:
-        config = read_config()
-    deployment = Deployment(bundle, config, out, disable_mail=args.disable_mail)
-    deployment.configure()
-    deployment.install_daemon_units()
-
-    out.section("Starting services")
-    deployment.activate()
-    link_cli(bundle, out)
-    return config
-
-
-def parse_overrides(pairs) -> dict:
-    overrides = {}
-    for item in pairs or []:
-        if "=" not in item:
-            raise VerbError(f"--set expects key=value, got {item!r}")
-        key, value = item.split("=", 1)
-        overrides[key.strip()] = value.strip()
-    return overrides
-
-
-def install_store(bundle, out):
-    """Move the closure into place, then continue from the installed copy.
-
-    Installing empties the staging tree this process runs out of, so anything
-    not yet imported would vanish underneath it. The re-exec is the boundary.
-    """
-    if bundle.prefix is None:
-        return
-    out.section("Installing the closure")
-    stage_store = bundle.prefix / "nix/store"
-    paths.ROOT.mkdir(parents=True, exist_ok=True)
-    # Before the first rename, so an interrupted run leaves no marker on a
-    # staging tree the stub would otherwise offer to the next run as whole.
-    (bundle.prefix / READY_MARKER).unlink(missing_ok=True)
-    moved = store.install(stage_store)
-    store.link_nix()
-    note = store.label_for_selinux()
-    if note:
-        out.print(f"  {note}")
-    out.print(f"  {moved} store paths under {paths.STORE}, /nix -> {paths.NIX}")
-    exec_installed(bundle, out)
-
-
-def exec_installed(bundle, out):
-    """Hand over to the CLI now living in the store. Does not return."""
-    installed = Path(bundle.closure) / "bin/cmrelay"
-    if not installed.is_file():
-        raise VerbError(f"the installed closure has no CLI at {installed}")
-    env = dict(os.environ)
-    # Bundle.discover() keys off these; without them it locates the closure
-    # from its own __file__, which is now the installed copy.
-    env.pop(ENV_STAGE, None)
-    env.pop(ENV_CLOSURE, None)
-    env.pop("PYTHONPATH", None)
-    env[ENV_PREFLIGHT_PASSED] = "1"
-    out.print("  continuing from the installed store")
-    sys.stdout.flush()
-    os.execve(str(installed), [str(installed), *sys.argv[1:]], env)
-
-
-def report_dns(config, bundle, out):
-    """The records the operator still has to publish.
-
-    acmetool cannot complete a challenge until DNS points here, and mail is
-    worthless without SPF, DKIM and DMARC.
-    """
-    domain = config.mail_domain
-    out.print(f"\nPublish these records for {domain}:\n")
-    out.print(f"  {domain}.            A      <this host's IPv4>")
-    out.print(f"  {domain}.            AAAA   <this host's IPv6>")
-    out.print(f"  mta-sts.{domain}.    CNAME  {domain}.")
-    out.print(f"  www.{domain}.        CNAME  {domain}.")
-    out.print(f"  {domain}.            MX     10 {domain}.")
-    out.print(f'  {domain}.            TXT    "v=spf1 a:{domain} -all"')
-    out.print(
-        f'  _dmarc.{domain}.     TXT    "v=DMARC1;p=reject;rua=mailto:postmaster@{domain}"'
-    )
-    out.print(f'  _mta-sts.{domain}.   TXT    "v=STSv1; id=<any changing value>"')
-
-    dkim = paths.DKIM_KEYS / "opendkim.txt"
-    if dkim.is_file():
-        out.print(f"\n  the DKIM record, from {dkim}:\n")
-        for line in dkim.read_text().splitlines():
-            out.print(f"    {line}")
-
-    out.print(
-        f"\n`cmdeploy dns` in a relay checkout generates the full zone file"
-        f"\nfor {domain} and checks what is already published."
-    )
-
-
-def link_cli(bundle, out):
-    """Give the CLI a name that survives the next release."""
-    paths.BIN.mkdir(parents=True, exist_ok=True)
-    target = Path(bundle.closure) / "bin/cmrelay"
-    if paths.CLI.is_symlink() or paths.CLI.exists():
-        paths.CLI.unlink()
-    paths.CLI.symlink_to(target)
-    out.print(f"  {paths.CLI} -> {target}")
-
-
-def install_over_existing(args, bundle, out) -> int:
-    # install_store() ends in a re-exec of this same verb from the installed
-    # closure. Without this the second run would prompt again and, having
-    # been answered, stop and mask a stack it had already taken over.
-    resumed = bool(os.environ.get(ENV_PREFLIGHT_PASSED))
-
-    if not resumed:
-        out.section("What is on this host")
-        findings = describe_existing(bundle, out)
-
-        adopted = findings.get("cmdeploy_ini")
-        if adopted and not paths.INI.exists():
-            mtail = preflight.check_mtail(
-                getattr(read_config(Path(adopted)), "mtail_address", ""),
-                mtail_artifact(bundle),
-            )
-            if not mtail.ok:
-                out.error(
-                    "this host's configuration needs mtail, which cmrelay does not ship"
-                )
-                out.print(preflight.format_report(mtail))
-                out.print("\nNothing was modified.")
-                return 1
-
-        conflicts = preflight.check_units(ours=ours)
-        if not conflicts.ok:
-            out.print("\nUnits cmrelay will stop, disable and mask:")
-            for finding in conflicts.findings:
-                out.print(f"  {finding.subject} ({finding.detail})")
-
-        if not args.yes:
-            out.print("")
-            answer = input("Convert this host to cmrelay? [y/N] ").strip().lower()
-            if answer not in ("y", "yes"):
-                out.print("aborted; nothing was modified")
-                return 1
-
-        out.section("Stopping the existing stack")
-        masked = mask_existing(out)
-        if masked:
-            systemd.record_units(paths.DISABLED_UNITS, masked)
-    else:
-        findings = describe_existing(bundle, out)
-
-    install_store(bundle, out)
-
-    out.section("Users")
-    missing = users.check_all_present()
-    if missing:
-        # A cmdeploy host has these already; a partial one may not.
-        out.print(f"  creating missing accounts: {', '.join(missing)}")
-        users.ensure_required_users()
-    else:
-        out.print("  all present; reusing their existing uids")
-
-    out.section("Configuration")
-    adopt_config(out, findings)
-    config = read_config()
-    users.verify_mailbox_ownership(config.mailboxes_dir)
-
-    apply_configuration(bundle, args, out, config=config)
-    out.section("Verifying")
-    verify(bundle, config, out)
-    return 0
-
-
-def describe_existing(bundle, out) -> dict:
-    """Report the markers a cmdeploy host leaves, as warnings rather than gates.
-
-    The operator knows their host better than any detector does.
-    """
-    findings = {}
-
-    ini = paths.CMDEPLOY_INI
-    findings["cmdeploy_ini"] = ini if ini.is_file() else None
-    out.print(f"  {ini}: {'found' if findings['cmdeploy_ini'] else 'not found'}")
-
-    marker = paths.VERSION_MARKER
-    if marker.is_file():
-        text = marker.read_text()
-        commit = text.split("\n", 1)[0].strip()
-        findings["host_relay_commit"] = commit
-        out.print(f"  {marker}: relay {commit[:12]}")
-        if len(text.splitlines()) > 1 and text.splitlines()[1].startswith("diff"):
-            out.warn(
-                "this host was deployed from a modified working tree;"
-                " its configuration may not match any relay commit"
-            )
-        if commit and commit != bundle.relay_commit:
-            # Reported, not warned about: two hashes say which is newer only
-            # against a shared history, and differing is the normal case.
-            out.print(f"  cmrelay vendored relay {bundle.relay_commit[:12]}")
-    else:
-        findings["host_relay_commit"] = None
-        out.print(f"  {marker}: not found")
-
-    return findings
-
-
-def mask_existing(out) -> list[str]:
-    """Take the existing stack out of the way. Returns what was masked.
-
-    Two treatments: see preflight.SHADOWED_UNITS for why the names cmrelay
-    reuses are shadowed rather than masked.
-    """
-    # One call, not thirteen: asking per unit spent twelve seconds of a
-    # take-over re-reading the same answer.
-    states = preflight.unit_states(
-        preflight.SHADOWED_UNITS + preflight.MASKED_UNITS + preflight.RESOLVER_UNITS
-    )
-
-    masked = []
-    shadowed = []
-    for name in preflight.SHADOWED_UNITS:
-        if ours(name) or name not in states:
-            continue
-        enabled, active = states[name]
-        out.print(
-            f"  {name} ({enabled}/{active}) -> stopped and disabled, then shadowed"
-        )
-        if enabled in ("enabled", "enabled-runtime"):
-            shadowed.append(name)
-        systemd.ensure_service(name, running=False, enabled=False, reload=False)
-        systemd.unmask(name, reload=False)
-    if shadowed:
-        systemd.record_units(paths.SHADOWED_UNITS_STATE, shadowed)
-
-    for name in preflight.MASKED_UNITS + preflight.RESOLVER_UNITS:
-        if name not in states or states[name][0] == "masked":
-            continue
-        enabled, active = states[name]
-        out.print(f"  {name} ({enabled}/{active}) -> stopped, disabled, masked")
-        systemd.stop_disable_mask(name, reload=False)
-        masked.append(name)
-
-    # The one reload the units above deferred.
-    systemd.daemon_reload()
-    return masked
-
-
-def ours(name: str) -> bool:
-    """Whether this unit name is already served by a cmrelay unit file."""
-    return (paths.UNITS / name).is_symlink()
-
-
-def adopt_config(out, findings):
-    """chatmail.ini is copied exactly once, and the original is left alone.
-
-    From then on /opt/cmrelay/chatmail.ini is cmrelay's source of truth. The
-    cmdeploy copy stays put so rollback finds it where it was.
-    """
-    if paths.INI.exists():
-        out.print(f"  {paths.INI} already exists; leaving it alone")
-        return
-    source = findings.get("cmdeploy_ini")
-    if not source:
-        raise VerbError(
-            f"no {paths.CMDEPLOY_INI} to adopt and no {paths.INI} yet."
-            " This host has no chatmail deployment to take over;"
-            " use `cmrelay install --mail-domain <domain>`."
-        )
-    paths.INI.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, paths.INI)
-    out.print(f"  copied {source} -> {paths.INI}")
-
-
-def verify(bundle, config, out):
-    """Check that DKIM signing and TLS actually work, rather than assuming."""
-    problems = []
-
-    if not config.ipv4_relay:
-        key = paths.DKIM_KEYS / "opendkim.private"
-        if not key.is_file():
-            problems.append(f"no DKIM key at {key}")
-        elif (
-            systemd.available()
-            and systemd.query("is-active", "opendkim.service") != "active"
-        ):
-            problems.append("opendkim.service is not running")
-
-    for path in (config.tls_cert_path, config.tls_key_path):
-        if not Path(path).is_file():
-            problems.append(f"no TLS material at {path}")
-
-    if systemd.available():
-        for unit in ("dovecot.service", "postfix.service", "nginx.service"):
-            if systemd.query("is-active", unit) != "active":
-                problems.append(f"{unit} is not running")
-
-    if problems:
-        for problem in problems:
-            out.error(f"  {problem}")
-        out.print("\nThe host is converted but not healthy. `cmrelay status` has more.")
-    else:
-        out.ok("  DKIM key present, TLS material present, services running")
-
-
-def cmd_status(args, out) -> int:
-    bundle = Bundle.discover()
-
-    out.section(f"cmrelay {__version__}")
-    out.print(f"  relay commit   {bundle.relay_commit}")
-    out.print(f"  closure        {bundle.closure}")
-    out.print(f"  config         {paths.INI}")
-
-    if not paths.INI.is_file():
-        out.warn(f"{paths.INI} does not exist; this host is not installed")
-        out.print("  `cmrelay install --mail-domain <domain>` installs one")
-        # Everything below reports on an installation, and there is none;
-        # the conflict check would just advise masking the distribution's own
-        # services. What masked units remain is still worth printing, because
-        # an upgrade that stopped before writing the ini leaves no other
-        # record of them.
-        report_masked(out)
-        return 1
-
-    config = read_config()
-    out.print(f"  mail domain    {config.mail_domain}")
-    out.print(f"  tls mode       {config.tls_cert_mode}")
-    out.print(f"  mailboxes      {config.mailboxes_dir}")
-
-    out.section("Components")
-    for name in sorted(bundle.components):
-        out.print(f"  {name:<16} {bundle.version(name)}")
-
-    out.section("Units")
-    report_units(out)
-
-    # Not "Preflight": the same detector, but asking whether something has
-    # appeared since. It collides at the next reboot, not today.
-    out.section("Conflicts")
-    report = run_preflight(bundle, out, config=config)
-    if report.ok:
-        out.ok("  no conflicts")
-    else:
-        out.print(preflight.format_report(report))
-
-    masked_ok = report_masked(out)
-    return 0 if report.ok and masked_ok else 1
-
-
-def report_masked(out) -> bool:
-    """What cmrelay masked, and whether it has stayed that way.
-
-    The resolver units are absent from CONFLICTING_UNITS, because refusing
-    over systemd-resolved would never proceed on a stock Debian. The detector
-    is blind to them afterwards, and this is where that is paid back.
-    """
-    masked = systemd.read_units(paths.DISABLED_UNITS)
-    if not masked:
-        return True
-    out.section("Masked by cmrelay")
-    ok = True
-    for name in masked:
-        state = systemd.query("is-enabled", name) or "-"
-        if state == "masked":
-            out.print(f"  {name:<36} masked")
-            continue
-        ok = False
-        out.error(f"  {name:<36} {state} -- no longer masked")
-        out.print(
-            f"      remedy: systemctl disable --now {name} && systemctl mask {name}"
-        )
-    return ok
-
-
-def report_units(out):
-    if not systemd.available():
-        out.warn("no systemd here")
-        return
-    names = (
-        sorted(p.name for p in paths.UNITS.glob("*")) if paths.UNITS.is_dir() else []
-    )
-    if not names:
-        out.warn("no cmrelay units installed")
-        return
-    for name in names:
-        enabled = systemd.query("is-enabled", name) or "-"
-        active = systemd.query("is-active", name) or "-"
-        line = f"  {name:<36} {enabled:<10} {active}"
-        if healthy(name, enabled, active):
-            out.print(line)
-        else:
-            out.error(line)
-
-
-def healthy(name: str, enabled: str, active: str) -> bool:
-    """Whether a unit being in this state is what cmrelay intended.
-
-    Timer-driven services are correctly `static`/`inactive`, and flagging
-    them would train the reader to ignore the report.
-    """
-    if active == "active":
-        return True
-    if name.removesuffix(".service") in TIMER_DRIVEN:
-        return True
-    return enabled in ("disabled", "static", "-")
-
-
-def run_preflight(bundle, out, config=None, mail_domain=None, overrides=None):
-    """Resolve relay's port table against this host's config, then look."""
-    table = load_port_table(bundle)
-    if config is None:
-        # Before the ini exists, resolve against relay's defaults rather
-        # than skipping the config-dependent entries.
-        config = default_config(mail_domain or "example.org", overrides)
-    if isinstance(config, dict):
-        config = SimpleNamespace(**config)
-    resolved = preflight.resolve_port_table(table, config)
+def run_preflight(bundle, config, needed_mib=0):
+    """relay's port table resolved against this host's config, then one look."""
+    resolved = preflight.resolve_port_table(relay_pins(bundle)["port_table"], config)
     report = preflight.run(
-        resolved, ss_argv=bundle.command("iproute2", "ss"), ours=ours
+        resolved,
+        ss_argv=bundle.command("iproute2", "ss"),
+        ours=owned_unit,
+        config=config,
+        needed_mib=needed_mib,
     )
     report.findings.extend(
         preflight.check_mtail(
@@ -586,45 +69,622 @@ def run_preflight(bundle, out, config=None, mail_domain=None, overrides=None):
     return report
 
 
-def default_config(mail_domain: str, overrides: dict | None = None):
-    """A Config from relay's own defaults, for a host that has no ini yet."""
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "chatmail.ini"
-        _write_initial_config(path, mail_domain, overrides or {})
-        return _read_config(path)
+def owned_unit(name: str) -> bool:
+    return (paths.UNITS / name).is_symlink()
+
+
+# -- deploy ---------------------------------------------------------------
+
+
+def cmd_deploy(args, out) -> int:
+    require_root()
+    bundle = Bundle.discover()
+    with fsops.lock():
+        return deploy(args, bundle, out)
+
+
+def deploy(args, bundle, out) -> int:
+    started = time.monotonic()
+    journal = fsops.Journal(dry_run=args.dry_run, written=state.read_written())
+
+    where = host.classify()
+    existing = load_existing_config(where)
+    domain = host.resolve_domain(
+        where,
+        args.domain,
+        force=args.force,
+        mailboxes_dir=getattr(existing, "mailboxes_dir", None),
+    )
+    config = existing or planned_config(args, domain)
+
+    intent = state.read_intent()
+    disable_mail = not state.resolve_mail_intent(intent, args.enable_mail)
+
+    out.header(
+        "Relay",
+        [
+            ("Host", where.description),
+            (
+                "Domain",
+                f"{domain}  ({config.tls_cert_mode}, {config.mailboxes_dir})",
+            ),
+            ("Version", f"cmrelay {__version__}, relay {bundle.relay_commit[:10]}"),
+        ],
+    )
+
+    with out.step("Preflight"):
+        needed = 0 if where.state == host.INSTALLED else CLOSURE_MIB
+        report = run_preflight(bundle, config, needed_mib=needed)
+        where = host.escalate(where, report)
+        refusal = check_preflight(where, report, out, args)
+        if refusal is not None:
+            return refusal
+        for warning in cfg.warnings(config, where.ini or paths.INI):
+            out.warn(warning)
+        if not check_domain_resolves(bundle, config, args, out):
+            return 1
+        if not report.ok:
+            out.detail("take-over will stop and mask what is in the way")
+        else:
+            out.detail("no conflicting units, no occupied ports, no existing store")
+
+    if where.takes_over and not take_over(where, bundle, out, args, journal):
+        return 1
+
+    deployment = Deployment(
+        bundle,
+        config,
+        out,
+        journal,
+        disable_mail=disable_mail,
+        reconcile=args.reconcile,
+    )
+
+    with out.step("Configuration"):
+        adopt_or_write_config(where, args, domain, journal, out)
+        created = users.ensure_required_users()
+        if created:
+            out.detail(f"created {', '.join(created)}")
+        deployment.config = cfg.read_config()
+        if args.website_only:
+            deployment.configure_website()
+        else:
+            deployment.configure()
+            deployment.install_daemon_units()
+        state.save_intent(journal, {**intent, "disable_mail": disable_mail})
+        state.save_written(journal, journal.written)
+        report_components(out, journal)
+
+    report_system_files(out, journal)
+
+    issued = []
+    if not (args.website_only or args.dry_run):
+        with out.step("Services"):
+            issued = activate(deployment, journal, out)
+
+    problems = []
+    if not (args.website_only or args.dry_run):
+        with out.step("Verify"):
+            problems = deployment.verify()
+            for problem in problems:
+                out.error(f"  {problem}")
+            if not problems:
+                out.detail("DKIM key present, TLS material present, services running")
+
+    report_hand_edits(out, journal)
+    summarise(out, journal, issued, domain, time.monotonic() - started, disable_mail)
+    if wants_dns_report(args, journal, issued, problems):
+        report_dns(bundle, deployment.config, out)
+    return 1 if problems else 0
+
+
+def wants_dns_report(args, journal, issued, problems) -> bool:
+    """Only when something moved: a no-op deploy reaches the network never."""
+    if args.website_only or args.dry_run or args.skip_dns_check or problems:
+        return False
+    return bool(journal.changes or issued)
+
+
+def report_dns(bundle, config, out) -> None:
+    """The records still to publish. Never fails the deploy: the DKIM record
+    they need did not exist until a moment ago."""
+    if config.ipv4_relay:
+        return
+    from .dnscheck import dns_verb
+
+    out.next_step("publish DNS records. `cmrelay dns` lists what is missing.")
+    try:
+        dns_verb(SimpleNamespace(zonefile=None), bundle, out)
+    except Exception as exc:  # noqa: BLE001 - reporting, not gating
+        out.detail(f"could not check DNS: {exc}")
+
+
+def load_existing_config(where):
+    """The config already on this host, from cmrelay's ini or cmdeploy's."""
+    if where.ini is None:
+        return None
+    return cfg.read_config(where.ini)
+
+
+def planned_config(args, domain):
+    """What the ini this run is about to write would say."""
+    if args.config:
+        source = Path(args.config)
+        if not source.is_file():
+            raise VerbError(f"--config {source} does not exist")
+        return cfg.read_config(source)
+    return cfg.default_config(domain, cfg.parse_overrides(args.set))
+
+
+def check_domain_resolves(bundle, config, args, out) -> bool:
+    """One lookup, before 800 MiB of store moves for a typo'd domain.
+
+    ACME cannot possibly succeed without an A or AAAA record, and a
+    half-deployed relay with no certificate is the worst outcome available.
+    """
+    if args.skip_dns_check or config.ipv4_relay:
+        return True
+    from .dnscheck import resolves
+
+    try:
+        if resolves(bundle, config.mail_domain):
+            return True
+    except Exception as exc:  # noqa: BLE001 - a resolver failure is not a refusal
+        out.detail(f"could not resolve {config.mail_domain}: {exc}")
+        return True
+    if config.tls_cert_mode == "acme":
+        out.error(
+            f"{config.mail_domain} has no A or AAAA record, so acmetool cannot"
+            " obtain a certificate and this deploy would leave the relay"
+            " without one."
+            "\n  Publish the record first, or add --skip-dns-check."
+        )
+        return False
+    out.warn(f"{config.mail_domain} has no A or AAAA record yet")
+    return True
+
+
+def check_preflight(where, report, out, args):
+    """Whether the deploy may proceed, and what to say if it may not."""
+    if where.state == host.FOREIGN:
+        out.error("this host runs a mail stack cmrelay did not install")
+        out.print(preflight.format_report(report))
+        out.print("\nNo configuration and no service on this host was modified.")
+        out.print(
+            "If this host is meant to keep the stack above, cmrelay is not"
+            "\nfor it. There is no chatmail deployment here to take over."
+        )
+        return 1
+    if report.ok:
+        return None
+
+    blocking = [f for f in report.findings if f.subject == "mtail"]
+    if blocking:
+        out.error("this configuration needs mtail, which cmrelay does not ship")
+        out.print(preflight.format_report(report))
+        out.print("\nNo configuration and no service on this host was modified.")
+        return 1
+
+    if where.takes_over:
+        return None
+
+    out.error("something is in the way and this host carries no chatmail markers")
+    out.print(preflight.format_report(report))
+    out.print("\nNo configuration and no service on this host was modified.")
+    return 1
+
+
+def take_over(where, bundle, out, args, journal) -> bool:
+    """Stop, disable and mask the stack that is already here."""
+    if where.relay_commit:
+        out.detail(f"{paths.VERSION_MARKER}: relay {where.relay_commit[:12]}")
+        if where.relay_commit != bundle.relay_commit:
+            out.detail(f"cmrelay vendored relay {bundle.relay_commit[:12]}")
+    if where.hand_modified:
+        out.warn(
+            "this host was deployed from a modified working tree;"
+            " its configuration may not match any relay commit"
+        )
+    if where.ini:
+        mtail = preflight.check_mtail(
+            getattr(cfg.read_config(where.ini), "mtail_address", ""),
+            mtail_artifact(bundle),
+        )
+        if not mtail.ok:
+            out.error(
+                "this host's configuration needs mtail, which cmrelay does not ship"
+            )
+            out.print(preflight.format_report(mtail))
+            return False
+
+    conflicts = preflight.check_units(ours=owned_unit)
+    if not conflicts.ok:
+        out.print("\nUnits cmrelay will stop, disable and mask:")
+        for finding in conflicts.findings:
+            out.print(f"  {finding.subject} ({finding.detail})")
+
+    if not (args.take_over or args.yes):
+        out.print("")
+        if input("Convert this host to cmrelay? [y/N] ").strip().lower() not in (
+            "y",
+            "yes",
+        ):
+            out.print("aborted; nothing was modified")
+            return False
+
+    with out.step("Take-over"):
+        masked, shadowed = mask_existing(out)
+        if shadowed:
+            systemd.record_units(journal, paths.SHADOWED_UNITS_STATE, shadowed)
+        if masked:
+            systemd.record_units(journal, paths.DISABLED_UNITS, masked)
+        systemd.daemon_reload()
+    return True
+
+
+def mask_existing(out):
+    """Shadowed names cmrelay reuses, masked names it does not provide."""
+    states = systemd.unit_states(
+        preflight.SHADOWED_UNITS + preflight.MASKED_UNITS + preflight.RESOLVER_UNITS
+    )
+    masked, shadowed = [], []
+    for name in preflight.SHADOWED_UNITS:
+        state_ = states.get(name)
+        if owned_unit(name) or state_ is None or not state_.exists:
+            continue
+        out.changed(f"{name} ({state_.enabled}/{state_.active}) stopped and disabled")
+        if state_.enabled in ("enabled", "enabled-runtime"):
+            shadowed.append(name)
+        systemd.systemctl("stop", name, check=False)
+        systemd.systemctl("disable", "--no-reload", name, check=False)
+        systemd.unmask(name, reload=False)
+
+    for name in preflight.MASKED_UNITS + preflight.RESOLVER_UNITS:
+        state_ = states.get(name)
+        if state_ is None or not state_.exists or state_.is_masked:
+            continue
+        out.changed(f"{name} ({state_.enabled}/{state_.active}) stopped and masked")
+        systemd.stop_disable_mask(name, reload=False)
+        masked.append(name)
+    return masked, shadowed
+
+
+def adopt_or_write_config(where, args, domain, journal, out):
+    """chatmail.ini is written or adopted exactly once, then left alone."""
+    if paths.INI.is_file() and not (args.set or args.config):
+        return
+    if args.config:
+        source = Path(args.config)
+        journal.copy("cmrelay", source, paths.INI)
+        out.detail(f"copied {source} -> {paths.INI}")
+        return
+    if where.ini and where.ini != paths.INI:
+        journal.copy("cmrelay", where.ini, paths.INI)
+        out.detail(f"adopted {where.ini} -> {paths.INI}")
+        return
+    if not paths.INI.is_file():
+        journal.ensure_directory("cmrelay", paths.INI.parent)
+        cfg.write_initial_config(paths.INI, domain, cfg.parse_overrides(args.set))
+        journal.produced("cmrelay", paths.INI, "generated from relay's defaults")
+        out.added(f"{paths.INI}")
+
+
+def activate(deployment, journal, out) -> list:
+    """One reload if unit files moved, then only the calls that differ."""
+    if not systemd.available():
+        out.warn("no systemd here; leaving every service alone")
+        return []
+
+    masked = deployment.mask_resolvers(systemd.unit_states(preflight.RESOLVER_UNITS))
+    if masked:
+        systemd.record_units(journal, paths.DISABLED_UNITS, masked)
+
+    reloaded = False
+    if systemd.unit_changed(journal) or masked:
+        systemd.daemon_reload()
+        reloaded = True
+
+    plan = deployment.plan()
+    states = systemd.unit_states(sorted(plan.intents))
+
+    # acmetool answers the HTTP challenge, and dovecot, postfix and nginx
+    # will not start without the certificate it fetches.
+    issued = report_calls(out, plan.only(ACME_UNITS).calls(states))
+    if deployment.config.tls_cert_mode == "acme" and deployment.needs_reconcile():
+        deployment.run_acmetool()
+    if not tls_material_present(deployment, out):
+        return issued
+
+    issued += report_calls(out, plan.without(ACME_UNITS).calls(states))
+    if not issued:
+        out.unchanged(f"{len(plan.intents)} units, all as intended")
+    if any(call[0] in ("enable", "disable") for call in issued) and not reloaded:
+        systemd.daemon_reload()
+    return issued
+
+
+def report_calls(out, calls) -> list:
+    issued = systemd.run_calls(calls, out=out)
+    for call in issued:
+        names = [a for a in call[1:] if not a.startswith("--")]
+        out.changed(f"{', '.join(names)}: {call[0]}")
+    return issued
+
+
+def tls_material_present(deployment, out) -> bool:
+    """Refuse to start the mail services rather than dump a systemd failure."""
+    cert = Path(deployment.config.tls_cert_path)
+    if cert.is_file():
+        return True
+    out.error(
+        f"there is no TLS certificate at {cert}, so dovecot, postfix and"
+        " nginx cannot start."
+    )
+    if deployment.config.tls_cert_mode == "acme":
+        out.print(
+            "  acmetool needs this host's A or AAAA record published and"
+            + "\n  port 80 reachable from the internet. Publish the record and"
+            + "\n  run `cmrelay deploy` again, or use tls_cert_mode = self for"
+            + "\n  a test host."
+        )
+    return False
+
+
+# -- reporting -------------------------------------------------------------
+
+
+def report_components(out, journal):
+    """cmrelay's own configuration, collapsed into a count per component."""
+    own = journal.own_changes
+    by_component = {}
+    for change in own:
+        by_component.setdefault(change.component, []).append(change)
+    for name in sorted(by_component):
+        changes = by_component[name]
+        if out.verbose:
+            for change in changes:
+                out.mark(change.kind, str(change).removeprefix(f"{change.kind} "))
+        else:
+            out.changed(f"{name:<18}{len(changes)} files")
+    quiet = journal.total_seen - len(own)
+    if quiet > 0:
+        out.unchanged(f"{quiet} files unchanged")
+
+
+def report_system_files(out, journal):
+    """Every file outside /opt/cmrelay that moved, named."""
+    changes = journal.system_changes
+    out.section_header("System files", journal.system_seconds)
+    if not changes:
+        out.unchanged("nothing changed")
+        return
+    shown = changes if out.verbose else changes[:SYSTEM_LINES]
+    for change in shown:
+        out.mark(change.kind, str(change).removeprefix(f"{change.kind} "))
+    hidden = len(changes) - len(shown)
+    if hidden > 0:
+        out.detail(f"... {hidden} more, all named with --verbose")
+
+
+def report_hand_edits(out, journal):
+    for path, action in journal.hand_edited:
+        out.warn(f"{path} was edited by hand: {action}")
+
+
+def summarise(out, journal, issued, domain, seconds, disable_mail):
+    started = sum(1 for call in issued if call[0] in ("start", "restart"))
+    if not journal.changes and not issued:
+        out.summary(f"nothing to do; {domain} is up to date ({seconds:.2f}s)")
+        return
+    parts = [f"{len(journal.changes)} files written"]
+    if started:
+        parts.append(f"{started} services started")
+    out.summary(f"deployed {domain} in {seconds:.1f}s: {', '.join(parts)}")
+    if disable_mail:
+        out.print("postfix and dovecot stay stopped: --disable-mail is in force")
+
+
+# -- status ----------------------------------------------------------------
+
+
+def cmd_status(args, out) -> int:
+    """0 healthy, 1 degraded, 2 not installed."""
+    bundle = Bundle.discover()
+    if getattr(args, "json", False):
+        return status_json(bundle, out)
+
+    out.section(f"cmrelay {__version__}")
+    out.print(f"  relay commit   {bundle.relay_commit}")
+    out.print(f"  closure        {bundle.closure}")
+    out.print(f"  config         {paths.INI}")
+
+    if not paths.INI.is_file():
+        out.warn(f"{paths.INI} does not exist; this host is not installed")
+        out.print("  `cmrelay deploy <domain>` installs one")
+        report_masked(out)
+        return 2
+
+    config = cfg.read_config()
+    out.print(f"  mail domain    {config.mail_domain}")
+    out.print(f"  tls mode       {config.tls_cert_mode}")
+    out.print(f"  mailboxes      {config.mailboxes_dir}")
+    if state.read_intent().get("disable_mail"):
+        out.print("  mail           disabled by the operator (--disable-mail)")
+
+    out.section("Components")
+    for name in sorted(bundle.components):
+        out.print(f"  {name:<16} {bundle.version(name)}")
+
+    out.section("Units")
+    units_ok = report_units(out)
+
+    out.section("Conflicts")
+    report = run_preflight(bundle, config)
+    if report.ok:
+        out.ok("  no conflicts")
+    else:
+        out.print(preflight.format_report(report))
+
+    masked_ok = report_masked(out)
+    return 0 if (report.ok and masked_ok and units_ok) else 1
+
+
+def status_facts(bundle) -> dict:
+    facts = {
+        "cmrelay": __version__,
+        "relay_commit": bundle.relay_commit,
+        "closure": str(bundle.closure),
+        "installed": paths.INI.is_file(),
+        "components": {n: bundle.version(n) for n in sorted(bundle.components)},
+        "units": {},
+        "masked": {},
+        "conflicts": [],
+        "disable_mail": bool(state.read_intent().get("disable_mail")),
+    }
+    if not facts["installed"]:
+        return facts
+    config = cfg.read_config()
+    facts["mail_domain"] = config.mail_domain
+    facts["tls_cert_mode"] = config.tls_cert_mode
+    facts["mailboxes_dir"] = str(config.mailboxes_dir)
+    for name, unit in sorted(unit_report().items()):
+        facts["units"][name] = {
+            "enabled": unit[0],
+            "active": unit[1],
+            "healthy": unit[2],
+        }
+    for name in systemd.read_units(paths.DISABLED_UNITS):
+        facts["masked"][name] = systemd.query("is-enabled", name) or "-"
+    report = run_preflight(bundle, config)
+    facts["conflicts"] = [str(f) for f in report.findings]
+    return facts
+
+
+def status_json(bundle, out) -> int:
+    facts = status_facts(bundle)
+    print(json.dumps(facts, indent=2, sort_keys=True))
+    if not facts["installed"]:
+        return 2
+    degraded = (
+        facts["conflicts"]
+        or any(not u["healthy"] for u in facts["units"].values())
+        or any(s != "masked" for s in facts["masked"].values())
+    )
+    return 1 if degraded else 0
+
+
+def unit_report() -> dict:
+    names = (
+        sorted(p.name for p in paths.UNITS.glob("*")) if paths.UNITS.is_dir() else []
+    )
+    states = systemd.unit_states(names)
+    report = {}
+    for name in names:
+        unit = states.get(name)
+        enabled = (unit.enabled if unit else "") or "-"
+        active = (unit.active if unit else "") or "-"
+        report[name] = (enabled, active, healthy(name, enabled, active))
+    return report
+
+
+def report_units(out) -> bool:
+    if not systemd.available():
+        out.warn("no systemd here")
+        return True
+    report = unit_report()
+    if not report:
+        out.warn("no cmrelay units installed")
+        return True
+    ok = True
+    for name, (enabled, active, good) in report.items():
+        line = f"  {name:<36} {enabled:<10} {active}"
+        if good:
+            out.print(line)
+        else:
+            ok = False
+            out.error(line)
+    return ok
+
+
+def healthy(name: str, enabled: str, active: str) -> bool:
+    """Timer-driven services are correctly static/inactive."""
+    if active == "active":
+        return True
+    if name.removesuffix(".service") in TIMER_DRIVEN:
+        return True
+    return enabled in ("disabled", "static", "-")
+
+
+def report_masked(out) -> bool:
+    """What cmrelay masked, and whether it has stayed that way."""
+    masked = systemd.read_units(paths.DISABLED_UNITS)
+    if not masked:
+        return True
+    out.section("Masked by cmrelay")
+    ok = True
+    for name in masked:
+        state_ = systemd.query("is-enabled", name) or "-"
+        if state_ == "masked":
+            out.print(f"  {name:<36} masked")
+            continue
+        ok = False
+        out.error(f"  {name:<36} {state_} -- no longer masked")
+        out.print(
+            f"      remedy: systemctl disable --now {name} && systemctl mask {name}"
+        )
+    return ok
+
+
+# -- version ---------------------------------------------------------------
 
 
 def cmd_version(args, out) -> int:
-    """The runtime face of vendor.lock, and what a bug report should paste."""
     bundle = Bundle.discover()
     out.print(f"cmrelay {__version__}")
     out.print(f"relay {bundle.relay_commit}")
     lock = bundle.lock
     if lock.get("patches"):
         out.print(f"patches: {', '.join(lock['patches'])}")
+    keys = release_key_fingerprints(bundle)
+    if keys:
+        out.print(f"release keys: {', '.join(keys)}")
     out.print("")
     for name in sorted(bundle.components):
         out.print(f"  {name:<16} {bundle.version(name)}")
     return 0
 
 
+def release_key_fingerprints(bundle) -> list:
+    from .signing import trusted_keys
+
+    return [f"{path.stem} {fingerprint}" for path, fingerprint in trusted_keys(bundle)]
+
+
+# -- uninstall -------------------------------------------------------------
+
+
 def cmd_uninstall(args, out) -> int:
     require_root()
+    with fsops.lock():
+        return uninstall(args, out)
 
+
+def uninstall(args, out) -> int:
+    recorded = host.config_domain(paths.INI)
     if not args.yes:
-        answer = (
-            input(f"Remove cmrelay from this host ({paths.ROOT} and /nix)? [y/N] ")
-            .strip()
-            .lower()
-        )
-        if answer not in ("y", "yes"):
-            out.print("aborted")
-            return 1
+        if recorded and args.domain != recorded:
+            raise VerbError(
+                f"this host serves {recorded}."
+                f"\n  Name it to confirm:  cmrelay uninstall {recorded}"
+            )
+        if not recorded and not args.domain:
+            raise VerbError("cmrelay uninstall needs the domain of this relay")
 
+    journal = fsops.Journal()
     out.section("Stopping cmrelay units")
-    stop_our_units(out)
+    stop_our_units(out, journal)
 
-    out.section("Unmasking what --take-over masked")
+    out.section("Unmasking what take-over masked")
     masked = systemd.read_units(paths.DISABLED_UNITS)
     for name in masked:
         systemd.unmask(name, reload=False)
@@ -633,11 +693,9 @@ def cmd_uninstall(args, out) -> int:
         out.print("  nothing to unmask")
 
     # Enabled, not started: starting here would race the stack being torn
-    # down. Enabling is not cosmetic, though -- relay's unbound deployer runs
-    # `systemctl reset-failed unbound.service` through pyinfra's server.shell,
-    # and systemd answers "not loaded" for a disabled unit, failing the host
-    # before `cmdeploy run` reaches its own enable step.
-    out.section("Re-enabling what --take-over disabled")
+    # down, and relay's unbound deployer runs `systemctl reset-failed`, which
+    # answers "not loaded" for a disabled unit.
+    out.section("Re-enabling what take-over disabled")
     shadowed = systemd.read_units(paths.SHADOWED_UNITS_STATE)
     for name in shadowed:
         systemd.enable(name, reload=False)
@@ -649,14 +707,14 @@ def cmd_uninstall(args, out) -> int:
     if systemd.tmpfiles_create():
         out.print("  recreated the /run directories tmpfiles.d declares")
 
-    remove_linked_tools(out)
+    remove_linked_tools(out, journal)
     diff_configs(out)
+    report_own_pages(out)
 
     out.section("Removing the tree")
     if store.unlink_nix():
         out.print("  removed /nix")
-    if paths.ROOT.exists():
-        shutil.rmtree(paths.ROOT)
+    if journal.remove_directory("cmrelay", paths.ROOT):
         out.print(f"  removed {paths.ROOT}")
 
     systemd.daemon_reload()
@@ -665,23 +723,33 @@ def cmd_uninstall(args, out) -> int:
     return 0
 
 
-def stop_our_units(out):
+def report_own_pages(out):
+    """The one thing here with no copy anywhere else."""
+    if not paths.WWW_SRC.is_dir():
+        return
+    pages = sorted(p.name for p in paths.WWW_SRC.iterdir() if p.is_file())
+    if not pages:
+        return
+    out.warn(
+        f"{paths.WWW_SRC} holds your own web page source ({', '.join(pages)})"
+        " and is about to be removed with the rest of the tree."
+    )
+
+
+def stop_our_units(out, journal):
     if not paths.UNITS.is_dir():
         return
     for unit in sorted(paths.UNITS.glob("*")):
         name = unit.name
-        systemd.ensure_service(name, running=False, enabled=False)
-        real = paths.unit_file(name)
-        if real.is_file() or real.is_symlink():
-            real.unlink()
+        systemd.systemctl("stop", name, check=False)
+        systemd.systemctl("disable", "--no-reload", name, check=False)
+        journal.remove_file("cmrelay", paths.unit_file(name))
         out.print(f"  stopped and removed {name}")
     for name in AUTHORED_UNITS:
-        dropin = paths.SYSTEMD_SYSTEM / f"{name}.service.d"
-        if dropin.is_dir():
-            shutil.rmtree(dropin)
+        journal.remove_directory("cmrelay", paths.SYSTEMD_SYSTEM / f"{name}.service.d")
 
 
-def remove_linked_tools(out):
+def remove_linked_tools(out, journal):
     """Take back /usr/local/bin, so nothing points into a deleted store."""
     if not paths.LINKED_TOOLS.is_file():
         return
@@ -690,28 +758,24 @@ def remove_linked_tools(out):
         link = paths.LOCAL_BIN / name
         if not is_ours(link):
             continue
-        link.unlink()
+        journal.remove_file("tools", link)
         out.print(f"  removed {link}")
-    remove_profile_script(out)
+    remove_profile_script(out, journal)
 
 
-def remove_profile_script(out):
-    """Take /opt/cmrelay/bin back off PATH, so it does not point at nothing."""
+def remove_profile_script(out, journal):
     script = paths.PROFILE_SCRIPT
     if not script.is_file():
         return
     if "written by cmrelay" not in script.read_text():
         out.print(f"  leaving {script} alone: cmrelay did not write it")
         return
-    script.unlink()
+    journal.remove_file("tools", script)
     out.print(f"  removed {script}")
 
 
 def is_ours(link: Path) -> bool:
-    """Whether cmrelay put this in /usr/local/bin, or something else did.
-
-    Removing by name alone would delete whatever had since taken it.
-    """
+    """Removing by name alone would delete whatever had since taken it."""
     if link.is_symlink():
         return str(link.readlink()).startswith(("/nix/store/", str(paths.ROOT)))
     if link.is_file():
@@ -723,7 +787,6 @@ def is_ours(link: Path) -> bool:
 
 
 def diff_configs(out):
-    """A courtesy: say what a rollback would lose."""
     mine, theirs = paths.INI, paths.CMDEPLOY_INI
     if not (mine.is_file() and theirs.is_file()):
         return
@@ -736,10 +799,36 @@ def diff_configs(out):
     )
 
 
+# -- dispatch --------------------------------------------------------------
+
+
+def cmd_dns(args, out) -> int:
+    from .dnscheck import dns_verb
+
+    return dns_verb(args, Bundle.discover(), out)
+
+
+def cmd_upgrade(args, out) -> int:
+    from .upgrade import upgrade_verb
+
+    require_root()
+    with fsops.lock():
+        return upgrade_verb(args, Bundle.discover(), out)
+
+
+def cmd_installer(args, out) -> int:
+    from .installer import installer_verb
+
+    return installer_verb(args, out)
+
+
 VERBS = {
-    "install": cmd_install,
+    "deploy": cmd_deploy,
+    "dns": cmd_dns,
+    "installer": cmd_installer,
     "status": cmd_status,
     "uninstall": cmd_uninstall,
+    "upgrade": cmd_upgrade,
     "version": cmd_version,
 }
 

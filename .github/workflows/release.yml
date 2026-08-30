@@ -30,17 +30,44 @@ jobs:
   py-checks:
     uses: chatmail/workflows/.github/workflows/py-checks.yml@main
 
+  # VERSION is what nix/closure.nix writes into manifest.json and what an
+  # installed host reports, so a tag that disagrees with it would publish a
+  # relay that misidentifies itself and an `upgrade` that compares the wrong
+  # numbers.
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: VERSION matches the tag
+        run: |
+          version=$(cat VERSION)
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::VERSION says $version but the tag says $tag"
+            exit 1
+          fi
+          echo "releasing $version"
+
   # The payload is the actual deliverable, and it ships twice: on the GitHub
   # release as a .run an operator can copy across by hand, and inside a
   # per-architecture wheel so that `pip install cmrelay` is the last step
   # needing the network. Release asset names are a contract with
-  # src/cmrelay/payload.py: cmrelay-<version>-<arch>-linux.run
+  # src/cmrelay/discovery.py:
+  # cmrelay-installer-<version>-<arch>-linux.run and its .sig
   #
   # Each arch builds on its own native runner. There is no cross-building
   # here: the payload is a Nix closure of real binaries for that host.
   payload:
     name: payload (${{ matrix.arch }})
+    needs: version
     runs-on: ${{ matrix.runner }}
+    # A tag push alone must not be able to mint a signature, so the release
+    # key lives in an environment with required reviewers. The trust root is
+    # therefore GitHub plus whoever can approve this job; see
+    # release-keys/README.md.
+    environment: release-signing
     permissions:
       contents: write
     strategy:
@@ -66,25 +93,57 @@ jobs:
       - name: Build the payload
         run: nix build --print-build-logs '.?submodules=1#payload'
 
-      - name: Name the asset after the tag
+      # nix/payload.nix already names the file from VERSION and the
+      # architecture, and the job above has checked VERSION against the tag.
+      - name: Take the asset out of the store
         run: |
           version="${GITHUB_REF_NAME#v}"
-          cp result/bin/cmrelay-*.run "cmrelay-$version-${{ matrix.arch }}-linux.run"
-          ls -lh cmrelay-*.run
+          run="cmrelay-installer-$version-${{ matrix.arch }}-linux.run"
+          cp "result/bin/$run" .
+          chmod 644 "$run"
+          ls -lh "$run"
+          sha256sum "$run" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Ed25519 over the whole file, through openssl. The private key is
+      # written under umask 077, used once, and removed.
+      - name: Sign the installer
+        env:
+          RELEASE_KEY: ${{ secrets.CMRELAY_RELEASE_KEY }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          run="cmrelay-installer-$version-${{ matrix.arch }}-linux.run"
+          if [ -z "$RELEASE_KEY" ]; then
+            echo "::error::CMRELAY_RELEASE_KEY is not set, so this release" \
+                 "could only be installed with --allow-unsigned"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$RELEASE_KEY" > ci.key
+          trap 'rm -f ci.key' EXIT
+          python3 scripts/cmrelay-sign sign \
+            --key ci.key --public release-keys/ci.pem "$run"
+          cat "$run.sig"
 
       - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
-          files: cmrelay-*.run
+          files: |
+            cmrelay-installer-*.run
+            cmrelay-installer-*.run.sig
           fail_on_unmatched_files: true
 
       # Standard library only, so no environment to set up. The version comes
       # from the tag rather than from git describe, and the script refuses one
       # containing a '-', which pip would read as a build tag.
+      # The signature travels inside the wheel too: `cmrelay upgrade` can
+      # take a candidate from PyPI, and a wheel with no signature in it is
+      # one nothing can verify against the release keys.
       - name: Build the wheel around the payload
         run: |
           version="${GITHUB_REF_NAME#v}"
+          run="cmrelay-installer-$version-${{ matrix.arch }}-linux.run"
           python3 scripts/wheel-cmrelay.py \
-            --payload "cmrelay-$version-${{ matrix.arch }}-linux.run" \
+            --payload "$run" \
+            --signature "$run.sig" \
             --arch "${{ matrix.arch }}" \
             --version "$version" \
             --outdir wheelhouse
@@ -105,7 +164,7 @@ jobs:
   # trusted publishing rejects publishes from reusable workflows.
   # See https://github.com/pypi/warehouse/issues/11096
   publish:
-    needs: [py-checks, payload]
+    needs: [version, py-checks, payload]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

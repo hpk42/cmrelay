@@ -66,10 +66,22 @@ class Rule:
 
 
 @dataclass
+class Skip:
+    patterns: list[str]
+    why: str
+    keep: list[str] = field(default_factory=list)
+
+    def claims(self, relpath: str) -> bool:
+        if any(globmatch(relpath, p) for p in self.keep):
+            return False
+        return any(globmatch(relpath, p) for p in self.patterns)
+
+
+@dataclass
 class Mapping:
     relay_url: str
     roots: list[str]
-    skips: list[tuple[list[str], str]] = field(default_factory=list)
+    skips: list[Skip] = field(default_factory=list)
     copies: list[Rule] = field(default_factory=list)
 
     @classmethod
@@ -78,14 +90,17 @@ class Mapping:
         return cls(
             relay_url=raw["relay_url"],
             roots=raw["roots"],
-            skips=[(s["patterns"], s["why"]) for s in raw.get("skip", [])],
+            skips=[
+                Skip(s["patterns"], s["why"], s.get("keep", []))
+                for s in raw.get("skip", [])
+            ],
             copies=[Rule(c["src"], c["dest"]) for c in raw.get("copy", [])],
         )
 
     def classify(self, relpath: str) -> tuple[str, str | None]:
         """Return ("skip"|"copy", destination) for one relay-relative path."""
-        for patterns, _why in self.skips:
-            if any(globmatch(relpath, p) for p in patterns):
+        for skip in self.skips:
+            if skip.claims(relpath):
                 return "skip", None
         for rule in self.copies:
             if globmatch(relpath, rule.src):

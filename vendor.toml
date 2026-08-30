@@ -36,14 +36,36 @@ patterns = ["cmdeploy/src/cmdeploy/pins.py"]
 why = "read from the submodule by scripts/extract-from-relay, not vendored"
 
 # The pyinfra deployer modules. cmrelay reimplements their effects and never
-# vendors their code, because that is the part that would rot.
+# vendors their code, because that is the part that would rot. `keep` names
+# the exceptions, which the copy rules below then claim: skips are matched
+# before copies, so a copy rule alone would never be reached.
 [[skip]]
 patterns = [
   "cmdeploy/src/cmdeploy/*.py",
   "cmdeploy/src/cmdeploy/*/*.py",
   "cmdeploy/src/cmdeploy/*/*/*.py",
 ]
+keep = [
+  "cmdeploy/src/cmdeploy/dns.py",
+  "cmdeploy/src/cmdeploy/remote/rdns.py",
+  "cmdeploy/src/cmdeploy/remote/rshell.py",
+]
 why = "pyinfra deployer code; cmrelay reimplements the effects instead"
+
+# Pure functions over DNS, standard library only, so a relay bump that
+# changes the zone shows up as a diff to review rather than as two divergent
+# zone generators.
+[[copy]]
+src = "cmdeploy/src/cmdeploy/dns.py"
+dest = "pycode/dns.py"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/remote/rdns.py"
+dest = "pycode/rdns.py"
+
+[[copy]]
+src = "cmdeploy/src/cmdeploy/remote/rshell.py"
+dest = "pycode/rshell.py"
 
 # postfix-mta-sts-resolver is dead upstream. MtastsDeployer is now a pure
 # removal step, so these two files are only ever deleted from a host, never
