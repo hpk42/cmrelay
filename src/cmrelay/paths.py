@@ -42,6 +42,9 @@ UNBOUND_ANCHOR_SEED = BIN / "unbound-seed-anchor"
 # path is not enough.
 LOCAL_BIN = Path("/usr/local/bin")
 
+# Not shipped: the operator installs it, at the path relay's own deployer uses.
+MTAIL = LOCAL_BIN / "mtail"
+
 PROFILE_D = Path("/etc/profile.d")
 PROFILE_SCRIPT = PROFILE_D / "cmrelay.sh"
 

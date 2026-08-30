@@ -9,6 +9,7 @@ never heard of.
 Nothing here modifies the host: only `install --take-over` acts on it.
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -217,6 +218,26 @@ def check_units(names=None, ours=None) -> Report:
                 f"already present and {enabled}/{active}",
                 remedy=f"systemctl disable --now {name} && systemctl mask {name}",
             )
+    return report
+
+
+def check_mtail(address, artifact, binary=Path("/usr/local/bin/mtail")) -> Report:
+    """mtail is the operator's to install, so say exactly how."""
+    report = Report()
+    if not address or os.access(binary, os.X_OK):
+        return report
+    url, sha256 = artifact
+    report.add(
+        "mtail",
+        f"chatmail.ini sets mtail_address={address}, but {binary} is missing",
+        remedy=(
+            "install the release relay pins, or unset mtail_address:\n"
+            f"        curl -fsSLo /tmp/mtail.tgz {url}\n"
+            "        tar -xzOf /tmp/mtail.tgz mtail > /tmp/mtail\n"
+            f'        echo "{sha256}  /tmp/mtail" | sha256sum -c\n'
+            f"        install -m755 /tmp/mtail {binary}"
+        ),
+    )
     return report
 
 

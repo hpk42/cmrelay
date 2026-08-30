@@ -11,6 +11,7 @@ modifies nothing, and `uninstall` reverses what --take-over did.
 
 import json
 import os
+import platform
 import shutil
 import sys
 import tempfile
@@ -41,10 +42,26 @@ def require_root():
         raise VerbError("cmrelay must run as root")
 
 
+def relay_pins(bundle) -> dict:
+    """relay's own pins, as extracted at build time and shipped in the closure."""
+    return json.loads((bundle.root / "relay-pins.json").read_text())
+
+
 def load_port_table(bundle) -> list:
-    """relay's port table, as extracted at build time and shipped in the closure."""
-    data = json.loads((bundle.root / "relay-pins.json").read_text())
-    return data["port_table"]
+    return relay_pins(bundle)["port_table"]
+
+
+def mtail_artifact(bundle) -> tuple:
+    """The release relay pins for this architecture: (url, sha256)."""
+    artifacts = relay_pins(bundle)["pins"]["MTAIL_ARTIFACTS"]
+    machine = platform.machine()
+    try:
+        return tuple(artifacts[machine])
+    except KeyError:
+        raise VerbError(
+            f"relay pins no mtail release for {machine};"
+            f" it has {', '.join(sorted(artifacts))}"
+        ) from None
 
 
 def read_config(inipath: Path = paths.INI):
@@ -76,8 +93,31 @@ def install_fresh(args, bundle, out) -> int:
 
     if not os.environ.get(ENV_PREFLIGHT_PASSED):
         out.section("Preflight")
-        report = run_preflight(bundle, out, mail_domain=args.mail_domain)
+        # The config this run will write, not relay's bare defaults: --set
+        # and --config can turn mtail on, and the refusal has to come before
+        # anything is written rather than after.
+        if args.config:
+            planned = read_config(Path(args.config))
+        else:
+            planned = None
+        report = run_preflight(
+            bundle,
+            out,
+            config=planned,
+            mail_domain=args.mail_domain,
+            overrides=parse_overrides(args.set),
+        )
         if not report.ok:
+            # --take-over acts on units and ports, and would meet a missing
+            # mtail again, so only offer it when something it can act on
+            # is what failed.
+            conflicts = [f for f in report.findings if f.subject != "mtail"]
+            if not conflicts:
+                out.error("this configuration needs mtail, which cmrelay does not ship")
+                out.print(preflight.format_report(report))
+                out.print("\nNothing was modified.")
+                return 1
+
             out.error("this host is not a fresh install target")
             takeover = paths.CMDEPLOY_INI.is_file()
             out.print(preflight.format_report(report, remedies=not takeover))
@@ -235,6 +275,20 @@ def install_over_existing(args, bundle, out) -> int:
     if not resumed:
         out.section("What is on this host")
         findings = describe_existing(bundle, out)
+
+        adopted = findings.get("cmdeploy_ini")
+        if adopted and not paths.INI.exists():
+            mtail = preflight.check_mtail(
+                getattr(read_config(Path(adopted)), "mtail_address", ""),
+                mtail_artifact(bundle),
+            )
+            if not mtail.ok:
+                out.error(
+                    "this host's configuration needs mtail, which cmrelay does not ship"
+                )
+                out.print(preflight.format_report(mtail))
+                out.print("\nNothing was modified.")
+                return 1
 
         conflicts = preflight.check_units(ours=ours)
         if not conflicts.ok:
@@ -511,24 +565,32 @@ def healthy(name: str, enabled: str, active: str) -> bool:
     return enabled in ("disabled", "static", "-")
 
 
-def run_preflight(bundle, out, config=None, mail_domain=None):
+def run_preflight(bundle, out, config=None, mail_domain=None, overrides=None):
     """Resolve relay's port table against this host's config, then look."""
     table = load_port_table(bundle)
     if config is None:
         # Before the ini exists, resolve against relay's defaults rather
         # than skipping the config-dependent entries.
-        config = default_config(mail_domain or "example.org")
+        config = default_config(mail_domain or "example.org", overrides)
     if isinstance(config, dict):
         config = SimpleNamespace(**config)
     resolved = preflight.resolve_port_table(table, config)
-    return preflight.run(resolved, ss_argv=bundle.command("iproute2", "ss"), ours=ours)
+    report = preflight.run(
+        resolved, ss_argv=bundle.command("iproute2", "ss"), ours=ours
+    )
+    report.findings.extend(
+        preflight.check_mtail(
+            getattr(config, "mtail_address", ""), mtail_artifact(bundle)
+        ).findings
+    )
+    return report
 
 
-def default_config(mail_domain: str):
+def default_config(mail_domain: str, overrides: dict | None = None):
     """A Config from relay's own defaults, for a host that has no ini yet."""
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "chatmail.ini"
-        _write_initial_config(path, mail_domain, {})
+        _write_initial_config(path, mail_domain, overrides or {})
         return _read_config(path)
 
 

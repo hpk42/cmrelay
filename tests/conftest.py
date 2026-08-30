@@ -115,11 +115,6 @@ def bundle(tmp_path):
                         "version": "0.35.0",
                         "iroh-relay": "/nix/store/jjj-iroh/bin/iroh-relay",
                     },
-                    "mtail": {
-                        "path": "/nix/store/kkk-mtail",
-                        "version": "3.0.8",
-                        "mtail": "/nix/store/kkk-mtail/bin/mtail",
-                    },
                     "python": {
                         "path": "/nix/store/lll-python",
                         "version": "3.14.7",

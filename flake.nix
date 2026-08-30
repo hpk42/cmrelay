@@ -47,8 +47,6 @@
         # second major costs 8.7 MiB to serve the same TLS that postfix,
         # dovecot, unbound, opendkim and python all get from pkgs.openssl.
         nginx = pkgs.nginx.override { openssl = pkgs.openssl; };
-        # a relay runs mtail, not the three tools shipped beside it
-        mtail-minimal = pkgs.callPackage ./nix/packages/mtail-minimal.nix { };
         # ... and the opendkim milter, not the Perl script that made its key
         opendkim-milter = pkgs.callPackage ./nix/packages/opendkim-milter.nix { };
 
@@ -79,7 +77,6 @@
             acmetool
             dovecot
             postfix
-            mtail-minimal
             opendkim-milter
             pythonEnv
             pythonDeps
@@ -107,7 +104,6 @@
             closure
             dovecot
             bsdtar-minimal
-            mtail-minimal
             opendkim-milter
             postfix
             nginx

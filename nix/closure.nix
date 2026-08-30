@@ -22,7 +22,6 @@
   unbound,
   opendkim-milter,
   fcgiwrap,
-  mtail-minimal,
   openssl,
   coreutils,
   iproute2,
@@ -118,14 +117,6 @@ let
 
     iroh-relay = component fetched.iroh-relay {
       iroh-relay = "${fetched.iroh-relay}/bin/iroh-relay";
-    };
-
-    # relay pins jaqx0r/mtail 3.4.9 and nixpkgs packages the same line at
-    # 3.4.8, which is one patch release of drift that closes on its own.
-    # relay's programs under vendor/config/mtail compile unchanged against
-    # it, which is the only compatibility that matters here.
-    mtail = component mtail-minimal {
-      mtail = "${mtail-minimal}/bin/mtail";
     };
 
     # buildEnv carries no version of its own; the interpreter's is what a

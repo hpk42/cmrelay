@@ -1,7 +1,7 @@
 """The effects of relay's deployers, reproduced without pyinfra or apt.
 
-The pyinfra deployer modules are reimplemented rather than vendored, because
-they are the part that would rot. The order below follows
+The pyinfra deployer modules are reimplemented rather than vendored,
+because they are the part that would rot. The order below follows
 cmdeploy/src/cmdeploy/deployers.py so the two can be read side by side, and
 the comments name the deployer each block mirrors.
 
@@ -44,7 +44,7 @@ DKIM_SELECTOR = "opendkim"
 # /usr/libexec/acme/hooks, so cmrelay has to say so.
 ACME_HOOKS_DIR = "/etc/acme/hooks"
 
-# opendkim-genkey defaults to 1024, which is weak by current practice.
+# opendkim-genkey defaults to a weak 1024.
 DKIM_KEY_BITS = 2048
 
 
@@ -201,9 +201,9 @@ class Deployment:
 
     def configure_unbound(self):
         self.write_unbound_anchor_seed()
-        # Dynamic resolver managers compete for /etc/resolv.conf. cmdeploy
-        # purges resolvconf and masks systemd-resolved; cmrelay cannot purge
-        # a package, so masking is all of it.
+        # Dynamic resolver managers compete for /etc/resolv.conf.
+        # cmdeploy purges resolvconf and masks systemd-resolved;
+        # cmrelay cannot purge a package, so masking is all of it.
         for unit in ("systemd-resolved.service", "unbound-resolvconf.service"):
             if systemd.available():
                 systemd.stop_disable_mask(unit)
@@ -499,10 +499,8 @@ class Deployment:
     def generate_dkim_key(self):
         """Make the DKIM keypair with openssl rather than opendkim-genkey.
 
-        opendkim-genkey is the only thing in the closure that would need Perl, 55 MiB
-        to run one command once per host, and the private key is the only artefact
-        anything downstream depends on. relay already splits a public key across
-        quoted strings, so 2048 bits needs nothing new.
+        opendkim-genkey is the only thing here that would need Perl, and the
+        private key is the only artefact anything downstream depends on.
         """
         self.out.print(f"Generating DKIM key for {self.mail_domain} ...")
         private = paths.DKIM_KEYS / f"{DKIM_SELECTOR}.private"
@@ -831,22 +829,25 @@ class Deployment:
     # MtailDeployer
 
     def configure_mtail(self):
-        """The unit always, the programs only when mtail is actually wanted.
+        """Nothing at all unless mtail is wanted.
 
-        Validating rules that will never be evaluated costs a subprocess.
+        The binary is the operator's, not the closure's, so there is no unit
+        to install for a host that never asked for one. The preflight has
+        already refused if it is wanted and missing.
         """
+        if not self.config.mtail_address:
+            return
+
         progs_dir = paths.config_dir("mtail")
         ensure_directory(progs_dir)
         self.unit_from_template(
             "mtail",
             "systemd/mtail.service.j2",
-            address=self.config.mtail_address or "127.0.0.1",
+            address=self.config.mtail_address,
             port=3903,
-            bin_path=self.bin("mtail"),
+            bin_path=str(paths.MTAIL),
             progs_dir=str(progs_dir),
         )
-        if not self.config.mtail_address:
-            return
 
         for prog in sorted((self.bundle.vendor / "config/mtail").glob("*.mtail")):
             self.changes.note("mtail", copy(prog, progs_dir / prog.name))
@@ -867,7 +868,7 @@ class Deployment:
         self.shell(
             "timeout",
             "30",
-            self.bin("mtail"),
+            str(paths.MTAIL),
             "--compile_only",
             "--one_shot",
             "--progs",
@@ -919,11 +920,9 @@ class Deployment:
 
         A store path suffices for a unit file and for nothing else: relay's helpers
         and test suite run `doveadm quota get`, `dovecot --version` and
-        `acmetool account-url`. dovecot's and postfix's get a wrapper rather than a
-        symlink, because cmrelay's configuration is not where they were compiled to
-        look; symlinking it into /etc/dovecot would cost the rollback, since that
-        file is cmdeploy's. Every entry is recorded so uninstall removes exactly
-        these.
+        `acmetool account-url`. dovecot's and postfix's get a wrapper, because
+        cmrelay's configuration is not where they were compiled to look. Every
+        entry is recorded so uninstall removes exactly these.
         """
         dovecot_conf = paths.config_dir("dovecot") / "dovecot.conf"
         postfix_conf = paths.config_dir("postfix")
@@ -946,7 +945,6 @@ class Deployment:
             "filtermail": self.bin("filtermail"),
             "chatmail-turn": self.bin("chatmail-turn"),
             "iroh-relay": self.bin("iroh-relay"),
-            "mtail": self.bin("mtail"),
             "cmrelay": str(paths.CLI),
         }
 
@@ -1083,13 +1081,10 @@ class Deployment:
         systemd.ensure_service("fcgiwrap.service", restart="fcgiwrap" in self.changes)
         systemd.ensure_service("nginx.service", restart="nginx" in self.changes)
 
-        mtail_on = bool(self.config.mtail_address)
-        systemd.ensure_service(
-            "mtail.service",
-            running=mtail_on,
-            enabled=mtail_on,
-            restart="mtail" in self.changes,
-        )
+        # No unit exists unless mtail was configured, so there is nothing to
+        # disable on a host that never asked for one.
+        if self.config.mtail_address:
+            systemd.ensure_service("mtail.service", restart="mtail" in self.changes)
         systemd.ensure_service(
             "systemd-journald.service", restart="journald" in self.changes
         )

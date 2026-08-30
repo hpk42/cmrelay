@@ -14,11 +14,10 @@
 # sha256, so for a component shipped as a tarball the recorded hash is of the
 # extracted binary, not of the archive. Reproducing that exactly means making
 # the extraction part of the fixed-output derivation, so the hash Nix
-# verifies is the same number relay verifies. Hashing the tarball instead
-# would need a second pin that relay does not have.
+# verifies is the same number relay verifies.
 #
-# mtail is deliberately absent: relay follows jaqx0r/mtail and nixpkgs
-# packages the same releases, so it comes from there. See nix/closure.nix.
+# mtail is absent: the operator installs it, and the preflight prints the
+# release relay pins. See cmrelay.preflight.check_mtail.
 
 {
   lib,
