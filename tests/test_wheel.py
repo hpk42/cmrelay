@@ -168,8 +168,9 @@ def test_the_wheel_carries_the_terms_of_what_it_ships(built):
     assert f"{dist_info}/THIRD-PARTY.md" in names
 
 
-def test_the_licence_names_the_gpl_and_the_bundled_components():
+def test_the_licence_names_the_terms_and_the_bundled_components():
     text = (ROOT / "LICENSE").read_text()
-    assert "GNU GENERAL PUBLIC LICENSE" in text
+    assert "GNU General Public License" in text
+    assert "MIT" in text
     assert "THIRD-PARTY.md" in text
     assert "patches/" in text
