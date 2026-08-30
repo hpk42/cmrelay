@@ -10,7 +10,7 @@ relay.
 import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 
-from cmrelay import fsops, render
+from cmrelay import activation, fsops, render
 from cmrelay.deploy import CHATMAILD_UNITS, Deployment
 from cmrelay.output import Out
 
@@ -137,7 +137,7 @@ def test_opendkim_conf_renders_with_a_trust_anchor(deployment):
 def test_authored_units_have_every_field_supplied(deployment):
     """The five daemon units cmrelay writes itself."""
     for unit in sorted((REPO / "units").glob("*.service")):
-        text = unit.read_text().format(**deployment.daemon_unit_vars())
+        text = unit.read_text().format(**activation.daemon_unit_vars(deployment))
         assert "{" not in text, f"{unit.name} has an unfilled field"
         assert "[Service]" in text
 

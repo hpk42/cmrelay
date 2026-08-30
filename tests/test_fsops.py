@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 
-from cmrelay import fsops
+from cmrelay import activation, fsops
 
 # store.py moves a 700 MiB closure by rename and reports it as one line;
 # payload.py runs from a pip-installed wheel, where there is no journal;
@@ -22,7 +22,7 @@ from cmrelay import fsops
 ALLOWED = {"fsops.py", "store.py", "payload.py", "vendoring.py"}
 
 # Calls on the journal itself are the point, not a violation.
-JOURNALS = {"journal", "self.j", "self.journal", "fsops.Journal()"}
+JOURNALS = {"journal", "self.j", "self.journal", "d.j", "fsops.Journal()"}
 
 MUTATING_METHODS = {
     "write_text",
@@ -308,7 +308,7 @@ def deployment(fake_root, bundle, monkeypatch, tmp_path):
 def test_the_journal_covers_every_path_a_deploy_changes(deployment, fake_root):
     before = snapshot(fake_root)
     deployment.configure()
-    deployment.install_daemon_units()
+    activation.install_daemon_units(deployment)
     after = snapshot(fake_root)
 
     moved = differing(before, after)
@@ -319,12 +319,12 @@ def test_the_journal_covers_every_path_a_deploy_changes(deployment, fake_root):
 
 def test_a_second_deploy_against_the_same_root_changes_nothing(deployment, fake_root):
     deployment.configure()
-    deployment.install_daemon_units()
+    activation.install_daemon_units(deployment)
 
     before = snapshot(fake_root)
     deployment.j = fsops.Journal(prior=deployment.j.wrote)
     deployment.configure()
-    deployment.install_daemon_units()
+    activation.install_daemon_units(deployment)
     after = snapshot(fake_root)
 
     assert differing(before, after) == set()

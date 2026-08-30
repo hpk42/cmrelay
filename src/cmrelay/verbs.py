@@ -12,10 +12,10 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+from . import activation, fsops, host, paths, preflight, state, store, systemd, users
 from . import config as cfg
-from . import fsops, host, paths, preflight, state, store, systemd, users
 from .bundle import Bundle
-from .deploy import ACME_UNITS, AUTHORED_UNITS, TIMER_DRIVEN, Deployment
+from .deploy import TIMER_DRIVEN, Deployment
 from .dnscheck import dns_verb, resolves
 from .installer import installer_verb
 from .signing import trusted_keys
@@ -152,7 +152,7 @@ def deploy(args, bundle, out) -> int:
             deployment.configure_website()
         else:
             deployment.configure()
-            deployment.install_daemon_units()
+            activation.install_daemon_units(deployment)
         state.save_intent(journal, {**intent, "disable_mail": disable_mail})
         state.save_written(journal)
         report_components(out, journal)
@@ -167,7 +167,7 @@ def deploy(args, bundle, out) -> int:
     problems = []
     if not (args.website_only or args.dry_run):
         with out.step("Verify"):
-            problems = deployment.verify()
+            problems = activation.verify(deployment)
             for problem in problems:
                 out.error(f"  {problem}")
             if not problems:
@@ -363,7 +363,7 @@ def activate(deployment, journal, out) -> list:
         out.warn("no systemd here; leaving every service alone")
         return []
 
-    masked = deployment.mask_resolvers(systemd.unit_states(preflight.RESOLVER_UNITS))
+    masked = activation.mask_resolvers(systemd.unit_states(preflight.RESOLVER_UNITS))
     if masked:
         state.record_units(journal, paths.DISABLED_UNITS, masked)
 
@@ -372,18 +372,20 @@ def activate(deployment, journal, out) -> list:
         systemd.daemon_reload()
         reloaded = True
 
-    plan = deployment.plan()
+    plan = activation.plan(deployment)
     states = systemd.unit_states(sorted(plan.intents))
 
     # acmetool answers the HTTP challenge, and dovecot, postfix and nginx
     # will not start without the certificate it fetches.
-    issued = issue_calls(out, plan.only(ACME_UNITS).calls(states))
-    if deployment.config.tls_cert_mode == "acme" and deployment.needs_reconcile():
-        deployment.run_acmetool()
+    issued = issue_calls(out, plan.only(activation.ACME_UNITS).calls(states))
+    if deployment.config.tls_cert_mode == "acme" and activation.needs_reconcile(
+        deployment
+    ):
+        activation.run_acmetool(deployment)
     if not tls_material_present(deployment, out):
         return issued
 
-    issued += issue_calls(out, plan.without(ACME_UNITS).calls(states))
+    issued += issue_calls(out, plan.without(activation.ACME_UNITS).calls(states))
     if not issued:
         out.unchanged(f"{len(plan.intents)} units, all as intended")
     if any(call[0] in ("enable", "disable") for call in issued) and not reloaded:
@@ -731,7 +733,7 @@ def stop_our_units(out, journal):
         systemd.systemctl("disable", "--no-reload", name, check=False)
         journal.remove_file("cmrelay", paths.unit_file(name))
         out.print(f"  stopped and removed {name}")
-    for name in AUTHORED_UNITS:
+    for name in activation.AUTHORED_UNITS:
         journal.remove_directory("cmrelay", paths.SYSTEMD_SYSTEM / f"{name}.service.d")
 
 

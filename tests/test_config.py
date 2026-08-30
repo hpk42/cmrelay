@@ -2,8 +2,8 @@
 
 import pytest
 
+from cmrelay import activation, fsops, paths
 from cmrelay import config as cfg
-from cmrelay import fsops, paths
 from cmrelay.deploy import Deployment
 from cmrelay.output import Out
 
@@ -214,25 +214,27 @@ def test_a_certificate_covering_every_name_needs_no_reconcile(fake_root, bundle,
         text=True,
         check=False,
     )
-    assert unit.needs_reconcile() is False
+    assert activation.needs_reconcile(unit) is False
 
 
 def test_a_missing_certificate_needs_a_reconcile(fake_root, bundle, ini):
     config = cfg.read_config(ini)
     config.tls_cert_path = str(fake_root / "absent.pem")
-    assert deployment(bundle, config, fsops.Journal()).needs_reconcile() is True
+    assert (
+        activation.needs_reconcile(deployment(bundle, config, fsops.Journal())) is True
+    )
 
 
 def test_the_reconcile_flag_forces_it(fake_root, bundle, ini):
     unit = Deployment(
         bundle, cfg.read_config(ini), Out(colour=False), fsops.Journal(), reconcile=True
     )
-    assert unit.needs_reconcile() is True
+    assert activation.needs_reconcile(unit) is True
 
 
 def test_the_deploy_plan_starts_unbound_before_opendkim(fake_root, bundle, ini):
     """opendkim reads the root anchor unbound's ExecStartPre writes."""
-    plan = deployment(bundle, cfg.read_config(ini), fsops.Journal()).plan()
+    plan = activation.plan(deployment(bundle, cfg.read_config(ini), fsops.Journal()))
     order = list(plan.intents)
     assert order.index("unbound.service") < order.index("opendkim.service")
     assert order.index("dovecot.service") < order.index("postfix.service")
@@ -240,7 +242,7 @@ def test_the_deploy_plan_starts_unbound_before_opendkim(fake_root, bundle, ini):
 
 def test_postfix_own_settings_are_carried_forward(tmp_path):
     """set-permissions appends to main.cf; rewriting it every run restarts postfix."""
-    from cmrelay.deploy import STORE_MARKER, postfix_own_settings
+    from cmrelay.daemons import STORE_MARKER, postfix_own_settings
 
     conf = tmp_path / "postfix"
     conf.mkdir()
@@ -261,7 +263,7 @@ def test_postfix_own_settings_are_carried_forward(tmp_path):
 
 
 def test_a_main_cf_without_the_marker_carries_nothing_forward(tmp_path):
-    from cmrelay.deploy import postfix_own_settings
+    from cmrelay.daemons import postfix_own_settings
 
     conf = tmp_path / "postfix"
     conf.mkdir()
