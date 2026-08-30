@@ -18,10 +18,8 @@
 # What works instead is icupkg, ICU's own archive editor, run over that
 # prebuilt .dat before configure.
 #
-# Dropping ICU altogether would be one line and would also stop postfix
-# advertising SMTPUTF8, which a cmdeploy host does advertise. Keeping the
-# capability and dropping the data behind it costs a two-minute build and no
-# observable behaviour.
+# ICU stays so postfix keeps advertising SMTPUTF8, as a cmdeploy host does;
+# only the data behind it goes.
 
 {
   lib,

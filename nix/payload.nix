@@ -29,9 +29,7 @@ let
   # byte-for-byte what their hashes name. Sound only because the host has no
   # Nix at all, nothing that verifies or rebuilds a path, and an uninstall
   # that deletes the tree; the cost is that such a store cannot be an input to
-  # Nix again, which nothing does. Overriding the interpreter with nixpkgs'
-  # stripConfig instead would rebuild 48 Python derivations on every nixpkgs
-  # bump to save less, and only for Python.
+  # Nix again, which nothing does.
   #
   # libtool .la files are kept: dovecot's module loader has historically read
   # them, and they are 0.2 MiB.
