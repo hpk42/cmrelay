@@ -22,24 +22,21 @@ class Recorder:
         self.lines.append(text)
 
 
-def test_a_release_wheel_finds_its_payload(monkeypatch, tmp_path):
+def test_a_release_wheel_finds_its_payload(tmp_path):
     run = tmp_path / "cmrelay.run"
     run.write_bytes(b"#!/bin/sh\n")
-    monkeypatch.setattr(payload, "BUNDLED", run)
-    assert payload.bundled_payload() == run
+    assert payload.bundled_payload(run) == run
 
 
-def test_a_source_build_has_none(monkeypatch, tmp_path):
-    monkeypatch.setattr(payload, "BUNDLED", tmp_path / "absent.run")
-    assert payload.bundled_payload() is None
+def test_a_source_build_has_none(tmp_path):
+    assert payload.bundled_payload(tmp_path / "absent.run") is None
 
 
 def test_without_a_payload_it_says_how_to_build_one(monkeypatch, tmp_path):
     """The failure has to name the command, not just report the absence."""
-    monkeypatch.setattr(payload, "BUNDLED", tmp_path / "absent.run")
     monkeypatch.setattr(payload.sys, "platform", "linux")
     with pytest.raises(payload.PayloadError, match="nix build"):
-        payload.run_from_wheel([], Recorder())
+        payload.run_from_wheel([], Recorder(), bundled=tmp_path / "absent.run")
 
 
 def test_a_non_executable_payload_is_made_executable(monkeypatch, tmp_path):

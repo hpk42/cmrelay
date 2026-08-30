@@ -69,7 +69,7 @@ def fetch(url: str, ctx, timeout: int = TIMEOUT) -> bytes:
         return response.read()
 
 
-def from_github(ctx) -> list:
+def from_github(ctx, fetch=fetch) -> list:
     suffix = f"-{arch()}-linux.run"
     releases = json.loads(fetch(GITHUB, ctx))
     found = []
@@ -94,7 +94,7 @@ def from_github(ctx) -> list:
     return found
 
 
-def from_pypi(ctx) -> list:
+def from_pypi(ctx, fetch=fetch) -> list:
     tag = f"manylinux_2_17_{arch()}"
     data = json.loads(fetch(PYPI, ctx))
     found = []
@@ -117,7 +117,7 @@ def best(candidates) -> Candidate | None:
     return max(ranked, key=lambda pair: pair[0])[1]
 
 
-def survey(ca_path: str, source=None) -> tuple:
+def survey(ca_path: str, source=None, fetch=fetch) -> tuple:
     """(per-source best, failures). Both are asked unless one is pinned."""
     ctx = context(ca_path)
     readers = {"GitHub": from_github, "PyPI": from_pypi}
@@ -126,7 +126,7 @@ def survey(ca_path: str, source=None) -> tuple:
     results, failures = {}, {}
     for name, reader in readers.items():
         try:
-            found = best(reader(ctx))
+            found = best(reader(ctx, fetch))
         except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
             failures[name] = str(exc)
             continue

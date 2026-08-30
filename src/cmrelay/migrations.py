@@ -33,7 +33,7 @@ class Migration:
 MIGRATIONS: list = []
 
 
-def pending(installed: str, candidate: str, done=()) -> list:
+def pending(installed: str, candidate: str, done=(), migrations=None) -> list:
     """Every migration newer than what is installed and not already applied.
 
     An unparseable version on either side selects nothing: guessing an order
@@ -43,7 +43,7 @@ def pending(installed: str, candidate: str, done=()) -> list:
     if have is None or want is None:
         return []
     chosen = []
-    for migration in MIGRATIONS:
+    for migration in MIGRATIONS if migrations is None else migrations:
         at = parse_version(migration.version)
         if at is None or migration.name in done:
             continue

@@ -23,8 +23,8 @@ class PayloadError(Exception):
     pass
 
 
-def bundled_payload() -> Path | None:
-    return BUNDLED if BUNDLED.is_file() else None
+def bundled_payload(bundled: Path = BUNDLED) -> Path | None:
+    return bundled if bundled.is_file() else None
 
 
 def exec_payload(payload: Path, argv: list[str]) -> int:
@@ -47,10 +47,10 @@ def exec_payload(payload: Path, argv: list[str]) -> int:
     os.execve(str(payload), argv, env)
 
 
-def run_from_wheel(args_list: list[str], out) -> int:
+def run_from_wheel(args_list: list[str], out, bundled: Path = BUNDLED) -> int:
     if sys.platform != "linux":
         raise PayloadError(f"cmrelay installs relays on Linux, not {sys.platform}")
-    payload = bundled_payload()
+    payload = bundled_payload(bundled)
     if payload is None:
         raise PayloadError(
             "this cmrelay carries no payload, so it was built from a source"

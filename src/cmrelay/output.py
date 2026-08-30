@@ -41,10 +41,18 @@ class Phase:
 
 
 class Out:
-    def __init__(self, stream=None, colour=None, verbose=False, quiet=False):
+    def __init__(
+        self,
+        stream=None,
+        colour=None,
+        verbose=False,
+        quiet=False,
+        live_after=LIVE_AFTER,
+    ):
         self.stream = stream or sys.stdout
         self.verbose = verbose
         self.quiet = quiet
+        self.live_after = live_after
         self.phase = None
         self.colour = self._want_colour(colour)
         self._make_encodable()
@@ -83,7 +91,7 @@ class Out:
         if self.phase is None:
             print(self._paint(line, code), file=self.stream, flush=True)
             return
-        if not self.phase.live and self.phase.elapsed > LIVE_AFTER:
+        if not self.phase.live and self.phase.elapsed > self.live_after:
             self._go_live()
         if self.phase.live:
             print(self._paint(line, code), file=self.stream, flush=True)

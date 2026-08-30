@@ -5,6 +5,7 @@ byte-identical to `dig +short` for every record type the zone check compares,
 and these fixtures are what would notice that stopping being true.
 """
 
+import io
 import stat
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 
 from cmrelay import dnscheck
+from cmrelay.output import Out
 
 # One authoritative answer per record type the generated zone carries.
 RECORDED = {
@@ -155,19 +157,12 @@ def test_a_missing_required_record_is_reported(dns, rdns):
     assert any("203.0.113.99" in line for line in required)
 
 
-def test_an_ipv4_relay_has_no_records_to_publish(fake_root, monkeypatch, capsys):
-    from cmrelay import config as cfg
-    from cmrelay import paths
-    from cmrelay.output import Out
-
-    paths.INI.parent.mkdir(parents=True)
-    paths.INI.write_text("[params]\nmail_domain = 203.0.113.10\n")
-    monkeypatch.setattr(
-        cfg, "read_config", lambda *a: SimpleNamespace(ipv4_relay="203.0.113.10")
-    )
-    out = Out(colour=False)
-    assert dnscheck.dns_verb(SimpleNamespace(zonefile=None), None, out) == 0
-    assert "no DNS records apply" in capsys.readouterr().out
+def test_an_ipv4_relay_has_no_records_to_publish():
+    stream = io.StringIO()
+    out = Out(stream=stream, colour=False)
+    config = SimpleNamespace(ipv4_relay="203.0.113.10")
+    assert dnscheck.dns_verb(SimpleNamespace(zonefile=None), None, out, config) == 0
+    assert "no DNS records apply" in stream.getvalue()
 
 
 def test_the_zone_nameserver_is_resolved_once_and_reused(rdns):

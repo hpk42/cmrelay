@@ -67,10 +67,11 @@ def gather(bundle, config):
     return dns, rdns, remote_data
 
 
-def dns_verb(args, bundle, out) -> int:
-    if not paths.INI.is_file():
-        raise DnsError(f"{paths.INI} does not exist; this host is not installed")
-    config = cfg.read_config()
+def dns_verb(args, bundle, out, config=None) -> int:
+    if config is None:
+        if not paths.INI.is_file():
+            raise DnsError(f"{paths.INI} does not exist; this host is not installed")
+        config = cfg.read_config()
 
     if config.ipv4_relay:
         out.print(f"{config.ipv4_relay} is not a domain; no DNS records apply.")

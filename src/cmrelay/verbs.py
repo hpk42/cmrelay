@@ -153,7 +153,7 @@ def report_dns(bundle, config, out) -> None:
         return
     out.next_step("publish DNS records. `cmrelay dns` lists what is missing.")
     try:
-        dns_verb(SimpleNamespace(zonefile=None), bundle, out)
+        dns_verb(SimpleNamespace(zonefile=None), bundle, out, config=config)
     except Exception as exc:  # noqa: BLE001 - reporting, not gating
         out.detail(f"could not check DNS: {exc}")
 

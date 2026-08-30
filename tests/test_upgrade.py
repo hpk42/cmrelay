@@ -1,7 +1,6 @@
 """Generations, the migration selector, and release discovery."""
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -93,38 +92,40 @@ def fake_migration(version, name):
 
 
 @pytest.fixture
-def three(monkeypatch):
-    listed = [
+def three():
+    return [
         fake_migration("0.4.0", "move-www"),
         fake_migration("0.5.0", "rename-unit"),
         fake_migration("0.6.0", "state-format"),
     ]
-    monkeypatch.setattr(migrations, "MIGRATIONS", listed)
-    return listed
 
 
 def test_only_migrations_strictly_newer_than_installed_apply(three):
-    chosen = migrations.pending("0.4.0", "0.6.0")
+    chosen = migrations.pending("0.4.0", "0.6.0", migrations=three)
     assert [m.name for m in chosen] == ["rename-unit", "state-format"]
 
 
 def test_a_migration_at_the_candidate_version_applies(three):
-    assert [m.name for m in migrations.pending("0.3.0", "0.4.0")] == ["move-www"]
+    assert [m.name for m in migrations.pending("0.3.0", "0.4.0", migrations=three)] == [
+        "move-www"
+    ]
 
 
 def test_an_already_applied_migration_is_skipped(three):
-    chosen = migrations.pending("0.3.0", "0.6.0", done={"move-www", "rename-unit"})
+    chosen = migrations.pending(
+        "0.3.0", "0.6.0", done={"move-www", "rename-unit"}, migrations=three
+    )
     assert [m.name for m in chosen] == ["state-format"]
 
 
 def test_no_migrations_between_adjacent_releases(three):
-    assert migrations.pending("0.6.0", "0.6.1") == []
+    assert migrations.pending("0.6.0", "0.6.1", migrations=three) == []
 
 
 def test_an_unparseable_version_selects_nothing(three):
     """Guessing an order between two names that are not versions is worse."""
-    assert migrations.pending("0.0.0.dev", "not-a-version") == []
-    assert migrations.pending("dev", "0.6.0") == []
+    assert migrations.pending("0.0.0.dev", "not-a-version", migrations=three) == []
+    assert migrations.pending("dev", "0.6.0", migrations=three) == []
 
 
 def test_migrations_run_in_version_order(three, out):
@@ -144,7 +145,7 @@ def test_migrations_run_in_version_order(three, out):
 # -- discovery -------------------------------------------------------------
 
 
-def github_release(version, arch="x86_64", signed=True):
+def github_release(version, arch=discovery.arch(), signed=True):
     name = f"cmrelay-installer-{version}-{arch}-linux.run"
     assets = [
         {"name": name, "browser_download_url": f"https://gh/{name}", "size": 64 * 2**20}
@@ -156,7 +157,7 @@ def github_release(version, arch="x86_64", signed=True):
     return {"draft": False, "prerelease": False, "assets": assets}
 
 
-def pypi_body(versions, arch="x86_64"):
+def pypi_body(versions, arch=discovery.arch()):
     releases = {}
     for version in versions:
         name = f"cmrelay-{version}-py3-none-manylinux_2_17_{arch}.whl"
@@ -166,73 +167,72 @@ def pypi_body(versions, arch="x86_64"):
     return {"releases": releases}
 
 
-@pytest.fixture
-def answers(monkeypatch):
-    """Route both endpoints to canned bodies, keyed by url prefix."""
-    canned = {}
+class Canned(dict):
+    """Canned bodies keyed by url prefix, served as the injected fetch."""
 
-    def fetch(url, ctx, timeout=None):
-        for prefix, body in canned.items():
+    def fetch(self, url, ctx, timeout=None):
+        for prefix, body in self.items():
             if url.startswith(prefix):
                 if isinstance(body, Exception):
                     raise body
                 return json.dumps(body).encode()
         raise AssertionError(url)
 
-    monkeypatch.setattr(discovery, "fetch", fetch)
-    monkeypatch.setattr(discovery, "context", lambda ca: None)
-    monkeypatch.setattr(discovery, "arch", lambda: "x86_64")
-    return canned
+
+@pytest.fixture
+def answers():
+    return Canned()
 
 
-def test_github_newer_wins(answers):
+def test_github_newer_wins(answers, tmp_path):
     answers[discovery.GITHUB] = [github_release("0.5.0")]
     answers[discovery.PYPI] = pypi_body(["0.4.2"])
-    results, failures = discovery.survey("/etc/ssl/certs")
+    results, failures = discovery.survey(str(tmp_path), fetch=answers.fetch)
     assert not failures
     assert discovery.best(results.values()).source == "GitHub"
     assert discovery.best(results.values()).version == "0.5.0"
 
 
-def test_pypi_newer_wins(answers):
+def test_pypi_newer_wins(answers, tmp_path):
     answers[discovery.GITHUB] = [github_release("0.4.0")]
     answers[discovery.PYPI] = pypi_body(["0.5.1"])
-    results, _ = discovery.survey("/etc/ssl/certs")
+    results, _ = discovery.survey(str(tmp_path), fetch=answers.fetch)
     assert discovery.best(results.values()).source == "PyPI"
 
 
-def test_one_source_down_leaves_the_other_usable(answers):
+def test_one_source_down_leaves_the_other_usable(answers, tmp_path):
     answers[discovery.GITHUB] = OSError("no route to host")
     answers[discovery.PYPI] = pypi_body(["0.5.1"])
-    results, failures = discovery.survey("/etc/ssl/certs")
+    results, failures = discovery.survey(str(tmp_path), fetch=answers.fetch)
     assert list(results) == ["PyPI"]
     assert "GitHub" in failures
 
 
-def test_both_down_yields_no_candidate(answers):
+def test_both_down_yields_no_candidate(answers, tmp_path):
     answers[discovery.GITHUB] = OSError("down")
     answers[discovery.PYPI] = OSError("down")
-    results, failures = discovery.survey("/etc/ssl/certs")
+    results, failures = discovery.survey(str(tmp_path), fetch=answers.fetch)
     assert results == {}
     assert sorted(failures) == ["GitHub", "PyPI"]
 
 
-def test_a_release_with_no_signature_beside_it_is_not_offered(answers):
+def test_a_release_with_no_signature_beside_it_is_not_offered(answers, tmp_path):
     answers[discovery.GITHUB] = [github_release("0.9.0", signed=False)]
     answers[discovery.PYPI] = pypi_body([])
-    results, _ = discovery.survey("/etc/ssl/certs", source="github")
+    results, _ = discovery.survey(str(tmp_path), source="github", fetch=answers.fetch)
     assert results == {}
 
 
-def test_a_release_for_another_architecture_is_not_offered(answers):
-    answers[discovery.GITHUB] = [github_release("0.9.0", arch="aarch64")]
-    results, _ = discovery.survey("/etc/ssl/certs", source="github")
+def test_a_release_for_another_architecture_is_not_offered(answers, tmp_path):
+    other = "aarch64" if discovery.arch() == "x86_64" else "x86_64"
+    answers[discovery.GITHUB] = [github_release("0.9.0", arch=other)]
+    results, _ = discovery.survey(str(tmp_path), source="github", fetch=answers.fetch)
     assert results == {}
 
 
-def test_pinning_a_source_asks_only_that_one(answers):
+def test_pinning_a_source_asks_only_that_one(answers, tmp_path):
     answers[discovery.GITHUB] = [github_release("0.5.0")]
-    results, _ = discovery.survey("/etc/ssl/certs", source="github")
+    results, _ = discovery.survey(str(tmp_path), source="github", fetch=answers.fetch)
     assert list(results) == ["GitHub"]
 
 
@@ -251,12 +251,12 @@ def test_a_host_with_no_ca_bundle_says_to_download_by_hand(tmp_path):
         discovery.context(str(tmp_path / "absent"))
 
 
-def test_the_report_names_the_laggard(answers, capsys):
+def test_the_report_names_the_laggard(answers, capsys, tmp_path):
     answers[discovery.GITHUB] = [github_release("0.5.0")]
     answers[discovery.PYPI] = pypi_body(["0.4.2"])
-    results, failures = discovery.survey("/etc/ssl/certs")
+    results, failures = discovery.survey(str(tmp_path), fetch=answers.fetch)
     discovery.report(Out(colour=False), "0.3.0", results, failures)
     printed = capsys.readouterr().out
     assert "0.5.0" in printed
     assert "0.4.2" in printed
-    assert Path("/etc/ssl/certs").name not in printed
+    assert str(tmp_path) not in printed
