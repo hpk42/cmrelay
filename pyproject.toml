@@ -64,7 +64,6 @@ target-version = "py311"
 # closure and no chatmaild, and the CLI has to reach the code that says so
 # rather than fail at import time. payload.py is the wheel's only real job.
 "src/cmrelay/cli.py" = ["PLC0415"]
-"src/cmrelay/verbs.py" = ["PLC0415"]
 # version.py is imported by cmrelay/__init__.py, so it has to work under a
 # bare interpreter; packaging is only needed to order versions for `upgrade`.
 "src/cmrelay/version.py" = ["PLC0415"]

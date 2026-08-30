@@ -16,6 +16,10 @@ from . import config as cfg
 from . import fsops, host, paths, preflight, state, store, systemd, users
 from .bundle import Bundle
 from .deploy import ACME_UNITS, AUTHORED_UNITS, TIMER_DRIVEN, Deployment
+from .dnscheck import dns_verb, resolves
+from .installer import installer_verb
+from .signing import trusted_keys
+from .upgrade import upgrade_verb
 from .version import __version__
 
 # The unpacked closure, for the free-space check.
@@ -190,8 +194,6 @@ def report_dns(bundle, config, out) -> None:
     they need did not exist until a moment ago."""
     if config.ipv4_relay:
         return
-    from .dnscheck import dns_verb
-
     out.next_step("publish DNS records. `cmrelay dns` lists what is missing.")
     try:
         dns_verb(SimpleNamespace(zonefile=None), bundle, out)
@@ -224,8 +226,6 @@ def check_domain_resolves(bundle, config, args, out) -> bool:
     """
     if args.skip_dns_check or config.ipv4_relay:
         return True
-    from .dnscheck import resolves
-
     try:
         if resolves(bundle, config.mail_domain):
             return True
@@ -655,8 +655,6 @@ def cmd_version(args, out) -> int:
 
 
 def release_key_fingerprints(bundle) -> list:
-    from .signing import trusted_keys
-
     return [f"{path.stem} {fingerprint}" for path, fingerprint in trusted_keys(bundle)]
 
 
@@ -803,22 +801,16 @@ def diff_configs(out):
 
 
 def cmd_dns(args, out) -> int:
-    from .dnscheck import dns_verb
-
     return dns_verb(args, Bundle.discover(), out)
 
 
 def cmd_upgrade(args, out) -> int:
-    from .upgrade import upgrade_verb
-
     require_root()
     with fsops.lock():
         return upgrade_verb(args, Bundle.discover(), out)
 
 
 def cmd_installer(args, out) -> int:
-    from .installer import installer_verb
-
     return installer_verb(args, out)
 
 
