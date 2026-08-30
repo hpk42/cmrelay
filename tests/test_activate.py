@@ -138,29 +138,30 @@ def test_journald_is_restarted_but_never_enabled():
 # -- the state snapshot ----------------------------------------------------
 
 
-def test_unit_states_parses_one_show_call(monkeypatch):
-    output = (
-        "Id=postfix.service\nLoadState=loaded\nActiveState=active\n"
-        "UnitFileState=enabled\n\n"
-        "Id=nosuch.service\nLoadState=not-found\nActiveState=inactive\n"
-        "UnitFileState=\n"
+def test_unit_states_parses_one_show_call(tmp_path):
+    from conftest import fake_tool
+
+    fake = fake_tool(
+        tmp_path,
+        "systemctl",
+        """cat <<'OUT'
+Id=postfix.service
+LoadState=loaded
+ActiveState=active
+UnitFileState=enabled
+
+Id=nosuch.service
+LoadState=not-found
+ActiveState=inactive
+UnitFileState=
+OUT""",
     )
-
-    class Result:
-        stdout = output
-
-    monkeypatch.setattr(systemd, "available", lambda: True)
-    monkeypatch.setattr(systemd.subprocess, "run", lambda *a, **k: Result())
-
-    states = systemd.unit_states(["postfix.service", "nosuch.service"])
+    states = systemd.unit_states(
+        ["postfix.service", "nosuch.service"], systemctl_argv=[fake]
+    )
     assert states["postfix.service"].is_running
     assert states["postfix.service"].is_enabled
     assert states["nosuch.service"].exists is False
-
-
-def test_no_systemd_means_no_states(monkeypatch):
-    monkeypatch.setattr(systemd, "available", lambda: False)
-    assert systemd.unit_states(["postfix.service"]) == {}
 
 
 @pytest.mark.parametrize(

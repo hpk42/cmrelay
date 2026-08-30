@@ -4,10 +4,12 @@ import ast
 import inspect
 import textwrap
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from cmrelay import cli
+from cmrelay.installer import argv_for_deploy
 
 
 def test_every_verb_the_parser_offers_has_a_handler():
@@ -127,3 +129,35 @@ def test_the_installer_hand_over_list_matches_the_dispatch_table():
     from cmrelay.verbs import VERBS as dispatch
 
     assert set(handover) == set(dispatch) - {"installer"}
+
+
+# -- the installer's argument split ----------------------------------------
+
+
+def test_the_installer_flags_are_split_from_the_deploy_argv():
+    assert cli.split_installer(["-y", "--skip-dns-check", "relay.example.org"]) == (
+        True,
+        False,
+        ["--skip-dns-check", "relay.example.org"],
+    )
+    assert cli.split_installer(["--stage-only"]) == (False, True, [])
+    assert cli.split_installer(["--", "deploy", "x"]) == (False, False, ["deploy", "x"])
+
+
+def test_a_bare_domain_becomes_a_deploy():
+    plain = SimpleNamespace(rest=["relay.example.org"], yes=False)
+    assert argv_for_deploy(plain) == ["deploy", "relay.example.org"]
+
+    verb = SimpleNamespace(rest=["status"], yes=False)
+    assert argv_for_deploy(verb) == ["status"]
+
+    nothing = SimpleNamespace(rest=[], yes=True)
+    assert argv_for_deploy(nothing) == ["deploy", "--yes"]
+
+    flags = SimpleNamespace(rest=["--skip-dns-check", "x.example.org"], yes=True)
+    assert argv_for_deploy(flags) == [
+        "deploy",
+        "--skip-dns-check",
+        "x.example.org",
+        "--yes",
+    ]

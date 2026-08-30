@@ -64,18 +64,22 @@ def query(*args) -> str:
     return systemctl(*args, check=False).stdout.strip()
 
 
-def unit_states(names) -> dict:
+def unit_states(names, systemctl_argv=None) -> dict:
     """name -> UnitState, for every name asked about, in one call.
 
     Not `--value`: it prints an empty line both for an empty property and
     between records, so a not-found unit cannot be told from a boundary.
     """
     names = list(names)
-    if not names or not available():
+    if not names:
         return {}
+    if systemctl_argv is None:
+        if not available():
+            return {}
+        systemctl_argv = ["systemctl"]
     result = subprocess.run(
         [
-            "systemctl",
+            *systemctl_argv,
             "show",
             "-p",
             "Id,LoadState,ActiveState,UnitFileState",

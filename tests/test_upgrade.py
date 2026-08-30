@@ -8,12 +8,6 @@ import pytest
 from cmrelay import discovery, fsops, generations, migrations, paths
 from cmrelay.output import Out
 
-
-@pytest.fixture
-def out():
-    return Out(colour=False)
-
-
 # -- generations -----------------------------------------------------------
 
 

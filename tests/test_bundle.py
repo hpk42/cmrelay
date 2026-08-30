@@ -7,7 +7,6 @@ the binary will be once the store is installed. Getting that backwards bakes
 a temporary directory into a relay's configuration.
 """
 
-import json
 from pathlib import Path
 
 import pytest
@@ -44,21 +43,9 @@ def test_command_runs_a_store_binary_through_the_loader_while_staging(bundle):
     assert libs  # every */lib under the staged store
 
 
-def test_command_is_just_the_binary_once_installed(tmp_path):
-    root = tmp_path / "nix/store/deadbeef-cmrelay-closure"
-    root.mkdir(parents=True)
-    (root / "manifest.json").write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "components": {
-                    "iproute2": {"version": "6", "ss": "/nix/store/x/bin/ss"}
-                },
-            }
-        )
-    )
-    installed = Bundle(closure=root)
-    assert installed.command("iproute2", "ss") == ["/nix/store/x/bin/ss"]
+def test_command_is_just_the_binary_once_installed(bundle):
+    installed = Bundle(closure=bundle.root)
+    assert installed.command("iproute2", "ss") == ["/nix/store/ooo-iproute2/bin/ss"]
 
 
 def test_a_missing_component_names_the_ones_there_are(bundle):

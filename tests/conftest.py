@@ -19,6 +19,23 @@ def fake_tool(tmp_path, name, script):
     return str(path)
 
 
+@pytest.fixture
+def out():
+    from cmrelay.output import Out
+
+    return Out(colour=False)
+
+
+@pytest.fixture
+def ini(tmp_path):
+    chatmaild = pytest.importorskip(
+        "chatmaild.config", reason="chatmaild is only available in the devShell"
+    )
+    path = tmp_path / "chatmail.ini"
+    chatmaild.write_initial_config(path, "relay.example.org", {})
+    return path
+
+
 @pytest.fixture(scope="session")
 def relay_root():
     """The pinned relay checkout the vendor tree was generated from."""

@@ -13,15 +13,6 @@ from cmrelay import fsops, paths
 
 
 @pytest.fixture
-def fake_root(tmp_path, monkeypatch):
-    """Point the module's paths at a temporary tree."""
-    monkeypatch.setattr(paths, "SYSTEMD_SYSTEM", tmp_path / "etc/systemd/system")
-    monkeypatch.setattr(paths, "UNITS", tmp_path / "opt/cmrelay/systemd")
-    paths.SYSTEMD_SYSTEM.mkdir(parents=True)
-    return tmp_path
-
-
-@pytest.fixture
 def journal():
     return fsops.Journal()
 
@@ -45,6 +36,7 @@ def test_reinstalling_identical_content_reports_no_change(fake_root, journal):
 
 def test_installing_over_a_mask_replaces_the_dev_null_symlink(fake_root, journal):
     masked = paths.SYSTEMD_SYSTEM / "dovecot.service"
+    masked.parent.mkdir(parents=True)
     masked.symlink_to("/dev/null")
 
     assert journal.install_unit("dovecot", "dovecot.service", "[Unit]\n")
@@ -54,6 +46,7 @@ def test_installing_over_a_mask_replaces_the_dev_null_symlink(fake_root, journal
 def test_installing_over_a_distribution_unit_replaces_it(fake_root, journal):
     """Only reached after take-over has stopped and disabled the original."""
     distro = paths.SYSTEMD_SYSTEM / "nginx.service"
+    distro.parent.mkdir(parents=True)
     distro.write_text("# Debian's\n")
 
     assert journal.install_unit("nginx", "nginx.service", "# cmrelay's\n")

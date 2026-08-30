@@ -16,11 +16,6 @@ class Config(SimpleNamespace):
     www_folder = ""
 
 
-@pytest.fixture
-def out():
-    return Out(colour=False)
-
-
 def site(directory, index="# hello\n"):
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "page-layout.html").write_text("<html>{{ markdown_html }}</html>")

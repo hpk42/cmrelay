@@ -20,10 +20,8 @@ chatmaild = pytest.importorskip(
 
 
 @pytest.fixture
-def config(tmp_path):
-    path = tmp_path / "chatmail.ini"
-    chatmaild.write_initial_config(path, "relay.example.org", {})
-    return chatmaild.read_config(path)
+def config(ini):
+    return chatmaild.read_config(ini)
 
 
 @pytest.fixture
@@ -140,15 +138,6 @@ def test_authored_units_have_every_field_supplied(deployment):
         text = unit.read_text().format(**activation.daemon_unit_vars(deployment))
         assert "{" not in text, f"{unit.name} has an unfilled field"
         assert "[Service]" in text
-
-
-def test_write_reports_change_only_when_content_differs(tmp_path):
-    journal = fsops.Journal()
-    target = tmp_path / "a.conf"
-    assert journal.write("x", target, "one\n").kind == fsops.ADDED
-    assert journal.write("x", target, "one\n") is None
-    assert journal.write("x", target, "two\n").kind == fsops.CHANGED
-    assert target.read_text() == "two\n"
 
 
 def test_strict_undefined_is_an_error(tmp_path):

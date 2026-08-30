@@ -126,6 +126,7 @@ def test_a_write_reports_added_then_changed_then_nothing(tmp_path):
     assert journal.write("x", target, "one\n").kind == fsops.ADDED
     assert journal.write("x", target, "one\n") is None
     assert journal.write("x", target, "two\n").kind == fsops.CHANGED
+    assert target.read_text() == "two\n"
     assert journal.seen["x"] == 3
 
 
@@ -252,7 +253,7 @@ def differing(before: dict, after: dict) -> set:
 
 
 @pytest.fixture
-def deployment(fake_root, bundle, monkeypatch, tmp_path):
+def deployment(fake_root, bundle, monkeypatch, tmp_path, ini):
     import grp
     import pwd
     import subprocess
@@ -271,9 +272,7 @@ def deployment(fake_root, bundle, monkeypatch, tmp_path):
     monkeypatch.setattr(users, "ensure_group", lambda name: False)
     monkeypatch.setattr(users, "verify_mailbox_ownership", lambda *a, **k: None)
 
-    inipath = tmp_path / "chatmail.ini"
-    chatmaild.write_initial_config(inipath, "relay.example.org", {})
-    config = chatmaild.read_config(inipath)
+    config = chatmaild.read_config(ini)
     config.tls_cert_mode = "self"
     config.mailboxes_dir = str(fake_root / "home/vmail/mail/relay.example.org")
     # From the ini rather than from paths.py, so the fixture redirects them.
@@ -301,7 +300,7 @@ def deployment(fake_root, bundle, monkeypatch, tmp_path):
         Deployment, "find_chatmaild_resource", lambda self, name: newemail
     )
     paths.INI.parent.mkdir(parents=True, exist_ok=True)
-    paths.INI.write_text(inipath.read_text())
+    paths.INI.write_text(ini.read_text())
     return deployment
 
 

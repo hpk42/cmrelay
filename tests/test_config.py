@@ -12,13 +12,6 @@ chatmaild = pytest.importorskip(
 )
 
 
-@pytest.fixture
-def ini(tmp_path):
-    path = tmp_path / "chatmail.ini"
-    chatmaild.write_initial_config(path, "relay.example.org", {})
-    return path
-
-
 # -- reading ---------------------------------------------------------------
 
 
@@ -83,44 +76,6 @@ def test_a_clean_ini_produces_no_warnings(ini):
     config = cfg.read_config(ini)
     config.acme_email = "postmaster@relay.example.org"
     assert cfg.warnings(config, ini) == []
-
-
-# -- the external TLS preflight -------------------------------------------
-
-
-def test_a_missing_external_certificate_is_caught_before_anything_is_written(tmp_path):
-    from types import SimpleNamespace
-
-    from cmrelay import preflight
-
-    config = SimpleNamespace(
-        tls_cert_mode="external",
-        tls_cert_path=str(tmp_path / "cert.pem"),
-        tls_key_path=str(tmp_path / "key.pem"),
-    )
-    report = preflight.check_external_tls(config)
-    assert not report.ok
-    assert len(report.findings) == 2
-
-    (tmp_path / "cert.pem").write_text("x")
-    (tmp_path / "key.pem").write_text("x")
-    assert preflight.check_external_tls(config).ok
-
-
-def test_other_tls_modes_are_not_checked_for_files():
-    from types import SimpleNamespace
-
-    from cmrelay import preflight
-
-    assert preflight.check_external_tls(SimpleNamespace(tls_cert_mode="acme")).ok
-
-
-def test_a_full_disk_is_refused_with_a_number(tmp_path):
-    from cmrelay import preflight
-
-    report = preflight.check_free_space(2**40, tmp_path)
-    assert not report.ok
-    assert "MiB free" in report.findings[0].detail
 
 
 # -- resolv.conf ownership -------------------------------------------------

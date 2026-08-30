@@ -7,6 +7,7 @@ code under test runs the same subprocess path it runs on a relay.
 
 import json
 import os
+from types import SimpleNamespace
 
 import pytest
 from conftest import REPO, fake_tool  # noqa: I001 - added to sys.path by conftest
@@ -195,3 +196,31 @@ def test_the_resolver_family_covers_more_than_the_service():
     # install refuses for -- a stock host always has resolved running.
     for name in preflight.RESOLVER_UNITS:
         assert name not in preflight.CONFLICTING_UNITS, name
+
+
+# -- the external TLS and disk checks --------------------------------------
+
+
+def test_a_missing_external_certificate_is_caught_before_anything_is_written(tmp_path):
+    config = SimpleNamespace(
+        tls_cert_mode="external",
+        tls_cert_path=str(tmp_path / "cert.pem"),
+        tls_key_path=str(tmp_path / "key.pem"),
+    )
+    report = preflight.check_external_tls(config)
+    assert not report.ok
+    assert len(report.findings) == 2
+
+    (tmp_path / "cert.pem").write_text("x")
+    (tmp_path / "key.pem").write_text("x")
+    assert preflight.check_external_tls(config).ok
+
+
+def test_other_tls_modes_are_not_checked_for_files():
+    assert preflight.check_external_tls(SimpleNamespace(tls_cert_mode="acme")).ok
+
+
+def test_a_full_disk_is_refused_with_a_number(tmp_path):
+    report = preflight.check_free_space(2**40, tmp_path)
+    assert not report.ok
+    assert "MiB free" in report.findings[0].detail

@@ -10,7 +10,15 @@ import json
 import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 
-from cmrelay.vendoring import Mapping, VendorError, plan, sha256_file, sync, verify
+from cmrelay.vendoring import (
+    Mapping,
+    Rule,
+    VendorError,
+    plan,
+    sha256_file,
+    sync,
+    verify,
+)
 
 
 @pytest.fixture
@@ -94,14 +102,8 @@ def test_colliding_destinations_are_rejected(tmp_path):
     mapping = Mapping(
         relay_url="x",
         roots=["a", "b"],
-        copies=[
-            type(Mapping.load.__self__ or object)  # placeholder, replaced below
-        ],
+        copies=[Rule("a/*", "config/one.conf"), Rule("b/*", "config/one.conf")],
     )
-    # built by hand rather than from TOML, to keep the test about collisions
-    from cmrelay.vendoring import Rule
-
-    mapping.copies = [Rule("a/*", "config/one.conf"), Rule("b/*", "config/one.conf")]
     with pytest.raises(VendorError, match="collide"):
         plan(relay, mapping)
 
