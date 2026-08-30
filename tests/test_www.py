@@ -166,3 +166,11 @@ def test_divergence_from_the_release_originals_is_named(fake_root, bundle, capsy
     printed = capsys.readouterr().out
     assert "differ from the 0.4.0 originals" in printed
     assert "index.md" in printed
+
+
+def test_a_page_name_with_a_space_survives_the_state_round_trip(fake_root):
+    from cmrelay import state
+    from cmrelay.fsops import Journal
+
+    state.save_www_files(Journal(), ["press kit.pdf", "index.html"])
+    assert state.read_www_files() == ["index.html", "press kit.pdf"]
