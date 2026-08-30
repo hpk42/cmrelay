@@ -43,7 +43,7 @@ class UpgradeError(Exception):
 
 def upgrade_verb(args, bundle, out) -> int:
     if args.finish:
-        return finish(args, bundle, out)
+        return finish(args, out)
     if args.rollback:
         return rollback(args, out)
 
@@ -62,7 +62,7 @@ def upgrade_verb(args, bundle, out) -> int:
         )
 
     steps = migrations.pending(__version__, new_version, state.read_migrations())
-    announce(out, new_version, manifest, staged, steps, verdict)
+    announce(out, new_version, staged, steps, verdict)
     if args.check:
         return 0
     if not args.yes and input("Upgrade? [y/N] ").strip().lower() not in ("y", "yes"):
@@ -208,7 +208,7 @@ def newer(candidate: str, force: bool) -> bool:
     return want > have
 
 
-def announce(out, new_version, manifest, staged, steps, verdict) -> None:
+def announce(out, new_version, staged, steps, verdict) -> None:
     out.print("")
     out.print(f"  installed   {__version__}")
     out.print(f"  candidate   {new_version}")
@@ -270,7 +270,7 @@ def record_signature(journal, verdict, version: str) -> None:
 # -- the second half, running from the new closure -------------------------
 
 
-def finish(args, bundle, out) -> int:
+def finish(args, out) -> int:
     """Migrations, the flip, and the deploy that does the rest."""
     number = int(args.finish)
     journal = fsops.Journal(written=state.read_written())

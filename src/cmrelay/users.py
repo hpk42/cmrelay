@@ -114,11 +114,6 @@ def ensure_required_users() -> list[str]:
     return created
 
 
-def check_all_present() -> list[str]:
-    """Names --take-over expected to find and did not."""
-    return [name for name, _, _ in ALL_USERS if not user_exists(name)]
-
-
 def verify_mailbox_ownership(mailboxes_dir: Path, user: str = "vmail") -> None:
     """Refuse to run if the resolved vmail does not own the maildir root.
 

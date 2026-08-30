@@ -1226,8 +1226,3 @@ class Deployment:
             if state is not None and state.exists and not state.is_running:
                 problems.append(f"{unit} is not running")
         return problems
-
-
-def owned_unit(name: str) -> bool:
-    """Whether this unit name is already served by a cmrelay unit file."""
-    return (paths.UNITS / name).is_symlink()

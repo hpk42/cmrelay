@@ -110,10 +110,6 @@ def _run(argv, required=True) -> str:
         return ""
 
 
-def systemd_available() -> bool:
-    return Path("/run/systemd/system").is_dir() and shutil.which("systemctl")
-
-
 def unit_states(names) -> dict[str, tuple[str, str]]:
     """Return name -> (enabled-state, active-state) for units that exist."""
     states = {}
@@ -327,15 +323,11 @@ def run(
     return report
 
 
-def format_report(report: Report, remedies: bool = True) -> str:
-    """The findings, and per-finding remedies unless something else fixes them.
-
-    A caller about to offer --take-over suppresses them, so that manual
-    remedies do not read as an alternative to the offer directly below.
-    """
+def format_report(report: Report) -> str:
+    """The findings, with a remedy line under each that has one."""
     lines = []
     for finding in report.findings:
         lines.append(f"  {finding}")
-        if remedies and finding.remedy:
+        if finding.remedy:
             lines.append(f"      remedy: {finding.remedy}")
     return "\n".join(lines)

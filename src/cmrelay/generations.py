@@ -30,10 +30,6 @@ class Generation:
         return paths.GENERATIONS / str(self.number)
 
     @property
-    def state(self) -> Path:
-        return paths.GENERATIONS / f"{self.number}.state"
-
-    @property
     def store_paths(self) -> Path:
         return paths.GENERATIONS / f"{self.number}.paths"
 
@@ -60,13 +56,6 @@ def current() -> int | None:
 def next_number() -> int:
     numbers = existing()
     return (max(numbers) + 1) if numbers else 1
-
-
-def closure_of(number: int) -> Path | None:
-    link = paths.GENERATIONS / str(number)
-    if not link.is_symlink():
-        return None
-    return link.resolve()
 
 
 def relative_closure(closure: Path) -> Path:

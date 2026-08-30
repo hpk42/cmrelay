@@ -74,6 +74,7 @@ def run_preflight(bundle, config, needed_mib=0):
 
 
 def owned_unit(name: str) -> bool:
+    """Whether this unit name is already served by a cmrelay unit file."""
     return (paths.UNITS / name).is_symlink()
 
 
@@ -120,7 +121,7 @@ def deploy(args, bundle, out) -> int:
         needed = 0 if where.state == host.INSTALLED else CLOSURE_MIB
         report = run_preflight(bundle, config, needed_mib=needed)
         where = host.escalate(where, report)
-        refusal = check_preflight(where, report, out, args)
+        refusal = check_preflight(where, report, out)
         if refusal is not None:
             return refusal
         for warning in cfg.warnings(config, where.ini or paths.INI):
@@ -244,7 +245,7 @@ def check_domain_resolves(bundle, config, args, out) -> bool:
     return True
 
 
-def check_preflight(where, report, out, args):
+def check_preflight(where, report, out):
     """Whether the deploy may proceed, and what to say if it may not."""
     if where.state == host.FOREIGN:
         out.error("this host runs a mail stack cmrelay did not install")
@@ -491,7 +492,7 @@ def cmd_status(args, out) -> int:
     """0 healthy, 1 degraded, 2 not installed."""
     bundle = Bundle.discover()
     if getattr(args, "json", False):
-        return status_json(bundle, out)
+        return status_json(bundle)
 
     out.section(f"cmrelay {__version__}")
     out.print(f"  relay commit   {bundle.relay_commit}")
@@ -560,7 +561,7 @@ def status_facts(bundle) -> dict:
     return facts
 
 
-def status_json(bundle, out) -> int:
+def status_json(bundle) -> int:
     facts = status_facts(bundle)
     print(json.dumps(facts, indent=2, sort_keys=True))
     if not facts["installed"]:

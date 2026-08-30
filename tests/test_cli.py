@@ -18,7 +18,6 @@ def test_every_verb_the_parser_offers_has_a_handler():
         a for a in parser._actions if a.choices and hasattr(a, "_name_parser_map")
     ]
     offered = set(actions[0].choices)
-    assert offered - {"version"} <= set(VERBS) | {"version"}
     for name in offered:
         assert name in VERBS, name
 

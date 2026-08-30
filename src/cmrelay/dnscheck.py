@@ -58,7 +58,7 @@ def with_drill_on_path(bundle):
     os.environ["PATH"] = f"{Path(drill).parent}{os.pathsep}{os.environ.get('PATH', '')}"
 
 
-def gather(bundle, config, out):
+def gather(bundle, config):
     """Everything the zone is built from, read off this host and the DNS."""
     dns, rdns = load_pycode(bundle)
     with_drill_on_path(bundle)
@@ -76,7 +76,7 @@ def dns_verb(args, bundle, out) -> int:
         out.print(f"{config.ipv4_relay} is not a domain; no DNS records apply.")
         return 0
 
-    dns, rdns, remote_data = gather(bundle, config, out)
+    dns, rdns, remote_data = gather(bundle, config)
     if not dns.check_initial_remote_data(
         remote_data, strict_tls=remote_data["strict_tls"], print=out.warn
     ):
