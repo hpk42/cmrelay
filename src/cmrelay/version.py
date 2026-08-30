@@ -6,6 +6,9 @@ version there is no "is this candidate newer", no migration range and no
 generation label, so `upgrade` cannot exist.
 """
 
+# Deferred so `X | None` parses on the 3.9 that RHEL 9 ships.
+from __future__ import annotations
+
 import json
 import os
 from importlib.metadata import version as metadata_version

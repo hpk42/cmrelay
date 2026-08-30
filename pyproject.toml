@@ -8,11 +8,12 @@ description = "Single-file installer for a chatmail relay, built as a Nix closur
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "GPL-3.0-or-later"}
-# No dependencies, deliberately. A pip-installed cmrelay reaches four of its
-# own modules -- cli, output, version and fetch -- and then execs the payload,
-# which brings its own interpreter. jinja2, markdown, qrcode and chatmaild are
-# all used on the far side of that handover, by the closure. chatmaild is not
-# on PyPI at all; it is relay's own code, built from the vendored commit.
+# No dependencies, deliberately. A pip-installed cmrelay reaches only its
+# wheel-side modules -- cli, output, version, bundle and payload -- and then
+# execs the payload, which brings its own interpreter. jinja2, markdown,
+# qrcode and chatmaild are all used on the far side of that handover, by the
+# closure. chatmaild is not on PyPI at all; it is relay's own code, built
+# from the vendored commit.
 dependencies = []
 dynamic = ["version"]
 
@@ -52,18 +53,17 @@ testpaths = ["tests"]
 extend-exclude = ["vendor", "cmdeploy-relay"]
 # requires-python is the wheel's floor, not this code's. The wheel only has
 # to parse far enough to exec a payload that carries its own 3.14, so it
-# declares 3.9 and the four modules on that path defer their annotations.
-# Everything else -- vendoring.py reads TOML with tomllib, which is 3.11+ --
-# runs inside the closure. Without this, ruff infers 3.9 from the metadata
-# and reclassifies stdlib modules as third-party.
+# declares 3.9 and the wheel-side modules that write `X | None` defer their
+# annotations. Everything else -- vendoring.py reads TOML with tomllib,
+# which is 3.11+ -- runs inside the closure. Without this, ruff infers 3.9
+# from the metadata and reclassifies stdlib modules as third-party.
 target-version = "py311"
 
 [tool.ruff.lint.per-file-ignores]
 # cli.py must import its verbs lazily: from a pip-installed wheel there is no
 # closure and no chatmaild, and the CLI has to reach the code that says so
-# rather than fail at import time. fetch.py is the wheel's only real job.
+# rather than fail at import time. payload.py is the wheel's only real job.
 "src/cmrelay/cli.py" = ["PLC0415"]
-# verbs.py defers fetch for the same reason, in one place.
 "src/cmrelay/verbs.py" = ["PLC0415"]
 # version.py is imported by cmrelay/__init__.py, so it has to work under a
 # bare interpreter; packaging is only needed to order versions for `upgrade`.
