@@ -6,7 +6,7 @@ listening. Two detectors, because a name collision catches the package about
 to fight us for port 25 while port occupancy catches the daemon cmrelay has
 never heard of.
 
-Nothing here modifies the host: only `install --take-over` acts on it.
+Nothing here modifies the host: only `deploy --take-over` acts on it.
 """
 
 import json
@@ -101,7 +101,6 @@ class DetectorError(PreflightError):
 
 
 def _run(argv, required=True) -> str:
-    """Run a detector. Failing to start one is an error, not an empty result."""
     try:
         return subprocess.run(
             argv, capture_output=True, text=True, timeout=30, check=False

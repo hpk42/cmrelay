@@ -50,7 +50,6 @@ class Out:
         self._make_encodable()
 
     def _want_colour(self, colour) -> bool:
-        """auto, always or never, with NO_COLOR winning over auto."""
         if colour in ("always", True):
             return True
         if colour in ("never", False):
@@ -60,10 +59,8 @@ class Out:
         return bool(getattr(self.stream, "isatty", lambda: False)())
 
     def _make_encodable(self):
-        """LANG may be unset in the closure, leaving stdout ASCII.
-
-        A non-ASCII domain name would then raise mid-deploy.
-        """
+        # LANG may be unset in the closure, leaving stdout ASCII, and a
+        # non-ASCII domain name would then raise mid-deploy.
         reconfigure = getattr(self.stream, "reconfigure", None)
         if reconfigure is None:
             return

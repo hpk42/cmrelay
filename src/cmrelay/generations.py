@@ -3,8 +3,8 @@
 Store paths are content-addressed, so installing a new closure adds paths and
 removes none: the previous release stays complete and runnable at no copying
 cost, and rollback is one rename. What is not content-addressed is small --
-chatmail.ini, www/, state/ and the generated units -- and is copied beside
-each generation before the flip.
+chatmail.ini, www/ and state/ -- and is copied beside each generation
+before the flip.
 """
 
 import re

@@ -215,13 +215,12 @@ class Journal:
         return Change(dest, CHANGED, component, is_system(dest), "was edited by hand")
 
     def _replace(self, dest: Path, data: bytes) -> None:
-        """Through a temporary, so a killed deploy leaves no half file."""
+        # through a temporary, so a killed deploy leaves no half file
         tmp = dest.with_name(dest.name + ".cmrelay-new")
         tmp.write_bytes(data)
         os.replace(tmp, dest)
 
     def _ensure_parents(self, component: str, directory: Path) -> None:
-        """Create missing parents, and record each one."""
         missing = []
         walk = directory
         while not walk.exists() and walk != walk.parent:
@@ -232,7 +231,6 @@ class Journal:
             self.note(Change(path, ADDED, component, is_system(path)))
 
     def _apply_modes(self, path: Path, mode, owner) -> bool:
-        """Bring mode and ownership to what was asked. Returns whether either moved."""
         moved = False
         info = path.stat()
         if mode is not None and (info.st_mode & 0o7777) != mode:

@@ -1,8 +1,8 @@
-"""deploy, status, uninstall and version.
+"""`cmrelay deploy`, and the dispatch table for every verb.
 
-`deploy` is the workhorse and the only verb that writes. It classifies the
-host, resolves the domain, and then runs five phases: preflight, render,
-reconcile, activate, verify. Take-over differs only by a preamble.
+`deploy` classifies the host, resolves the domain, and then runs the
+steps its output names: preflight, configuration, services, verify.
+Take-over differs only by a preamble.
 """
 
 import os

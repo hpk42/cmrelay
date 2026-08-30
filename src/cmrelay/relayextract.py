@@ -86,12 +86,8 @@ def read_pins(path: Path) -> dict:
 
 
 def _jsonable(value) -> bool:
-    """Whether a pins.py value survives a round trip through JSON.
-
-    DOVECOT_SHA256 is keyed by (package, arch) tuples, which JSON cannot
-    express. cmrelay does not use it, so dropping it is simpler than
-    inventing an encoding.
-    """
+    # DOVECOT_SHA256 is keyed by (package, arch) tuples, which JSON cannot
+    # express; cmrelay does not use it, so it is dropped rather than encoded.
     if isinstance(value, str):
         return True
     if isinstance(value, dict):
@@ -124,7 +120,6 @@ def _str_or_strlist(node) -> list[str]:
 
 
 def _port(node) -> dict:
-    """A port is either a literal or a `config.<attr>` reference."""
     if isinstance(node, ast.Constant) and isinstance(node.value, int):
         return {"port": node.value}
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):

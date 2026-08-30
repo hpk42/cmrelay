@@ -73,7 +73,7 @@ PROFILE_D = Path("/etc/profile.d")
 PROFILE_SCRIPT = PROFILE_D / "cmrelay.sh"
 
 # Where systemd loads from, and therefore where the real unit files go. See
-# cmrelay.systemd for why they cannot live under /opt/cmrelay.
+# fsops.Journal.install_unit for why they cannot live under /opt/cmrelay.
 SYSTEMD_SYSTEM = Path("/etc/systemd/system")
 
 DKIM_KEYS = Path("/etc/dkimkeys")
