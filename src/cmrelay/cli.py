@@ -319,6 +319,7 @@ def main(argv=None):
     from .fsops import LockBusy
     from .host import DomainRefused
     from .installer import InstallerError
+    from .preflight import PreflightError
     from .signing import SigningError
     from .store import StoreError
     from .systemd import SystemdError
@@ -338,6 +339,7 @@ def main(argv=None):
         DomainRefused,
         InstallerError,
         LockBusy,
+        PreflightError,
         SigningError,
         StoreError,
         SystemdError,

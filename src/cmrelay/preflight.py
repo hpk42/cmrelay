@@ -9,14 +9,16 @@ never heard of.
 Nothing here modifies the host: only `install --take-over` acts on it.
 """
 
+import json
 import os
+import platform
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import systemd
+from . import paths, systemd
 
 # Shadowed rather than masked: masking writes /etc/systemd/system/<name> ->
 # /dev/null, the exact path cmrelay's own unit needs, so a masked name is one
@@ -90,7 +92,11 @@ class Report:
         self.findings.append(Finding(*args, **kwargs))
 
 
-class DetectorError(Exception):
+class PreflightError(Exception):
+    pass
+
+
+class DetectorError(PreflightError):
     """A detector could not run, which is not the same as finding nothing."""
 
 
@@ -316,6 +322,41 @@ def run(
         parts.append(check_free_space(needed_mib))
     for part in parts:
         report.findings.extend(part.findings)
+    return report
+
+
+def relay_pins(bundle) -> dict:
+    return json.loads((bundle.root / "relay-pins.json").read_text())
+
+
+def mtail_artifact(bundle) -> tuple:
+    """The release relay pins for this architecture: (url, sha256)."""
+    artifacts = relay_pins(bundle)["pins"]["MTAIL_ARTIFACTS"]
+    machine = platform.machine()
+    try:
+        return tuple(artifacts[machine])
+    except KeyError:
+        raise PreflightError(
+            f"relay pins no mtail release for {machine};"
+            f" it has {', '.join(sorted(artifacts))}"
+        ) from None
+
+
+def run_preflight(bundle, config, needed_mib=0):
+    """relay's port table resolved against this host's config, then one look."""
+    resolved = resolve_port_table(relay_pins(bundle)["port_table"], config)
+    report = run(
+        resolved,
+        ss_argv=bundle.command("iproute2", "ss"),
+        ours=paths.owned_unit,
+        config=config,
+        needed_mib=needed_mib,
+    )
+    report.findings.extend(
+        check_mtail(
+            getattr(config, "mtail_address", ""), mtail_artifact(bundle)
+        ).findings
+    )
     return report
 
 

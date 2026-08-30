@@ -122,5 +122,10 @@ def unit_file(name: str) -> Path:
     return SYSTEMD_SYSTEM / name
 
 
+def owned_unit(name: str) -> bool:
+    """Whether this unit name is already served by a cmrelay unit file."""
+    return (UNITS / name).is_symlink()
+
+
 def config_dir(component: str) -> Path:
     return CONFIG / component
