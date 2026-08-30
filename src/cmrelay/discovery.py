@@ -120,12 +120,11 @@ def best(candidates) -> Candidate | None:
 def survey(ca_path: str, source=None) -> tuple:
     """(per-source best, failures). Both are asked unless one is pinned."""
     ctx = context(ca_path)
-    wanted = {"github": [from_github], "pypi": [from_pypi]}.get(
-        source, [from_github, from_pypi]
-    )
+    readers = {"GitHub": from_github, "PyPI": from_pypi}
+    if source:
+        readers = {n: r for n, r in readers.items() if n.lower() == source}
     results, failures = {}, {}
-    for reader in wanted:
-        name = "GitHub" if reader is from_github else "PyPI"
+    for name, reader in readers.items():
         try:
             found = best(reader(ctx))
         except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:

@@ -241,18 +241,6 @@ def enable(name: str, reload: bool = True) -> None:
     systemctl("enable", *(() if reload else ("--no-reload",)), name, check=False)
 
 
-def read_units(state: Path) -> list:
-    if not state.is_file():
-        return []
-    return [line.strip() for line in state.read_text().splitlines() if line.strip()]
-
-
-def record_units(journal, state: Path, names) -> None:
-    """Add to what a state file already lists, never replacing it."""
-    merged = sorted(set(read_units(state)) | set(names))
-    journal.write("cmrelay", state, "\n".join(merged) + "\n")
-
-
 def unit_changed(journal) -> bool:
     """Whether anything systemd loads from disk moved this run."""
     return any(

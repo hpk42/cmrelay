@@ -94,7 +94,7 @@ def confirm(bundle, out) -> bool:
     out.print(f"  {str(paths.LOCAL_BIN / 'cmrelay'):<36} the CLI")
     out.print(f"  {str(paths.PROFILE_SCRIPT):<36} puts {paths.BIN} on PATH")
     out.print("\nNothing else is touched until `cmrelay deploy` runs.")
-    return input("Install? [y/N] ").strip().lower() in ("y", "yes")
+    return out.confirm("Install?")
 
 
 def publish(bundle, journal, out) -> None:
@@ -121,9 +121,9 @@ def publish(bundle, journal, out) -> None:
     out.print(f"  {paths.CLI} -> generation {number}")
 
 
-def write_profile_script(journal) -> None:
+def write_profile_script(journal) -> bool:
     if not paths.PROFILE_D.is_dir():
-        return
+        return False
     journal.write(
         "tools",
         paths.PROFILE_SCRIPT,
@@ -134,6 +134,7 @@ def write_profile_script(journal) -> None:
         "esac\n"
         "export PATH\n",
     )
+    return True
 
 
 def argv_for_deploy(args) -> list:

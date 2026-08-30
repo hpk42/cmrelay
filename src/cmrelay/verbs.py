@@ -22,9 +22,6 @@ from .signing import trusted_keys
 from .upgrade import upgrade_verb
 from .version import __version__
 
-# The unpacked closure, for the free-space check.
-CLOSURE_MIB = 800
-
 # Shown individually before the report collapses the rest into a count.
 SYSTEM_LINES = 6
 
@@ -118,7 +115,7 @@ def deploy(args, bundle, out) -> int:
     )
 
     with out.step("Preflight"):
-        needed = 0 if where.state == host.INSTALLED else CLOSURE_MIB
+        needed = 0 if where.state == host.INSTALLED else preflight.CLOSURE_MIB
         report = run_preflight(bundle, config, needed_mib=needed)
         where = host.escalate(where, report)
         refusal = check_preflight(where, report, out)
@@ -247,31 +244,24 @@ def check_domain_resolves(bundle, config, args, out) -> bool:
 
 def check_preflight(where, report, out):
     """Whether the deploy may proceed, and what to say if it may not."""
+    postscript = ""
     if where.state == host.FOREIGN:
-        out.error("this host runs a mail stack cmrelay did not install")
-        out.print(preflight.format_report(report))
-        out.print("\nNo configuration and no service on this host was modified.")
-        out.print(
+        error = "this host runs a mail stack cmrelay did not install"
+        postscript = (
             "If this host is meant to keep the stack above, cmrelay is not"
             "\nfor it. There is no chatmail deployment here to take over."
         )
-        return 1
-    if report.ok:
+    elif any(f.subject == "mtail" for f in report.findings):
+        error = "this configuration needs mtail, which cmrelay does not ship"
+    elif report.ok or where.takes_over:
         return None
-
-    blocking = [f for f in report.findings if f.subject == "mtail"]
-    if blocking:
-        out.error("this configuration needs mtail, which cmrelay does not ship")
-        out.print(preflight.format_report(report))
-        out.print("\nNo configuration and no service on this host was modified.")
-        return 1
-
-    if where.takes_over:
-        return None
-
-    out.error("something is in the way and this host carries no chatmail markers")
+    else:
+        error = "something is in the way and this host carries no chatmail markers"
+    out.error(error)
     out.print(preflight.format_report(report))
     out.print("\nNo configuration and no service on this host was modified.")
+    if postscript:
+        out.print(postscript)
     return 1
 
 
@@ -306,19 +296,16 @@ def take_over(where, bundle, out, args, journal) -> bool:
 
     if not (args.take_over or args.yes):
         out.print("")
-        if input("Convert this host to cmrelay? [y/N] ").strip().lower() not in (
-            "y",
-            "yes",
-        ):
+        if not out.confirm("Convert this host to cmrelay?"):
             out.print("aborted; nothing was modified")
             return False
 
     with out.step("Take-over"):
         masked, shadowed = mask_existing(out)
         if shadowed:
-            systemd.record_units(journal, paths.SHADOWED_UNITS_STATE, shadowed)
+            state.record_units(journal, paths.SHADOWED_UNITS_STATE, shadowed)
         if masked:
-            systemd.record_units(journal, paths.DISABLED_UNITS, masked)
+            state.record_units(journal, paths.DISABLED_UNITS, masked)
         systemd.daemon_reload()
     return True
 
@@ -378,7 +365,7 @@ def activate(deployment, journal, out) -> list:
 
     masked = deployment.mask_resolvers(systemd.unit_states(preflight.RESOLVER_UNITS))
     if masked:
-        systemd.record_units(journal, paths.DISABLED_UNITS, masked)
+        state.record_units(journal, paths.DISABLED_UNITS, masked)
 
     reloaded = False
     if systemd.unit_changed(journal) or masked:
@@ -554,7 +541,7 @@ def status_facts(bundle) -> dict:
             "active": unit[1],
             "healthy": unit[2],
         }
-    for name in systemd.read_units(paths.DISABLED_UNITS):
+    for name in state.read_lines(paths.DISABLED_UNITS):
         facts["masked"][name] = systemd.query("is-enabled", name) or "-"
     report = run_preflight(bundle, config)
     facts["conflicts"] = [str(f) for f in report.findings]
@@ -618,7 +605,7 @@ def healthy(name: str, enabled: str, active: str) -> bool:
 
 def report_masked(out) -> bool:
     """What cmrelay masked, and whether it has stayed that way."""
-    masked = systemd.read_units(paths.DISABLED_UNITS)
+    masked = state.read_lines(paths.DISABLED_UNITS)
     if not masked:
         return True
     out.section("Masked by cmrelay")
@@ -684,7 +671,7 @@ def uninstall(args, out) -> int:
     stop_our_units(out, journal)
 
     out.section("Unmasking what take-over masked")
-    masked = systemd.read_units(paths.DISABLED_UNITS)
+    masked = state.read_lines(paths.DISABLED_UNITS)
     for name in masked:
         systemd.unmask(name, reload=False)
         out.print(f"  unmasked {name}")
@@ -695,7 +682,7 @@ def uninstall(args, out) -> int:
     # down, and relay's unbound deployer runs `systemctl reset-failed`, which
     # answers "not loaded" for a disabled unit.
     out.section("Re-enabling what take-over disabled")
-    shadowed = systemd.read_units(paths.SHADOWED_UNITS_STATE)
+    shadowed = state.read_lines(paths.SHADOWED_UNITS_STATE)
     for name in shadowed:
         systemd.enable(name, reload=False)
         out.print(f"  enabled {name}")

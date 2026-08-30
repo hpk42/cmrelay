@@ -120,3 +120,10 @@ def test_a_no_op_deploy_reaches_the_network_never():
 
     args.skip_dns_check = True
     assert wants_dns_report(args, busy, [], []) is False
+
+
+def test_the_installer_hand_over_list_matches_the_dispatch_table():
+    from cmrelay.installer import VERBS as handover
+    from cmrelay.verbs import VERBS as dispatch
+
+    assert set(handover) == set(dispatch) - {"installer"}

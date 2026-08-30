@@ -110,16 +110,6 @@ def _run(argv, required=True) -> str:
         return ""
 
 
-def unit_states(names) -> dict[str, tuple[str, str]]:
-    """Return name -> (enabled-state, active-state) for units that exist."""
-    states = {}
-    for name, state in systemd.unit_states(names).items():
-        if not state.exists:
-            continue
-        states[name] = (state.enabled or "static", state.active or "unknown")
-    return states
-
-
 _SS_HOLDER = re.compile(r'\("([^"]+)"')
 
 
@@ -210,9 +200,11 @@ def check_units(names=None, ours=None) -> Report:
     """
     ours = ours or (lambda name: False)
     report = Report()
-    for name, (enabled, active) in unit_states(names or CONFLICTING_UNITS).items():
-        if ours(name):
+    for name, state in systemd.unit_states(names or CONFLICTING_UNITS).items():
+        if not state.exists or ours(name):
             continue
+        enabled = state.enabled or "static"
+        active = state.active or "unknown"
         if enabled in ("enabled", "enabled-runtime") or active == "active":
             report.add(
                 name,
@@ -279,6 +271,10 @@ def check_external_tls(config) -> Report:
                 remedy=f"put the certificate and key at {path}, or change the ini",
             )
     return report
+
+
+# The unpacked closure, checked before anything moves or is staged.
+CLOSURE_MIB = 800
 
 
 def check_free_space(needed_mib: int, path=Path("/opt")) -> Report:

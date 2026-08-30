@@ -31,9 +31,6 @@ from .deploy import Deployment
 from .installer import exec_installed
 from .version import __version__, parse_version
 
-# The unpacked closure, checked before anything is staged.
-CLOSURE_MIB = 800
-
 DOWNLOADS = paths.STATE / "downloads"
 
 
@@ -65,7 +62,7 @@ def upgrade_verb(args, bundle, out) -> int:
     announce(out, new_version, staged, steps, verdict)
     if args.check:
         return 0
-    if not args.yes and input("Upgrade? [y/N] ").strip().lower() not in ("y", "yes"):
+    if not args.yes and not out.confirm("Upgrade?"):
         out.print("aborted; nothing was modified")
         return 1
 
@@ -95,10 +92,7 @@ def download(args, bundle, out) -> tuple:
     ca_path = Deployment.ca_path()
     if not args.auto and not args.yes:
         out.print(f"cmrelay upgrade will ask {discovery.GITHUB} and {discovery.PYPI}.")
-        if input("Check for a newer release? [y/N] ").strip().lower() not in (
-            "y",
-            "yes",
-        ):
+        if not out.confirm("Check for a newer release?"):
             out.print("aborted; nothing was modified")
             raise UpgradeError("no candidate")
 
@@ -114,10 +108,7 @@ def download(args, bundle, out) -> tuple:
 
     chosen = discovery.best(results.values())
     out.print(f"\n  Newest is {chosen.version}, from {chosen.source}.")
-    if not args.yes and input("  Download and verify? [y/N] ").strip().lower() not in (
-        "y",
-        "yes",
-    ):
+    if not args.yes and not out.confirm("  Download and verify?"):
         raise UpgradeError("aborted; nothing was modified")
 
     journal = fsops.Journal()
@@ -164,7 +155,7 @@ def unsigned_warning(out, candidate: Path, reason: str = "") -> None:
 
 def stage(candidate: Path, out) -> Path:
     """Unpack the candidate and stop. It never runs as an installer."""
-    space = preflight.check_free_space(CLOSURE_MIB)
+    space = preflight.check_free_space(preflight.CLOSURE_MIB)
     if not space.ok:
         raise UpgradeError(str(space.findings[0]))
     result = subprocess.run(
@@ -300,7 +291,7 @@ def rollback(args, out) -> int:
     target = max(previous)
 
     out.print(f"rolling back from generation {live} to {target}")
-    if not args.yes and input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
+    if not args.yes and not out.confirm("Continue?"):
         out.print("aborted; nothing was modified")
         return 1
 

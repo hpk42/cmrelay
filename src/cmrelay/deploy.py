@@ -18,7 +18,7 @@ issuing a systemctl call.
 import subprocess
 from pathlib import Path
 
-from . import paths, render, systemd, users, www
+from . import installer, paths, render, systemd, users, www
 from .version import __version__
 
 # Matches ChatmailVenvDeployer.units; the timers own the last two.
@@ -984,21 +984,10 @@ class Deployment:
         The tools that must win are in /usr/local/bin, which already precedes
         /usr/bin. Only login shells read this; every unit names a store path.
         """
-        if not paths.PROFILE_D.is_dir():
+        if not installer.write_profile_script(self.j):
             self.out.detail(
                 f"{paths.PROFILE_D} does not exist; not adding {paths.BIN} to PATH"
             )
-            return
-        self.j.write(
-            "tools",
-            paths.PROFILE_SCRIPT,
-            "# written by cmrelay; removed by `cmrelay uninstall`\n"
-            'case ":$PATH:" in\n'
-            f"    *:{paths.BIN}:*) ;;\n"
-            f'    *) PATH="$PATH:{paths.BIN}" ;;\n'
-            "esac\n"
-            "export PATH\n",
-        )
 
     def put_wrapper(self, link: Path, target: str, args: list):
         if link.is_symlink():

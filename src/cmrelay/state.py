@@ -11,6 +11,18 @@ from pathlib import Path
 from . import paths
 
 
+def read_lines(path: Path) -> list:
+    if not path.is_file():
+        return []
+    return [line.strip() for line in path.read_text().splitlines() if line.strip()]
+
+
+def record_units(journal, path: Path, names) -> None:
+    """Add to what a state file already lists, never replacing it."""
+    merged = sorted(set(read_lines(path)) | set(names))
+    journal.write("cmrelay", path, "\n".join(merged) + "\n")
+
+
 def read_json(path: Path, default):
     try:
         return json.loads(path.read_text())
@@ -58,11 +70,7 @@ def resolve_mail_intent(previous: dict, enable=None) -> bool:
 
 
 def read_www_files() -> list:
-    if not paths.WWW_FILES.is_file():
-        return []
-    return [
-        line.strip() for line in paths.WWW_FILES.read_text().split() if line.strip()
-    ]
+    return read_lines(paths.WWW_FILES)
 
 
 def save_www_files(journal, names) -> None:
@@ -70,11 +78,7 @@ def save_www_files(journal, names) -> None:
 
 
 def read_migrations() -> set:
-    if not paths.MIGRATIONS.is_file():
-        return set()
-    return {
-        line.strip() for line in paths.MIGRATIONS.read_text().split() if line.strip()
-    }
+    return set(read_lines(paths.MIGRATIONS))
 
 
 def save_migrations(journal, names) -> None:

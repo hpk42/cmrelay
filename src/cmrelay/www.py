@@ -68,17 +68,15 @@ def seed(journal, bundle, out) -> None:
 
     Seeded once; from then on /opt/cmrelay/www is the operator's.
     """
-    vendored = bundle.vendor / "www"
+    files = [p for p in sorted((bundle.vendor / "www").iterdir()) if p.is_file()]
     if not paths.WWW_SRC.exists():
-        for path in sorted(vendored.iterdir()):
-            if path.is_file():
-                journal.copy("website", path, paths.WWW_SRC / path.name)
+        for path in files:
+            journal.copy("website", path, paths.WWW_SRC / path.name)
         out.detail(f"seeded {paths.WWW_SRC} from the release's own pages")
 
-    published = {p.name for p in vendored.iterdir() if p.is_file()}
-    for path in sorted(vendored.iterdir()):
-        if path.is_file():
-            journal.copy("website", path, paths.WWW_DIST / path.name)
+    published = {p.name for p in files}
+    for path in files:
+        journal.copy("website", path, paths.WWW_DIST / path.name)
     if paths.WWW_DIST.is_dir():
         for stale in sorted(paths.WWW_DIST.iterdir()):
             if stale.is_file() and stale.name not in published:

@@ -176,6 +176,9 @@ class Out:
     def error(self, text):
         self._emit(f"error: {text}", RED, important=True)
 
+    def confirm(self, question) -> bool:
+        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
     def summary(self, text):
         self._emit("", important=True)
         self._emit(text, GREEN, important=True)

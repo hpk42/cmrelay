@@ -75,36 +75,31 @@ def create(journal, number: int, closure: Path, store_names=()) -> Generation:
     return generation
 
 
+def _copy_members(journal, source_root, target_root):
+    for name in STATE_MEMBERS:
+        member = source_root / name
+        if member.is_file():
+            journal.copy("cmrelay", member, target_root / name)
+        elif member.is_dir():
+            for path in sorted(member.rglob("*")):
+                if path.is_file():
+                    journal.copy(
+                        "cmrelay", path, target_root / name / path.relative_to(member)
+                    )
+
+
 def snapshot_state(journal, number: int) -> None:
     """Copy the small, non-content-addressed state beside a generation."""
     target = paths.GENERATIONS / f"{number}.state"
     journal.ensure_directory("cmrelay", target)
-    for name in STATE_MEMBERS:
-        source = paths.ROOT / name
-        if source.is_file():
-            journal.copy("cmrelay", source, target / name)
-        elif source.is_dir():
-            for path in sorted(source.rglob("*")):
-                if path.is_file():
-                    journal.copy(
-                        "cmrelay", path, target / name / path.relative_to(source)
-                    )
+    _copy_members(journal, paths.ROOT, target)
 
 
 def restore_state(journal, number: int) -> bool:
     source = paths.GENERATIONS / f"{number}.state"
     if not source.is_dir():
         return False
-    for name in STATE_MEMBERS:
-        member = source / name
-        if member.is_file():
-            journal.copy("cmrelay", member, paths.ROOT / name)
-        elif member.is_dir():
-            for path in sorted(member.rglob("*")):
-                if path.is_file():
-                    journal.copy(
-                        "cmrelay", path, paths.ROOT / name / path.relative_to(member)
-                    )
+    _copy_members(journal, source, paths.ROOT)
     return True
 
 
