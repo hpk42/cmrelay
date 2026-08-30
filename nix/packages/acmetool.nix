@@ -46,17 +46,19 @@ buildGoModule {
   nativeBuildInputs = [ pkg-config ];
   buildInputs = [ libcap ];
 
-  # cgo on, deliberately. A static build looks tempting, but Go without cgo
-  # cannot resolve account names through NSS, and acmetool then refuses
-  # relay's own unit:
+  # cgo on: without it Go cannot resolve account names through NSS, and
+  # acmetool refuses relay's own unit:
   #
   #   ExecStart=... redirector --service.uid=daemon --bind=127.0.0.1:402
   #   Error in service: because this binary was built without cgo, UIDs/GIDs
   #   must be specified numerically and not as names
   #
-  # The distribution-independence a static build would buy is already there,
-  # since the closure carries its own glibc.
   env.CGO_ENABLED = 1;
+
+  ldflags = [
+    "-s"
+    "-w"
+  ];
 
   # HTTP/1.1 for the module download: proxy.golang.org repeatedly cut the zips
   # short mid-stream with an HTTP/2 INTERNAL_ERROR. Inherited by
