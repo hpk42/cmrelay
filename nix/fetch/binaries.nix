@@ -5,9 +5,12 @@
 # scripts/extract-from-relay parses out of relay's deployers. A relay bump
 # therefore moves these versions with no edit here.
 #
-# Fetching rather than building means cmrelay ships byte-identical binaries
-# to what deployed relays run today, and buys no exposure to whether a given
-# iroh release still compiles against a current rustc.
+# Fetching rather than building buys no exposure to whether a given iroh
+# release still compiles against a current rustc. The install strips each
+# binary: that happens after the fixed-output hash check, so the pin still
+# proves the download is exactly what relay records, and the shipped bytes
+# differ from a cmdeploy relay's by the stripping alone. iroh-relay and
+# chatmail-turn publish unstripped releases, together 450 KB of installer.
 #
 # One subtlety decides the shape of this file. relay's download_executable()
 # pipes the download through an extraction command *before* checking the
@@ -23,6 +26,7 @@
   lib,
   stdenvNoCC,
   fetchurl,
+  binutils,
   system,
 }:
 
@@ -82,6 +86,7 @@ let
       dontUnpack = true;
       installPhase = ''
         install -Dm755 $src $out/bin/${name}
+        ${binutils}/bin/strip $out/bin/${name}
       '';
       meta = {
         description = "${name}, pinned by relay";
