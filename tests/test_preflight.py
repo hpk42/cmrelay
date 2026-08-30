@@ -7,20 +7,11 @@ code under test runs the same subprocess path it runs on a relay.
 
 import json
 import os
-import stat
 
 import pytest
-from conftest import REPO  # noqa: I001 - added to sys.path by conftest
+from conftest import REPO, fake_tool  # noqa: I001 - added to sys.path by conftest
 
 from cmrelay import preflight, systemd
-
-
-def fake_tool(tmp_path, name, script) -> str:
-    """A real executable that prints canned output, standing in for a daemon."""
-    path = tmp_path / name
-    path.write_text(f"#!/bin/sh\n{script}\n")
-    path.chmod(path.stat().st_mode | stat.S_IEXEC)
-    return str(path)
 
 
 class Config:

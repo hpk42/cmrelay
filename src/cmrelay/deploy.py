@@ -46,8 +46,6 @@ DKIM_KEY_BITS = 2048
 # Below this, deploy asks acmetool to reach the network; otherwise never.
 CERT_GRACE_SECONDS = 604800
 
-RESOLVER_UNITS_MASKED = ("systemd-resolved.service", "unbound-resolvconf.service")
-
 # Started before anything else, because acmetool answers the HTTP challenge
 # and dovecot, postfix and nginx will not start without the certificate.
 ACME_UNITS = (
@@ -1131,9 +1129,8 @@ class Deployment:
         Only the ones not already masked, so a re-deploy spends nothing.
         """
         masked = []
-        for unit in RESOLVER_UNITS_MASKED:
-            state = states.get(unit)
-            if state is None or not state.exists or state.is_masked:
+        for unit, state in sorted(states.items()):
+            if not state.exists or state.is_masked:
                 continue
             systemd.stop_disable_mask(unit, reload=False)
             masked.append(unit)

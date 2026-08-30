@@ -174,3 +174,26 @@ def test_no_systemd_means_no_states(monkeypatch):
 )
 def test_which_states_count_as_enabled(enabled, expected):
     assert state(enabled=enabled).is_enabled is expected
+
+
+# -- resolver masking ------------------------------------------------------
+
+
+def test_a_deploy_masks_the_whole_resolver_family(tmp_path, monkeypatch):
+    """Fedora's varlink and monitor sockets fail on their own once the service goes."""
+    import os
+
+    from conftest import fake_tool
+
+    from cmrelay import preflight
+    from cmrelay.deploy import Deployment
+
+    log = tmp_path / "calls"
+    fake_tool(tmp_path, "systemctl", f'echo "$@" >> {log}')
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+
+    states = {name: state() for name in preflight.RESOLVER_UNITS}
+    masked = Deployment(None, None, None, None).mask_resolvers(states)
+
+    assert set(masked) == set(preflight.RESOLVER_UNITS)
+    assert "mask --no-reload systemd-resolved-varlink.socket" in log.read_text()

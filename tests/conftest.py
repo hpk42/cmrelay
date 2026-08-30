@@ -9,6 +9,16 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
 
+def fake_tool(tmp_path, name, script):
+    """A real executable that prints canned output, standing in for a daemon."""
+    import stat
+
+    path = tmp_path / name
+    path.write_text(f"#!/bin/sh\n{script}\n")
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 @pytest.fixture(scope="session")
 def relay_root():
     """The pinned relay checkout the vendor tree was generated from."""
