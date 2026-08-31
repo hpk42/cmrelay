@@ -137,6 +137,21 @@ def test_the_installer_flags_are_split_from_the_deploy_argv():
     assert cli.split_installer(["--", "deploy", "x"]) == (False, False, ["deploy", "x"])
 
 
+def test_the_already_installed_hint_fits_how_it_was_reached(monkeypatch, tmp_path):
+    """From the .run file the upgrade takes that file; from the CLI it takes none."""
+    from cmrelay import installer
+
+    ini = tmp_path / "chatmail.ini"
+    ini.write_text("[params]\n")
+    monkeypatch.setattr(installer.paths, "INI", ini)
+    monkeypatch.setenv(installer.ENV_INSTALLER, "/root/cmrelay.run")
+    assert "cmrelay upgrade /root/cmrelay.run" in installer.already_installed()
+
+    monkeypatch.delenv(installer.ENV_INSTALLER)
+    hint = installer.already_installed()
+    assert "cmrelay upgrade" in hint and "<installer>" not in hint
+
+
 def test_the_refusal_names_verbs_the_dispatch_table_has():
     """The hint tells a domain from a verb, so both cannot drift apart."""
     from cmrelay.installer import VERBS as named

@@ -144,6 +144,50 @@ def test_the_header_needs_no_host_tar():
             assert '"$tools/tar"' in bare or "tools/tar" in bare, line
 
 
+def test_the_header_refuses_arguments_before_it_unpacks():
+    """Otherwise a mistyped domain costs a 50 MiB unpack to be told so."""
+    import subprocess
+
+    header = Path(__file__).parent.parent / "stub" / "header.sh"
+    refused = subprocess.run(
+        ["sh", str(header), "relay.example.org"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert refused.returncode == 1
+    assert "takes no arguments" in refused.stderr
+    assert "cmrelay deploy relay.example.org" in refused.stderr
+
+    # -y, --stage-only and -- are its own, so they get past the check and on
+    # to the root test, which is what stops a suite that is not root.
+    allowed = subprocess.run(
+        ["sh", str(header), "-y", "--stage-only"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "takes no arguments" not in allowed.stderr
+    assert "must run as root" in allowed.stderr
+
+    # A verb is quoted as itself rather than handed to deploy.
+    verb = subprocess.run(
+        ["sh", str(header), "status"], capture_output=True, text=True, check=False
+    )
+    assert "cmrelay status" in verb.stderr
+
+
+def test_the_header_and_the_cli_name_the_same_verbs():
+    """The stub's hint tells a verb from a domain, so it lists them too."""
+    from cmrelay.installer import VERBS
+
+    header = (Path(__file__).parent.parent / "stub" / "header.sh").read_text()
+    listed = [line for line in header.splitlines() if "| upgrade |" in line]
+    assert listed, "the stub no longer lists the verbs its hint switches on"
+    for name in VERBS:
+        assert name in listed[0], name
+
+
 def test_the_header_uses_cmrelays_names():
     """Eight literals the stub shares with bundle.py, paths.py and closure.nix."""
     from cmrelay import paths

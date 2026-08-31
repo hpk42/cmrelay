@@ -38,6 +38,30 @@ fail() {
     exit 1
 }
 
+# Before anything is unpacked, because the answer cannot change: installing
+# and configuring are separate commands, so the only flags here are the
+# installer's own. cmrelay.installer.refuse_arguments says the same thing
+# from inside the closure, for a `cmrelay installer` invoked directly.
+for arg in "$@"; do
+    case $arg in
+        -y | --yes | --stage-only | --) continue ;;
+    esac
+    # A domain wants `cmrelay deploy DOMAIN`, a verb wants `cmrelay VERB`.
+    # test_payload pins these names against cmrelay.installer.VERBS.
+    case $1 in
+        deploy | dns | install | status | uninstall | upgrade | version)
+            wanted=$* ;;
+        *) wanted="deploy $*" ;;
+    esac
+    echo "cmrelay: the installer takes no arguments, so '$arg' is" \
+         "nothing it can do." >&2
+    echo "  Install first, then run the command:" >&2
+    echo >&2
+    echo "      $self" >&2
+    echo "      cmrelay $wanted" >&2
+    exit 1
+done
+
 # Root only: everything cmrelay does needs it, and the alternative was a
 # second staging path for the verbs that do not.
 if [ "$(id -u)" != 0 ]; then

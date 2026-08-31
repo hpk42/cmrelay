@@ -68,11 +68,13 @@ def already_installed() -> str:
             "\n  Carry on from where it stopped:"
             "\n\n      cmrelay deploy [DOMAIN]"
         )
-    installer = os.environ.get(ENV_INSTALLER, "<installer>")
+    # Named when this came from a .run file; from `cmrelay install` there is
+    # no file to name, and a bare `upgrade` finds the newest release itself.
+    installer = os.environ.get(ENV_INSTALLER, "")
     return (
         f"{paths.STORE} already holds an installed relay."
         "\n  To replace the release running here:"
-        f"\n\n      cmrelay upgrade {installer}"
+        f"\n\n      {f'cmrelay upgrade {installer}'.rstrip()}"
     )
 
 
