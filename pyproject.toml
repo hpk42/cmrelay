@@ -44,6 +44,12 @@ test = [
   "markdown",
   "qrcode",
 ]
+doc = [
+  "sphinx",
+  "sphinxcontrib-mermaid",
+  "sphinx-autobuild",
+  "furo",
+]
 
 [tool.pytest.ini_options]
 addopts = "-v -ra --strict-markers"
