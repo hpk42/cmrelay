@@ -1,14 +1,6 @@
-"""Where a pip-installed cmrelay finds its payload: inside itself.
+"""Discover and execute the wheel-contained cmrelay binbary."""
 
-The installer has to run on the interpreter from inside the closure rather
-than whatever pip installed the CLI into, so a pip-installed cmrelay execs
-the payload beside it and proceeds as if the operator had copied the .run
-file across themselves. Every published wheel is per-architecture and carries
-its own payload, so nothing here ever makes a network request.
-"""
-
-# Deferred so `X | None` parses on the 3.9 that RHEL 9 ships: a wheel-installed
-# cmrelay parses this far before exec'ing a payload carrying its own 3.14.
+# needed on Python 3.9 (RHEL 9)
 from __future__ import annotations
 
 import os
@@ -34,7 +26,6 @@ def exec_payload(payload: Path, argv: list[str]) -> int:
     several of the target distributions while the closure is ~250 MiB open.
     """
     if not os.access(payload, os.X_OK):
-        # execve's `Permission denied` would not say the mode was flattened.
         try:
             payload.chmod(payload.stat().st_mode | 0o111)
         except OSError as exc:
@@ -53,9 +44,9 @@ def run_from_wheel(args_list: list[str], out, bundled: Path = BUNDLED) -> int:
     payload = bundled_payload(bundled)
     if payload is None:
         raise PayloadError(
-            "this cmrelay carries no payload, so it was built from a source"
-            " checkout rather than installed from a release wheel. Build one"
-            " with `nix build '.?submodules=1#payload'` and run the resulting"
+            "this cmrelay carries no payload, so it was built "
+            " from a source checkout rather than installed from a release wheel."
+            " Build one with `nix build '.?submodules=1#payload'` and run the resulting"
             " .run file directly, or `nix build '.?submodules=1#wheel'` for a"
             " wheel with the payload inside it."
         )

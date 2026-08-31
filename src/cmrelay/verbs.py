@@ -334,8 +334,6 @@ def activate(deployment, journal, out) -> list:
     plan = activation.plan(deployment)
     states = systemd.unit_states(sorted(plan.intents))
 
-    # acmetool answers the HTTP challenge, and dovecot, postfix and nginx
-    # will not start without the certificate it fetches.
     issued = issue_calls(out, plan.only(activation.ACME_UNITS).calls(states))
     if deployment.config.tls_cert_mode == "acme" and activation.needs_reconcile(
         deployment

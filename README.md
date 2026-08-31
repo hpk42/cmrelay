@@ -418,7 +418,7 @@ and its pinned binary URLs inside Python function bodies,
 so cmrelay parses them out of the AST rather than importing pyinfra.
 Every extractor asserts the shape it expects;
 moving the port table behind a helper call yields
-`port_services is not a list literal at line 519` rather than silent drift.
+`port_services is not a list literal at line 502` rather than silent drift.
 When relay lands declarative files for both, delete that module.
 
 Updating cmrelay is then one of exactly two kinds of change:

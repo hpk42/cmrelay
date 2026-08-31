@@ -97,7 +97,7 @@ def test_every_section_is_separated_by_exactly_one_blank_line():
         assert lines[index].rstrip().endswith("s")
 
 
-def test_a_slow_phase_prints_live_rather_than_holding_its_lines(monkeypatch):
+def test_a_slow_phase_prints_live_rather_than_holding_its_lines():
     out, stream = rendered(colour=False, live_after=-1)
     with out.step("Services"):
         out.changed("postfix.service: start")

@@ -136,20 +136,16 @@ def test_strict_undefined_is_an_error(tmp_path):
         render.render_template(template)
 
 
-def test_the_profile_script_is_idempotent_and_valid_sh(tmp_path):
+def test_the_profile_script_is_idempotent_and_valid_sh(fake_root):
     """It is sourced on every login, so it must not grow PATH each time."""
     import subprocess
 
-    bin_dir = "/opt/cmrelay/bin"
-    script = tmp_path / "cmrelay.sh"
-    script.write_text(
-        "# written by cmrelay; removed by `cmrelay uninstall`\n"
-        'case ":$PATH:" in\n'
-        f"    *:{bin_dir}:*) ;;\n"
-        f'    *) PATH="$PATH:{bin_dir}" ;;\n'
-        "esac\n"
-        "export PATH\n"
-    )
+    from cmrelay import installer, paths
+
+    paths.PROFILE_D.mkdir(parents=True)
+    assert installer.write_profile_script(fsops.Journal())
+    script = paths.PROFILE_SCRIPT
+    bin_dir = str(paths.BIN)
     # Sourcing it three times must add the directory exactly once, and it must
     # append rather than prepend so nothing here shadows a distribution tool.
     out = subprocess.run(

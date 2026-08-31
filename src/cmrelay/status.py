@@ -1,8 +1,7 @@
 """`cmrelay status` and `cmrelay version`: report, never modify.
 
 status re-runs the conflict detector and reads unit state; its --json
-form emits the same facts as one object. Exit codes are the contract:
-0 healthy, 1 degraded, 2 not installed.
+form emits the same facts as one object.
 """
 
 import json

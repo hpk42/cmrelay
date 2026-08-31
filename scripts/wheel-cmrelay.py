@@ -33,7 +33,7 @@ from pathlib import Path
 # where the installer declines to run.
 #
 # manylinux_2_17 is a floor the payload does not actually need -- the closure
-# carries its own glibc, and the installer wants a POSIX shell and tar -- but
+# carries its own glibc and tar, and the stub wants only a POSIX shell -- but
 # it is the oldest tag current pip and PyPI both accept without argument.
 ARCH_TAGS = {
     "x86_64": ["manylinux_2_17_x86_64", "manylinux2014_x86_64"],

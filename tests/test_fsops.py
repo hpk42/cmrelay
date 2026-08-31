@@ -15,7 +15,7 @@ from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 
 from cmrelay import activation, fsops
 
-# store.py moves a 700 MiB closure by rename and reports it as one line;
+# store.py moves the whole closure by rename and reports it as one line;
 # payload.py runs from a pip-installed wheel, where there is no journal;
 # vendoring.py runs from scripts/vendor-sync on a developer machine and
 # writes vendor/, never a relay.

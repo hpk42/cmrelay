@@ -88,14 +88,13 @@ def test_a_squatter_is_named_in_the_finding(tmp_path):
     assert finding.remedy
 
 
-def test_store_check_accepts_our_own_symlink(tmp_path):
+def test_store_check_flags_a_symlink_resolving_elsewhere(tmp_path):
     root = tmp_path / "nix"
     target = tmp_path / "opt/cmrelay/nix"
     target.mkdir(parents=True)
     root.symlink_to(target)
     # resolve() is what the check compares, so point it at the real location
     report = preflight.check_store(root)
-    # the target is not literally /opt/cmrelay/nix here, so a finding is right
     assert not report.ok
     assert "symlink" in report.findings[0].detail
 

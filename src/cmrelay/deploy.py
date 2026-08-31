@@ -24,7 +24,7 @@ from . import daemons, installer, paths, render, users, www
 from .daemons import DeployError
 from .version import __version__
 
-# Matches ChatmailVenvDeployer.units; the timers own the last two.
+# Matches ChatmailVenvDeployer.units; the timers own expire and fsreport.
 CHATMAILD_UNITS = [
     "doveauth",
     "chatmail-metadata",

@@ -197,3 +197,19 @@ def test_a_deploy_masks_the_whole_resolver_family(tmp_path, monkeypatch):
 
     assert set(masked) == set(preflight.RESOLVER_UNITS)
     assert "mask --no-reload systemd-resolved-varlink.socket" in log.read_text()
+
+
+def test_the_deploy_plan_starts_unbound_before_opendkim(fake_root, bundle, ini):
+    """opendkim reads the root anchor unbound's ExecStartPre writes."""
+    import pytest as _p
+
+    cfg = _p.importorskip("chatmaild.config")
+    from cmrelay import activation, fsops
+    from cmrelay.deploy import Deployment
+    from cmrelay.output import Out
+
+    unit = Deployment(bundle, cfg.read_config(ini), Out(colour=False), fsops.Journal())
+    plan = activation.plan(unit)
+    order = list(plan.intents)
+    assert order.index("unbound.service") < order.index("opendkim.service")
+    assert order.index("dovecot.service") < order.index("postfix.service")

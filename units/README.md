@@ -22,4 +22,4 @@ identical names are what makes a distribution's own packages collide.
 so no distribution still in support is below it.
 
 Every store path is a Python `str.format` field, filled
-in at install time by `Deployment.daemon_unit_vars()`.
+in at install time by `activation.daemon_unit_vars()`.

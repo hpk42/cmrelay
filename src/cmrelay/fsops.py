@@ -116,13 +116,6 @@ class Journal:
         return any(c.component == component for c in self.changes)
 
     @property
-    def components(self) -> set:
-        return {c.component for c in self.changes}
-
-    def for_component(self, component: str) -> list:
-        return [c for c in self.changes if c.component == component]
-
-    @property
     def system_changes(self) -> list:
         return [c for c in self.changes if c.system]
 
@@ -341,9 +334,6 @@ class Journal:
         return self.write(
             component, paths.SYSTEMD_SYSTEM / f"{unit}.d" / name, content, mode=0o644
         )
-
-    def remove_dropin(self, component: str, unit: str, name: str):
-        return self.remove_file(component, paths.SYSTEMD_SYSTEM / f"{unit}.d" / name)
 
     def sysctl(self, path, value: str) -> bool:
         """Set a live kernel tunable. Not journalled: the sysctl.d drop-in is."""

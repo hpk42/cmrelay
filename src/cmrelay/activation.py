@@ -1,5 +1,6 @@
 """The unit state a configuration intends, and the calls that reach it.
 
+`install_daemon_units` writes the authored units during configuration;
 `plan` turns intent into data against one systemd snapshot, so "a no-op
 deploy issues no systemctl calls" stays a unit test. Around it sits what
 `verbs.activate` runs: masking the resolvers competing with unbound,

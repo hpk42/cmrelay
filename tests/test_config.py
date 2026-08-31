@@ -1,4 +1,4 @@
-"""The four ini checks, and the ownership rules that turn on the config."""
+"""The ini checks, the ownership rules, and what postfix carries forward."""
 
 import pytest
 
@@ -185,14 +185,6 @@ def test_the_reconcile_flag_forces_it(fake_root, bundle, ini):
         bundle, cfg.read_config(ini), Out(colour=False), fsops.Journal(), reconcile=True
     )
     assert activation.needs_reconcile(unit) is True
-
-
-def test_the_deploy_plan_starts_unbound_before_opendkim(fake_root, bundle, ini):
-    """opendkim reads the root anchor unbound's ExecStartPre writes."""
-    plan = activation.plan(deployment(bundle, cfg.read_config(ini), fsops.Journal()))
-    order = list(plan.intents)
-    assert order.index("unbound.service") < order.index("opendkim.service")
-    assert order.index("dovecot.service") < order.index("postfix.service")
 
 
 def test_postfix_own_settings_are_carried_forward(tmp_path):
