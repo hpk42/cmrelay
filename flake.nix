@@ -18,6 +18,9 @@
         pkgs = nixpkgs.legacyPackages.${system};
         lib = pkgs.lib;
 
+        # Both architectures land on one release page, so artifacts say which.
+        arch = if pkgs.stdenv.hostPlatform.isAarch64 then "aarch64" else "x86_64";
+
         fetched = pkgs.callPackage ./nix/fetch/binaries.nix { inherit system; };
 
         crypt-r = pkgs.python3Packages.callPackage ./nix/packages/crypt-r.nix { };
@@ -95,12 +98,12 @@
         };
 
         wheel = pkgs.callPackage ./nix/wheel.nix {
-          inherit payload version;
+          inherit arch payload version;
           cmrelaySrc = ./.;
         };
 
         payload = pkgs.callPackage ./nix/payload.nix {
-          inherit closure bsdtar-minimal version;
+          inherit arch closure bsdtar-minimal version;
           cmrelaySrc = ./.;
         };
       in
@@ -168,8 +171,6 @@
           '';
 
         formatter = pkgs.nixfmt-tree;
-
-        _module.args.lib = lib;
       }
     );
 }

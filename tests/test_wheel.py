@@ -172,3 +172,19 @@ def test_the_licence_names_the_terms_and_the_bundled_components():
     assert "MIT" in text
     assert "THIRD-PARTY.md" in text
     assert "patches/" in text
+
+
+def test_the_metadata_matches_pyproject(script, built):
+    """The wheel builder restates pyproject fields; this is what stops drift."""
+    import tomllib
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    text = script.metadata("1.2.3", "readme")
+    assert f"Summary: {project['description']}" in text
+    assert f"License: {project['license']['text']}" in text
+    assert f"Requires-Python: {project['requires-python']}" in text
+    with zipfile.ZipFile(built) as zf:
+        entry = next(n for n in zf.namelist() if n.endswith("entry_points.txt"))
+        declared = zf.read(entry).decode()
+    for name, target in project["scripts"].items():
+        assert f"{name} = {target}" in declared

@@ -38,16 +38,6 @@ fail() {
     exit 1
 }
 
-# The wheel still invokes `--quiet -- ...`, from when a makeself stub parsed
-# those. Accepted and ignored; the CLI knows neither.
-while [ $# -gt 0 ]; do
-    case $1 in
-        --quiet) shift ;;
-        --) shift; break ;;
-        *) break ;;
-    esac
-done
-
 # Root only: everything cmrelay does needs it, and the alternative was a
 # second staging path for the verbs that do not.
 if [ "$(id -u)" != 0 ]; then

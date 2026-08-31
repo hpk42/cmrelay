@@ -9,10 +9,9 @@ generation label, so `upgrade` cannot exist.
 # Deferred so `X | None` parses on the 3.9 that RHEL 9 ships.
 from __future__ import annotations
 
-import json
-import os
 from importlib.metadata import version as metadata_version
-from pathlib import Path
+
+from .bundle import Bundle, BundleError
 
 DEV = "0.0.0.dev"
 
@@ -34,15 +33,9 @@ def parse_version(text):
 
 def from_bundle() -> tuple:
     """(version, commit) out of the closure's manifest, if there is one."""
-    closure = os.environ.get("CMRELAY_CLOSURE")
-    stage = os.environ.get("CMRELAY_STAGE")
-    if closure:
-        root = Path(stage) / str(closure).lstrip("/") if stage else Path(closure)
-    else:
-        root = Path(__file__).resolve().parent.parent
     try:
-        manifest = json.loads((root / "manifest.json").read_text())
-    except (OSError, ValueError):
+        manifest = Bundle.discover().manifest
+    except (BundleError, ValueError):
         return None, None
     return manifest.get("version"), manifest.get("commit")
 

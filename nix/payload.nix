@@ -7,7 +7,7 @@
 
 {
   lib,
-  stdenv,
+  arch,
   runCommand,
   zstd,
   pkgsStatic,
@@ -23,8 +23,6 @@
 }:
 
 let
-  # Both architectures land on one release page, so the file says which.
-  arch = if stdenv.hostPlatform.isAarch64 then "aarch64" else "x86_64";
   info = closureInfo { rootPaths = [ closure ]; };
   staticZstd = pkgsStatic.zstd;
   # Files a relay never reads, dropped on the way into the payload. This

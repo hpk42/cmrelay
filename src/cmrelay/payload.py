@@ -43,7 +43,7 @@ def exec_payload(payload: Path, argv: list[str]) -> int:
             ) from exc
     env = dict(os.environ)
     env.setdefault("TMPDIR", "/var/tmp")
-    argv = [str(payload), "--quiet", "--", *argv]
+    argv = [str(payload), *argv]
     os.execve(str(payload), argv, env)
 
 

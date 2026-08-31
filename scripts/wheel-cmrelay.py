@@ -54,9 +54,9 @@ EPOCH = (1980, 1, 1, 0, 0, 0)
 def metadata(version: str, readme: str) -> str:
     """The wheel's METADATA.
 
-    Deliberately no dependencies. A wheel-installed cmrelay reaches exactly
-    four of its own modules -- cli, output, version and fetch -- before it
-    hands over to the payload, and jinja2, markdown and qrcode are all used
+    Deliberately no dependencies. A wheel-installed cmrelay reaches only its
+    wheel-side modules -- cli, output, version, bundle and payload -- before
+    it hands over, and jinja2, markdown and qrcode are all used
     on the far side of that handover, by the closure's own interpreter.
     Declaring them here would make `pip install cmrelay` drag three packages
     that nothing in the wheel imports.
@@ -65,7 +65,10 @@ def metadata(version: str, readme: str) -> str:
         ("Metadata-Version", "2.1"),
         ("Name", "cmrelay"),
         ("Version", version),
-        ("Summary", "Single-file installer for a chatmail relay"),
+        (
+            "Summary",
+            "Single-file installer for a chatmail relay, built as a Nix closure",
+        ),
         ("License", "GPL-3.0-or-later"),
         ("Requires-Python", ">=3.9"),
         ("Project-URL", "Repository, https://github.com/chatmail/cmrelay"),
@@ -118,8 +121,8 @@ def check_version(version: str) -> str:
 def add(zf: zipfile.ZipFile, record: list, name: str, data: bytes, mode: int):
     info = zipfile.ZipInfo(name, date_time=EPOCH)
     info.external_attr = (mode << 16) | 0o100000
-    # The payload is a makeself archive around a zstd stream. Deflating it
-    # again spends minutes to gain nothing, so it goes in stored.
+    # The payload is already zstd-compressed. Deflating it again spends
+    # minutes to gain nothing, so it goes in stored.
     info.compress_type = (
         zipfile.ZIP_STORED if name == PAYLOAD_MEMBER else zipfile.ZIP_DEFLATED
     )

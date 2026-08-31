@@ -81,3 +81,28 @@ def test_the_header_needs_no_host_tar():
         # The only tar invoked is the one sliced into $tools.
         if "tar " in bare:
             assert '"$tools/tar"' in bare or "tools/tar" in bare, line
+
+
+def test_the_header_uses_cmrelays_names():
+    """Eight literals the stub shares with bundle.py, paths.py and closure.nix."""
+    from cmrelay import paths
+    from cmrelay.bundle import (
+        BOOTSTRAP,
+        ENV_CLOSURE,
+        ENV_INSTALLER,
+        ENV_STAGE,
+        READY_MARKER,
+    )
+
+    repo = Path(__file__).parent.parent
+    header = (repo / "stub/header.sh").read_text()
+    closure_nix = (repo / "nix/closure.nix").read_text()
+
+    assert f"ready={READY_MARKER}" in header
+    assert BOOTSTRAP in header
+    assert f"export {ENV_STAGE} {ENV_CLOSURE} {ENV_INSTALLER}" in header
+    assert f"shared={paths.STAGING}" in header
+    assert str(paths.STORE) in header
+    for key in ("CMRELAY_LD", "CMRELAY_PYTHON", "CMRELAY_SITE"):
+        assert key in header, key
+        assert key in closure_nix, key

@@ -16,11 +16,10 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "src"))
 
 from cmrelay.vendoring import Mapping, VendorError, plan, verify  # noqa: E402
-
-REPO = Path(__file__).resolve().parent.parent
 
 
 def main():

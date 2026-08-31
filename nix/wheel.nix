@@ -11,9 +11,9 @@
 # for building one locally.
 {
   lib,
+  arch,
   runCommand,
   python3,
-  stdenv,
   payload,
   cmrelaySrc,
   # Overridden by CI, which knows the release tag. A local build is not a
@@ -21,9 +21,6 @@
   version ? "0.0.0.dev0",
 }:
 
-let
-  arch = if stdenv.hostPlatform.isAarch64 then "aarch64" else "x86_64";
-in
 runCommand "cmrelay-wheel-${version}"
   {
     nativeBuildInputs = [ python3 ];

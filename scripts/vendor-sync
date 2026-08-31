@@ -12,11 +12,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
-from cmrelay.vendoring import Mapping, VendorError, sync  # noqa: E402
-
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "src"))
+
+from cmrelay.vendoring import Mapping, VendorError, sha256_file, sync  # noqa: E402
 
 
 def git(relay_root, *args):
@@ -66,8 +65,6 @@ def main(argv=None):
 
     patches = apply_patches(REPO)
     if patches:
-        from cmrelay.vendoring import sha256_file
-
         for dest in hashes:
             hashes[dest] = sha256_file(REPO / "vendor" / dest)
 
