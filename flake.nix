@@ -156,12 +156,14 @@
               ps: pythonDeps ++ [ ps.pytest ]
             );
           in
-          pkgs.runCommand "cmrelay-pytest" { } ''
+          pkgs.runCommand "cmrelay-pytest" { nativeBuildInputs = [ pkgs.openssl ]; } ''
             cp -r ${./.}/src ${./.}/tests ${./.}/vendor .
-            cp ${./.}/vendor.toml ${./.}/vendor.lock .
-            cp -r ${./.}/patches .
-            cp -r ${./.}/nix .
-            cp -r ${./.}/units .
+            cp -r ${./.}/patches ${./.}/nix ${./.}/units .
+            # The suite also reads the build scripts, the stub and the
+            # top-level metadata the wheel is built from.
+            cp -r ${./.}/scripts ${./.}/stub .
+            cp ${./.}/vendor.toml ${./.}/vendor.lock ${./.}/pyproject.toml .
+            cp ${./.}/LICENSE ${./.}/THIRD-PARTY.md ${./.}/README.md .
             chmod -R u+w .
             # The tests that read the pinned relay checkout skip without it;
             # a flake check has no submodule to read.
