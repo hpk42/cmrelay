@@ -29,6 +29,7 @@ no deployment logic of its own.
 Or, if you would rather not move a 50 MiB file around by hand:
 
     pip install cmrelay
+    cmrelay install
     cmrelay deploy relay.example.org
 
 `pip` is the last step that needs the network.
@@ -38,12 +39,13 @@ useful on a firewalled or air-gapped host, and the reason
 the wheel is the size of the payload rather than a few kilobytes.
 
 The CLI still only ever hands over. The relay is a Nix closure
-and it has to run on the interpreter from inside it,
-not on whatever pip installed the CLI into,
-so a wheel-installed `cmrelay` execs the payload, which installs
-first when needed and then runs the verb you typed, exactly as if
-you had run the `.run` file with that verb yourself -- which is
-the only path that is actually tested.
+and it has to run on the interpreter from inside it, not on whatever
+pip installed the CLI into, so `cmrelay install` execs the payload
+and every other verb execs the CLI that payload left in `/usr/local/bin`
+-- the same code path as copying the `.run` file across yourself,
+which is the only path that is actually tested.
+A wheel never installs behind your back:
+a verb typed before `cmrelay install` says so and stops.
 
 Installing and deploying never download software.
 `cmrelay upgrade` does, only when asked, and names the URL before it does.
@@ -79,7 +81,9 @@ and updating means re-running that script.
 
 | | |
 |---|---|
-| `cmrelay-installer [-y]` | unpack into `/opt/cmrelay` and link the CLI; configuring is not its job |
+| `cmrelay-installer [-y]` | unpack into `/opt/cmrelay` and link the CLI; takes no other argument |
+|
+| `cmrelay install [-y]` | the same thing from a pip-installed wheel |
 |
 | `cmrelay deploy [DOMAIN]` | make this host match its configuration; idempotent, fast, the workhorse |
 | `cmrelay dns [--zonefile PATH]` | check the published records against what this relay needs |

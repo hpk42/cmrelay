@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from cmrelay import cli
-from cmrelay.installer import InstallerError, handover_argv
+from cmrelay.installer import InstallerError, refuse_arguments
 
 
 def test_every_verb_the_parser_offers_has_a_handler():
@@ -124,13 +124,6 @@ def test_a_no_op_deploy_reaches_the_network_never():
     assert wants_dns_report(args, busy, [], []) is False
 
 
-def test_the_installer_hand_over_list_matches_the_dispatch_table():
-    from cmrelay.installer import VERBS as handover
-    from cmrelay.verbs import VERBS as dispatch
-
-    assert set(handover) == set(dispatch) - {"installer"}
-
-
 # -- the installer's argument split ----------------------------------------
 
 
@@ -144,31 +137,23 @@ def test_the_installer_flags_are_split_from_the_deploy_argv():
     assert cli.split_installer(["--", "deploy", "x"]) == (False, False, ["deploy", "x"])
 
 
-def test_a_bare_domain_on_the_installer_is_refused():
-    plain = SimpleNamespace(rest=["relay.example.org"], yes=False)
+def test_the_refusal_names_verbs_the_dispatch_table_has():
+    """The hint tells a domain from a verb, so both cannot drift apart."""
+    from cmrelay.installer import VERBS as named
+    from cmrelay.verbs import VERBS as dispatch
+
+    assert set(named) == set(dispatch) - {"installer"}
+
+
+def test_the_installer_takes_no_arguments():
+    """Installing and configuring are separate commands, so it offers neither."""
+    domain = SimpleNamespace(rest=["relay.example.org"], yes=False)
     with pytest.raises(InstallerError, match="cmrelay deploy relay.example.org"):
-        handover_argv(plain)
+        refuse_arguments(domain)
 
-    flags = SimpleNamespace(rest=["--skip-dns-check", "x.example.org"], yes=True)
-    with pytest.raises(InstallerError):
-        handover_argv(flags)
-
-
-def test_no_arguments_means_install_only():
-    nothing = SimpleNamespace(rest=[], yes=True)
-    assert handover_argv(nothing) is None
-
-
-def test_an_explicit_verb_line_is_handed_over():
     verb = SimpleNamespace(rest=["status"], yes=False)
-    assert handover_argv(verb) == ["status"]
+    with pytest.raises(InstallerError, match="cmrelay status"):
+        refuse_arguments(verb)
 
-    wheel = SimpleNamespace(
-        rest=["deploy", "--skip-dns-check", "x.example.org"], yes=True
-    )
-    assert handover_argv(wheel) == [
-        "deploy",
-        "--skip-dns-check",
-        "x.example.org",
-        "--yes",
-    ]
+    nothing = SimpleNamespace(rest=[], yes=True)
+    assert refuse_arguments(nothing) is None

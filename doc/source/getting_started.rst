@@ -113,9 +113,9 @@ steps. Please substitute it with your own domain.
    The installer installs and nothing more:
    it unpacks the relay stack into ``/opt/cmrelay``
    and links the ``cmrelay`` command into ``/usr/local/bin``.
-   It stages everything first and publishes it only
-   after you have agreed to the plan it prints;
-   pass ``-y`` to skip the prompt.
+   It takes no arguments beyond ``-y``,
+   which skips the prompt; it stages everything first
+   and publishes it only after you have agreed to the plan it prints.
 
 4. Configure and start the relay with your domain:
 
@@ -158,15 +158,21 @@ If you would rather not move a 50 MiB file around by hand:
 ::
 
     pip install cmrelay
+    cmrelay install
     cmrelay deploy chat.example.org
 
 ``pip`` is the last step that needs the network.
 The released wheels are per-architecture and carry the installer
 payload inside them, so the relay install itself downloads nothing:
 useful on a firewalled host.
-A pip-installed ``cmrelay`` hands over to the bundled payload,
-which installs into ``/opt/cmrelay`` first when needed
-and then runs the command you typed.
+
+``cmrelay install`` runs that bundled payload and is the wheel's
+equivalent of running the ``.run`` file: it unpacks into
+``/opt/cmrelay`` and stops there.
+Every other command then runs from the installed relay,
+so the steps are the same two as above.
+A wheel never installs on its own:
+a command typed before ``cmrelay install`` says so and stops.
 
 
 Other helpful commands

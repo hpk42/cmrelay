@@ -1,10 +1,10 @@
 """The cmrelay command line.
 
 The same CLI runs out of the closure, where everything works, and out of a
-pip-installed wheel, where there is no chatmaild and every verb hands over to
-the bundled payload. That is why the verb implementations are imported inside
-`main()`: importing them from a wheel would fail on chatmaild before the CLI
-could explain itself.
+pip-installed wheel, where there is no chatmaild: there `install` hands over
+to the bundled payload and every other verb to the CLI that payload installed.
+That is why the verb implementations are imported inside `main()`: importing
+them from a wheel would fail on chatmaild before the CLI could explain itself.
 """
 
 import argparse
@@ -66,6 +66,7 @@ def build_parser():
 
     add_deploy(sub)
     add_dns(sub)
+    add_install(sub)
     add_status(sub)
     add_upgrade(sub)
     add_uninstall(sub)
@@ -244,17 +245,38 @@ def add_uninstall(sub):
     uninstall.set_defaults(verb="uninstall")
 
 
+def add_install(sub):
+    """The wheel's way to run the payload; the .run file itself on a host."""
+    install = verb(
+        sub,
+        "install",
+        help="unpack the relay stack into /opt/cmrelay",
+        description=(
+            "Unpack the relay stack into /opt/cmrelay and link this CLI."
+            " Configures nothing and starts nothing: `cmrelay deploy` does"
+            " that. On a host that already has a relay, `cmrelay upgrade`"
+            " replaces the release."
+        ),
+    )
+    install.add_argument("--yes", "-y", action="store_true", help="skip the prompt")
+    install.set_defaults(verb="install")
+
+
 def add_installer(sub):
-    """Reached only from the installer stub, which passes its own argv on."""
+    """Reached only from the installer stub, which passes its own argv on.
+
+    Distinct from `install`: this one runs from the staged closure and does
+    the unpacking, that one is what a pip-installed cmrelay asks for.
+    """
     installer = verb(sub, "installer")
     installer.set_defaults(verb="installer", yes=False, stage_only=False, rest=[])
 
 
 def split_installer(argv):
-    """The installer's own flags, and the argv to hand over once installed.
+    """The installer's own flags, and whatever else was typed, to refuse.
 
     Parsed by hand rather than with REMAINDER, which errors on an unknown
-    option before the first positional -- and every deploy flag is one.
+    option before the first positional.
     """
     yes = any(a in ("-y", "--yes") for a in argv)
     stage_only = "--stage-only" in argv

@@ -2,9 +2,9 @@
 
 Unpacking a 50 MiB archive happens once per host per release; deploying
 happens whenever configuration changes. So the installer publishes the store,
-links the CLI and stops: configuring is `cmrelay deploy`'s job, and the
-installer carries no deployment logic of its own. An explicit verb line,
-which is how the wheel drives it, is handed over to the installed CLI.
+links the CLI and stops. It takes no arguments at all beyond -y: offering a
+domain would make one command both install and configure, and an operator
+who has seen that shortcut has no way to tell which half failed.
 """
 
 import os
@@ -16,8 +16,9 @@ from . import fsops, generations, paths, store
 from .bundle import ENV_CLOSURE, ENV_INSTALLER, ENV_STAGE, READY_MARKER, Bundle
 from .version import __version__
 
-# The verb lines the installer hands over to once installed; the wheel path.
-VERBS = ("deploy", "dns", "status", "uninstall", "upgrade", "version")
+# Only to phrase the refusal below: a domain wants `cmrelay deploy DOMAIN`
+# and a verb wants `cmrelay VERB`. test_cli pins it against the dispatch table.
+VERBS = ("deploy", "dns", "install", "status", "uninstall", "upgrade", "version")
 
 
 class InstallerError(Exception):
@@ -40,7 +41,7 @@ def installer_verb(args, out) -> int:
 
     if store_populated():
         raise InstallerError(already_installed())
-    argv = handover_argv(args)
+    refuse_arguments(args)
 
     if not args.yes and not confirm(bundle, out):
         out.print("aborted; nothing was modified")
@@ -48,13 +49,10 @@ def installer_verb(args, out) -> int:
 
     journal = fsops.Journal()
     publish(bundle, journal, out)
-    if argv is None:
-        hint = "" if paths.INI.is_file() else " relay.example.org"
-        out.print("\nInstalled; nothing is configured or running yet. Next:")
-        out.print(f"\n    cmrelay deploy{hint}")
-        return 0
-    exec_installed(argv)
-    return 1
+    hint = "" if paths.INI.is_file() else " relay.example.org"
+    out.print("\nInstalled; nothing is configured or running yet. Next:")
+    out.print(f"\n    cmrelay deploy{hint}")
+    return 0
 
 
 def store_populated(target: Path = paths.STORE) -> bool:
@@ -142,26 +140,19 @@ def write_profile_script(journal) -> bool:
     return True
 
 
-def handover_argv(args):
-    """The argv to exec once installed: an explicit verb line, or None to stop.
-
-    A leading non-verb, typically a domain, is refused: installing and
-    configuring are separate concerns, and the domain is `cmrelay deploy`'s.
-    """
+def refuse_arguments(args) -> None:
+    """Anything but -y is somebody expecting this to configure the relay too."""
     rest = [a for a in (args.rest or []) if a != "--"]
     if not rest:
         return None
-    if rest[0] not in VERBS:
-        installer = os.environ.get(ENV_INSTALLER, "<installer>")
-        raise InstallerError(
-            f"the installer only installs and does not take {rest[0]!r}."
-            "\n  Install first, then configure:"
-            f"\n\n      {installer}"
-            f"\n      cmrelay deploy {' '.join(rest)}"
-        )
-    if args.yes and rest[0] in ("deploy", "uninstall", "upgrade"):
-        return [*rest, "--yes"]
-    return rest
+    installer = os.environ.get(ENV_INSTALLER, "<installer>")
+    wanted = " ".join(rest if rest[0] in VERBS else ["deploy", *rest])
+    raise InstallerError(
+        f"the installer installs and takes no arguments, so {rest[0]!r} is"
+        " nothing it can do.\n  Install first, then run the command:"
+        f"\n\n      {installer}"
+        f"\n      cmrelay {wanted}"
+    )
 
 
 def exec_installed(argv) -> None:

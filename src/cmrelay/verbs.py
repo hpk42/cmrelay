@@ -15,7 +15,7 @@ from . import config as cfg
 from .bundle import Bundle
 from .deploy import Deployment
 from .dnscheck import dns_verb, resolves
-from .installer import installer_verb
+from .installer import already_installed, installer_verb
 from .status import status_verb, version_verb
 from .uninstall import uninstall_verb
 from .upgrade import upgrade_verb
@@ -448,6 +448,11 @@ def cmd_installer(args, out) -> int:
     return installer_verb(args, out)
 
 
+def cmd_install(args, out) -> int:
+    """Reached only from a closure, which is what "installed" means."""
+    raise VerbError(already_installed())
+
+
 def cmd_uninstall(args, out) -> int:
     require_root()
     with fsops.lock():
@@ -457,6 +462,7 @@ def cmd_uninstall(args, out) -> int:
 VERBS = {
     "deploy": cmd_deploy,
     "dns": cmd_dns,
+    "install": cmd_install,
     "installer": cmd_installer,
     "status": status_verb,
     "uninstall": cmd_uninstall,

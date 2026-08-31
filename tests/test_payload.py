@@ -39,6 +39,67 @@ def test_without_a_payload_it_says_how_to_build_one(monkeypatch, tmp_path):
         payload.run_from_wheel([], Recorder(), bundled=tmp_path / "absent.run")
 
 
+def test_install_runs_the_payload_and_nothing_else(monkeypatch, tmp_path):
+    """`cmrelay install` from a wheel is the .run file, with no verb after it."""
+    run = tmp_path / "cmrelay.run"
+    run.write_bytes(b"#!/bin/sh\n")
+    run.chmod(0o755)
+    seen = {}
+    monkeypatch.setattr(payload.sys, "platform", "linux")
+    monkeypatch.setattr(payload.os, "execve", lambda p, a, e: seen.update(argv=a))
+    payload.run_from_wheel(["install"], Recorder(), bundled=run)
+    assert seen["argv"] == [str(run)]
+
+    payload.run_from_wheel(["install", "--yes"], Recorder(), bundled=run)
+    assert seen["argv"] == [str(run), "--yes"]
+
+
+def test_output_flags_may_precede_the_verb(monkeypatch, tmp_path):
+    """`cmrelay --verbose install` is the same request as `cmrelay install`."""
+    run = tmp_path / "cmrelay.run"
+    run.write_bytes(b"#!/bin/sh\n")
+    run.chmod(0o755)
+    seen = {}
+    monkeypatch.setattr(payload.sys, "platform", "linux")
+    monkeypatch.setattr(payload.os, "execve", lambda p, a, e: seen.update(argv=a))
+    payload.run_from_wheel(["--verbose", "install"], Recorder(), bundled=run)
+    assert seen["argv"] == [str(run), "--verbose"]
+
+
+def test_every_other_verb_goes_to_the_installed_cli(monkeypatch, tmp_path):
+    """The payload installs; the installed CLI is what runs a verb."""
+    run = tmp_path / "cmrelay.run"
+    run.write_bytes(b"#!/bin/sh\n")
+    run.chmod(0o755)
+    cli = tmp_path / "cmrelay"
+    cli.write_bytes(b"#!/bin/sh\n")
+    cli.chmod(0o755)
+    seen = {}
+    monkeypatch.setattr(payload.sys, "platform", "linux")
+    monkeypatch.setattr(payload, "INSTALLED_CLI", cli)
+    monkeypatch.setattr(payload.os, "execv", lambda p, a: seen.update(path=p, argv=a))
+    payload.run_from_wheel(["deploy", "relay.example.org"], Recorder(), bundled=run)
+    assert seen["path"] == str(cli)
+    assert seen["argv"] == [str(cli), "deploy", "relay.example.org"]
+
+
+def test_a_verb_before_installing_says_to_install(monkeypatch, tmp_path):
+    """Nothing installs behind the operator's back, so it names the command."""
+    run = tmp_path / "cmrelay.run"
+    run.write_bytes(b"#!/bin/sh\n")
+    run.chmod(0o755)
+    monkeypatch.setattr(payload.sys, "platform", "linux")
+    monkeypatch.setattr(payload, "INSTALLED_CLI", tmp_path / "absent")
+    with pytest.raises(payload.PayloadError, match="cmrelay install"):
+        payload.run_from_wheel(["deploy", "relay.example.org"], Recorder(), bundled=run)
+
+
+def test_the_wheel_and_the_closure_agree_on_where_the_cli_lands(monkeypatch):
+    from cmrelay import paths
+
+    assert payload.INSTALLED_CLI == paths.LOCAL_BIN / "cmrelay"
+
+
 def test_a_non_executable_payload_is_made_executable(monkeypatch, tmp_path):
     """pip records mode 755, but not every way of unpacking a wheel keeps it."""
     run = tmp_path / "cmrelay.run"

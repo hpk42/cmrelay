@@ -105,15 +105,17 @@ That makes the wheel per-architecture
 and roughly the size of the payload.
 
 A pip-installed ``cmrelay`` reaches only a handful of wheel-side
-modules and then execs the payload with the verb line you typed;
+modules and then execs something else;
 the wheel declares no dependencies for the same reason.
 The relay is a Nix closure and has to run
 on the interpreter from inside it,
 not on whatever pip installed the CLI into.
-The payload installs into ``/opt/cmrelay`` first when needed
-and then hands exactly that verb line to the installed CLI,
-the same code path the ``.run`` file uses,
-which is the only path that is actually tested.
+So ``cmrelay install`` execs the payload, which is the same code path
+as running the ``.run`` file by hand and the only one that is tested,
+and every other verb execs the CLI that payload left
+in ``/usr/local/bin``. Nothing installs implicitly:
+a verb typed on a host with no relay stack
+reports that and names ``cmrelay install``.
 
 :repofile:`scripts/wheel-cmrelay.py` builds the wheel
 using nothing but the standard library, so CI can run it
