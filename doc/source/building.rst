@@ -13,8 +13,9 @@ published on GitHub, and per-architecture wheels published on PyPI
 which carry that same ``.run`` file inside them.
 Unpacking the archive happens once per host per release;
 deploying happens every time configuration changes.
-So the installer publishes the software, links the CLI and hands
-over to ``cmrelay deploy``, and carries no deployment logic of its own.
+So the installer publishes the software, links the CLI and stops:
+configuring is ``cmrelay deploy``'s job,
+and the installer carries no deployment logic of its own.
 
 
 The Nix closure
@@ -104,13 +105,14 @@ That makes the wheel per-architecture
 and roughly the size of the payload.
 
 A pip-installed ``cmrelay`` reaches only a handful of wheel-side
-modules and then execs the payload, which brings its own interpreter;
+modules and then execs the payload with the verb line you typed;
 the wheel declares no dependencies for the same reason.
 The relay is a Nix closure and has to run
 on the interpreter from inside it,
-not on whatever pip installed the CLI into,
-so everything proceeds exactly as if you had copied
-the ``.run`` file across yourself,
+not on whatever pip installed the CLI into.
+The payload installs into ``/opt/cmrelay`` first when needed
+and then hands exactly that verb line to the installed CLI,
+the same code path the ``.run`` file uses,
 which is the only path that is actually tested.
 
 :repofile:`scripts/wheel-cmrelay.py` builds the wheel

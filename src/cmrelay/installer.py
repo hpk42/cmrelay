@@ -2,8 +2,9 @@
 
 Unpacking a 50 MiB archive happens once per host per release; deploying
 happens whenever configuration changes. So the installer publishes the store,
-links the CLI and execs `cmrelay deploy`, and carries no deployment logic of
-its own.
+links the CLI and stops: configuring is `cmrelay deploy`'s job, and the
+installer carries no deployment logic of its own. An explicit verb line,
+which is how the wheel drives it, is handed over to the installed CLI.
 """
 
 import os
@@ -15,9 +16,7 @@ from . import fsops, generations, paths, store
 from .bundle import ENV_CLOSURE, ENV_INSTALLER, ENV_STAGE, READY_MARKER, Bundle
 from .version import __version__
 
-# Where the installer hands over. Anything else the operator typed follows.
-DEFAULT_ARGV = ["deploy"]
-
+# The verb lines the installer hands over to once installed; the wheel path.
 VERBS = ("deploy", "dns", "status", "uninstall", "upgrade", "version")
 
 
@@ -41,6 +40,7 @@ def installer_verb(args, out) -> int:
 
     if store_populated():
         raise InstallerError(already_installed())
+    argv = handover_argv(args)
 
     if not args.yes and not confirm(bundle, out):
         out.print("aborted; nothing was modified")
@@ -48,7 +48,12 @@ def installer_verb(args, out) -> int:
 
     journal = fsops.Journal()
     publish(bundle, journal, out)
-    exec_installed(argv_for_deploy(args))
+    if argv is None:
+        hint = "" if paths.INI.is_file() else " relay.example.org"
+        out.print("\nInstalled; nothing is configured or running yet. Next:")
+        out.print(f"\n    cmrelay deploy{hint}")
+        return 0
+    exec_installed(argv)
     return 1
 
 
@@ -137,18 +142,26 @@ def write_profile_script(journal) -> bool:
     return True
 
 
-def argv_for_deploy(args) -> list:
-    """Whatever the operator typed, as an argv for the installed CLI."""
+def handover_argv(args):
+    """The argv to exec once installed: an explicit verb line, or None to stop.
+
+    A leading non-verb, typically a domain, is refused: installing and
+    configuring are separate concerns, and the domain is `cmrelay deploy`'s.
+    """
     rest = [a for a in (args.rest or []) if a != "--"]
     if not rest:
-        argv = list(DEFAULT_ARGV)
-    elif rest[0] in VERBS:
-        argv = rest
-    else:
-        argv = [*DEFAULT_ARGV, *rest]
-    if args.yes and argv[0] in ("deploy", "uninstall", "upgrade"):
-        argv.append("--yes")
-    return argv
+        return None
+    if rest[0] not in VERBS:
+        installer = os.environ.get(ENV_INSTALLER, "<installer>")
+        raise InstallerError(
+            f"the installer only installs and does not take {rest[0]!r}."
+            "\n  Install first, then configure:"
+            f"\n\n      {installer}"
+            f"\n      cmrelay deploy {' '.join(rest)}"
+        )
+    if args.yes and rest[0] in ("deploy", "uninstall", "upgrade"):
+        return [*rest, "--yes"]
+    return rest
 
 
 def exec_installed(argv) -> None:

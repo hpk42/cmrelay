@@ -251,7 +251,7 @@ def add_installer(sub):
 
 
 def split_installer(argv):
-    """The installer's own flags, and the argv `cmrelay deploy` is to get.
+    """The installer's own flags, and the argv to hand over once installed.
 
     Parsed by hand rather than with REMAINDER, which errors on an unknown
     option before the first positional -- and every deploy flag is one.

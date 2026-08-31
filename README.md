@@ -2,15 +2,17 @@
 
 Install and maintain a [chatmail](https://chatmail.at) relay from one file.
 
-Copy `cmrelay-installer-<version>-x86_64-linux.run` to a fresh machine,
-run it, and that machine becomes a working chatmail relay:
-postfix, dovecot, filtermail, OpenDKIM, nginx, unbound, chatmaild,
-acmetool, iroh-relay and chatmail-turn, all unpacked into `/opt/cmrelay`
-with systemd units registered and services running.
+Copy `cmrelay-installer-<version>-x86_64-linux.run` to a fresh machine
+and run it. It installs and nothing more: postfix, dovecot, filtermail,
+OpenDKIM, nginx, unbound, chatmaild, acmetool, iroh-relay and
+chatmail-turn, all unpacked into `/opt/cmrelay` with the `cmrelay` CLI
+linked. Configuring the relay and starting its services is `cmrelay
+deploy`'s job, so a working chatmail relay is two commands:
 
-    ./cmrelay-installer-0.4.0-x86_64-linux.run relay.example.org
+    ./cmrelay-installer-0.4.0-x86_64-linux.run
+    cmrelay deploy relay.example.org
 
-From then on the installer is done and `cmrelay` is the tool:
+The installer is done after the first line and `cmrelay` is the tool:
 
     cmrelay deploy          # make this host match its configuration
     cmrelay dns             # what is still missing from your zone
@@ -20,8 +22,9 @@ From then on the installer is done and `cmrelay` is the tool:
 
 Two artefacts, one code path. Unpacking a 50 MiB archive happens once
 per host per release; deploying happens every time configuration changes.
-So the installer publishes the store, links the CLI and hands
-over to `cmrelay deploy`, and carries no deployment logic of its own.
+So the installer publishes the store, links the CLI and stops:
+configuring is `cmrelay deploy`'s job, and the installer carries
+no deployment logic of its own.
 
 Or, if you would rather not move a 50 MiB file around by hand:
 
@@ -35,11 +38,12 @@ useful on a firewalled or air-gapped host, and the reason
 the wheel is the size of the payload rather than a few kilobytes.
 
 The CLI still only ever hands over. The relay is a Nix closure
-and the installer has to run on the interpreter from inside it,
+and it has to run on the interpreter from inside it,
 not on whatever pip installed the CLI into,
-so a wheel-installed `cmrelay` execs the payload
-and everything proceeds exactly as if you had copied the `.run` file
-across yourself -- which is the only path that is actually tested.
+so a wheel-installed `cmrelay` execs the payload, which installs
+first when needed and then runs the verb you typed, exactly as if
+you had run the `.run` file with that verb yourself -- which is
+the only path that is actually tested.
 
 Installing and deploying never download software.
 `cmrelay upgrade` does, only when asked, and names the URL before it does.
@@ -75,7 +79,7 @@ and updating means re-running that script.
 
 | | |
 |---|---|
-| `cmrelay-installer [-y] [ARGS]` | unpack into `/opt/cmrelay`, link the CLI, then `cmrelay deploy ARGS` |
+| `cmrelay-installer [-y]` | unpack into `/opt/cmrelay` and link the CLI; configuring is not its job |
 |
 | `cmrelay deploy [DOMAIN]` | make this host match its configuration; idempotent, fast, the workhorse |
 | `cmrelay dns [--zonefile PATH]` | check the published records against what this relay needs |

@@ -104,28 +104,37 @@ steps. Please substitute it with your own domain.
    from https://github.com/chatmail/cmrelay/releases
    and copy it onto the relay machine.
 
-3. On the relay machine, run the installer with your domain:
+3. On the relay machine, run the installer:
 
    ::
 
-       ./cmrelay-installer-0.4.0-x86_64-linux.run chat.example.org
+       ./cmrelay-installer-0.4.0-x86_64-linux.run
 
-   The installer unpacks the relay stack into ``/opt/cmrelay``,
-   links the ``cmrelay`` command into ``/usr/local/bin``,
-   and hands over to ``cmrelay deploy``,
-   which writes the configuration for every component,
-   registers the systemd units and starts the services.
-   The installer stages everything first and publishes it only
+   The installer installs and nothing more:
+   it unpacks the relay stack into ``/opt/cmrelay``
+   and links the ``cmrelay`` command into ``/usr/local/bin``.
+   It stages everything first and publishes it only
    after you have agreed to the plan it prints;
-   pass ``-y`` to skip the prompts.
+   pass ``-y`` to skip the prompt.
+
+4. Configure and start the relay with your domain:
+
+   ::
+
+       cmrelay deploy chat.example.org
+
+   This writes ``chatmail.ini``,
+   renders the configuration for every component,
+   registers the systemd units and starts the services.
 
    To use self-signed TLS certificates instead of Let's Encrypt,
-   use a domain name starting with ``_`` (e.g. ``_chat.example.org``).
+   use a domain name starting with ``_``
+   (e.g. ``cmrelay deploy _chat.example.org``).
    Domains starting with ``_`` cannot obtain WebPKI certificates,
    so self-signed mode is derived automatically.
    This is useful for private or test deployments.
 
-4. Check the DNS records:
+5. Check the DNS records:
 
    ::
 
@@ -137,8 +146,8 @@ steps. Please substitute it with your own domain.
    (it can take some time until new records are public).
 
 From then on the installer is done and ``cmrelay`` is the tool.
-Running the installer again on the same machine is harmless:
-it recognises the installation and re-deploys.
+Running the installer again on an installed machine modifies nothing
+and points at ``cmrelay deploy`` and ``cmrelay upgrade`` instead.
 
 
 Setup from PyPI
@@ -156,8 +165,8 @@ The released wheels are per-architecture and carry the installer
 payload inside them, so the relay install itself downloads nothing:
 useful on a firewalled host.
 A pip-installed ``cmrelay`` hands over to the bundled payload,
-and everything proceeds exactly as if you had copied
-the ``.run`` file across yourself.
+which installs into ``/opt/cmrelay`` first when needed
+and then runs the command you typed.
 
 
 Other helpful commands
