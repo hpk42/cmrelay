@@ -1,75 +1,30 @@
 Setting up a chatmail relay
 ===========================
 
-This section contains everything needed to setup a ready-to-use chatmail relay.
-The automated setup is designed and optimized for providing chatmail
-addresses for immediate permission-free onboarding through chat apps and bots.
-Chatmail addresses are automatically created at first login,
-after which the initially specified password is required
-for sending and receiving messages through them.
-
-``cmrelay`` installs and maintains the whole relay from one file,
-run as root on the relay machine itself:
+``cmrelay`` turns a Linux machine into a working chatmail relay:
 postfix, dovecot, filtermail, OpenDKIM, nginx, unbound, chatmaild,
-acmetool, iroh-relay and chatmail-turn, all unpacked into ``/opt/cmrelay``
-with systemd units registered and services running.
-There is no build machine, no ssh orchestration,
-and no packages are installed from your distribution.
+acmetool, iroh-relay and chatmail-turn, installed from a single file
+and run as root on the relay itself.
+There is no build machine and no ssh orchestration,
+and nothing is installed from your distribution.
+Addresses are created on first login,
+so users onboard through chat apps and bots without any action from you.
 
 .. warning::
 
-   cmrelay is experimental. It is for throwaway containers
-   and test hosts, not for migrating a production relay.
-   ``cmdeploy run`` from the cmdeploy-based
-   `chatmail relay repository <https://github.com/chatmail/relay>`_
-   remains the supported production path, and is also the rollback;
-   it is documented at https://chatmail.at/docs.
+   cmrelay is experimental: for throwaway containers and test hosts,
+   not for migrating a production relay.
+   The supported production path is ``cmdeploy run``,
+   documented at https://chatmail.at/docs.
 
-
-Supported platforms
--------------------
-
-cmrelay needs a Linux kernel, systemd, x86_64 or aarch64, a POSIX shell,
-coreutils, root, and a writable ``/`` so ``/nix`` can be created.
-The host's libc is irrelevant, because the relay stack carries its own,
-and so is its ``tar``: the installer brings one.
-
-The systemd units use nothing newer than systemd 229,
-so no distribution still in support is below the floor:
-the Debian family, the RHEL family, SUSE, Arch
-and Gentoo built with systemd.
-
-Out of scope for now:
-
-- Alpine and the other musl or non-systemd distributions.
-
-- Immutable and atomic distributions (Fedora CoreOS, Silverblue,
-  openSUSE MicroOS, Ubuntu Core),
-  because ``/nix`` cannot be created on a read-only root.
-
-- NixOS, deliberately: it already has a store
-  and its own declarative service model,
-  so the right NixOS story is a module consuming the same derivations
-  rather than this installer.
-
-
-Minimal requirements and prerequisites
---------------------------------------
-
-You will need the following:
-
--  A **relay machine** running a supported platform (see above),
-   with reachable SMTP/SUBMISSIONS/IMAPS/HTTPS ports
-   and the ability to make outgoing connections on port 25.
-   IPv6 is encouraged if available. Chatmail relay servers only require
-   1GB RAM, one CPU, and perhaps 10GB storage for a few thousand active
-   chatmail addresses.
-
--  Root access on that machine.
-   All ``cmrelay`` commands run on the relay machine itself.
-
--  Control over a domain through a DNS provider of your choice
-   (there is experimental support for :ref:`IP-only relays <iponly>`).
+You need a machine on a :ref:`supported platform <platforms>`
+with root access, reachable SMTP/SUBMISSIONS/IMAPS/HTTPS ports
+and outgoing connections on port 25;
+IPv6 is encouraged if available.
+1GB RAM, one CPU and some 10GB of storage
+carry a few thousand active addresses.
+You also need control over a domain through a DNS provider of your choice
+(there is experimental support for :ref:`IP-only relays <iponly>`).
 
 
 .. _setup:
@@ -352,8 +307,8 @@ shown here with their defaults::
 - ``min_free_disk_space`` is the minimum free disk space
   on the file system holding the mailboxes.
 
-The defaults suit the small machine described in
-`Minimal requirements and prerequisites`_.
+The defaults suit the small machine
+described at the top of this page.
 
 .. note::
 
@@ -487,3 +442,32 @@ This removes ``/opt/cmrelay`` and ``/nix``
 and unmasks what the take-over masked.
 Nothing was taken away from the shared state directories,
 so ``cmdeploy run`` can take over again at no cost.
+
+
+.. _platforms:
+
+Supported platforms
+-------------------
+
+cmrelay needs a Linux kernel, systemd, x86_64 or aarch64, a POSIX shell,
+coreutils, root, and a writable ``/`` so ``/nix`` can be created.
+The host's libc is irrelevant, because the relay stack carries its own,
+and so is its ``tar``: the installer brings one.
+
+The systemd units use nothing newer than systemd 229,
+so no distribution still in support is below the floor:
+the Debian family, the RHEL family, SUSE, Arch
+and Gentoo built with systemd.
+
+Out of scope for now:
+
+- Alpine and the other musl or non-systemd distributions.
+
+- Immutable and atomic distributions (Fedora CoreOS, Silverblue,
+  openSUSE MicroOS, Ubuntu Core),
+  because ``/nix`` cannot be created on a read-only root.
+
+- NixOS, deliberately: it already has a store
+  and its own declarative service model,
+  so the right NixOS story is a module consuming the same derivations
+  rather than this installer.
