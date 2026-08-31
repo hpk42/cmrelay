@@ -48,6 +48,32 @@ html_css_files = [
     "custom.css",
 ]
 
+# Two columns rather than furo's three: the page's own sections move from
+# the right-hand column into the sidebar, which custom.css then widens.
+html_sidebars = {
+    "**": [
+        "sidebar/scroll-start.html",
+        "sidebar/brand.html",
+        "sidebar/search.html",
+        "sidebar/navigation.html",
+        "page-toc.html",
+        "sidebar/scroll-end.html",
+    ]
+}
+
+html_theme_options = {
+    "light_css_variables": {
+        "color-brand-primary": "#00567a",
+        "color-brand-content": "#0076d1",
+        "color-sidebar-background": "#f2f6f8",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#7fc4e8",
+        "color-brand-content": "#63b8e6",
+        "color-sidebar-background": "#16202a",
+    },
+}
+
 html_title = "cmrelay documentation"
 
 html_logo = "_static/chatmail.svg"

@@ -19,3 +19,77 @@
     width: 50%;
   }
 }
+
+/* Two columns: the sidebar carries both the navigation and the page's own
+   sections, so furo's right-hand column goes away entirely. */
+.toc-drawer,
+.toc-overlay-icon,
+.toc-overlay {
+  display: none;
+}
+
+/* Only where both columns fit: a 23em sidebar beside the 26em content column.
+   Below this, furo's own sizing runs -- and below its 63em breakpoint the
+   sidebar is an off-canvas drawer parked at left: -15em, where widening it
+   would leave a strip of it on screen over the content. */
+@media (min-width: 76em) {
+  .sidebar-drawer {
+    width: calc(50% - 20em);
+    min-width: 17em;
+    max-width: 23em;
+  }
+
+  /* furo centres the content by sizing the sidebar against a right-hand
+     column that is no longer there. */
+  .main {
+    justify-content: center;
+  }
+}
+
+.sidebar-page-toc {
+  margin-top: 1.5rem;
+  padding: 0 var(--sidebar-item-spacing-horizontal);
+}
+
+.sidebar-page-toc-title {
+  color: var(--color-sidebar-caption-text);
+  font-size: var(--sidebar-caption-font-size);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.sidebar-page-toc ul {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding-left: 0;
+}
+
+/* sphinx roots the page toc at the page title, which the navigation above
+   already shows as the current page. */
+.sidebar-page-toc > ul > li > a {
+  display: none;
+}
+
+.sidebar-page-toc > ul > li > ul {
+  padding-left: 0;
+}
+
+.sidebar-page-toc ul ul {
+  padding-left: 1rem;
+}
+
+.sidebar-page-toc li {
+  margin-bottom: 0;
+}
+
+.sidebar-page-toc a {
+  color: var(--color-sidebar-link-text);
+  display: block;
+  font-size: var(--sidebar-item-font-size);
+  padding: 0.2rem 0;
+  text-decoration: none;
+}
+
+.sidebar-page-toc a:hover {
+  color: var(--color-sidebar-link-text--top-level);
+}

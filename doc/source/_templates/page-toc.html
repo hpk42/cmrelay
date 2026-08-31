@@ -1,0 +1,12 @@
+{# The current page's own sections, in the left sidebar.
+
+   furo puts them in a third column on the right; this docs set is two
+   columns, so the sidebar carries both trees. Pages whose toc is just
+   their own title render nothing.
+#}
+{% if toc and toc.count('<li') > 1 %}
+<div class="sidebar-page-toc">
+  <span class="sidebar-page-toc-title">On this page</span>
+  {{ toc }}
+</div>
+{% endif %}
