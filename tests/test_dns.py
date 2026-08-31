@@ -122,16 +122,17 @@ def remote_data(**overrides):
 
 def test_the_generated_zone_carries_every_required_record(dns):
     zone = dns.get_filled_zone_file(remote_data())
+    lines = {" ".join(line.split()) for line in zone.splitlines()}
     for needle in (
-        "relay.example.org.                       3600   IN  A      203.0.113.10",
-        "IN  AAAA   2001:db8::10",
-        "IN  MX     10 relay.example.org.",
-        'IN  TXT    "v=STSv1; id=202608301200"',
-        "mta-sts.relay.example.org.               3600   IN  CNAME  relay.example.org.",
-        "www.relay.example.org.",
-        "v=DKIM1",
+        "relay.example.org. 3600 IN A 203.0.113.10",
+        "relay.example.org. 3600 IN AAAA 2001:db8::10",
+        "relay.example.org. 3600 IN MX 10 relay.example.org.",
+        "mta-sts.relay.example.org. 3600 IN CNAME relay.example.org.",
     ):
-        assert needle in zone, needle
+        assert needle in lines, needle
+    assert 'IN TXT "v=STSv1; id=202608301200"' in " ".join(zone.split())
+    assert "www.relay.example.org." in zone
+    assert "v=DKIM1" in zone
 
 
 def test_the_recommended_half_is_marked(dns):

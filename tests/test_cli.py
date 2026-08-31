@@ -24,7 +24,7 @@ def test_every_verb_the_parser_offers_has_a_handler():
         assert name in VERBS, name
 
 
-def lazy_imports(function) -> list:
+def lazy_imports(function):
     """The `from .x import y` lines inside a function body."""
     source = textwrap.dedent(inspect.getsource(function))
     found = []

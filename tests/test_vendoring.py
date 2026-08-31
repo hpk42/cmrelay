@@ -6,6 +6,7 @@ a file copy.
 """
 
 import json
+import shutil
 
 import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
@@ -44,8 +45,6 @@ def test_the_real_mapping_covers_the_real_relay(mapping, relay_root):
 
 def test_an_uncovered_file_is_an_error(tmp_path, mapping, relay_root):
     """A new upstream component must break the build, not vanish silently."""
-    import shutil
-
     fake = tmp_path / "relay"
     shutil.copytree(
         relay_root / "cmdeploy",

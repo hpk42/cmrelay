@@ -178,8 +178,6 @@ def fake_root(tmp_path, monkeypatch):
     paths.py names every absolute path a deploy can reach, so redirecting
     that module is what makes running a real `configure()` in a test safe.
     """
-    from pathlib import Path
-
     from cmrelay import paths
 
     root = tmp_path / "root"

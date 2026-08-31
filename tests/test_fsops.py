@@ -68,7 +68,7 @@ def modules():
             yield path
 
 
-def offending_calls(source: str) -> list:
+def offending_calls(source):
     found = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
@@ -235,7 +235,7 @@ def test_the_lock_refuses_a_second_holder(tmp_path):
 # -- the whole deploy, against a fake root ---------------------------------
 
 
-def snapshot(root: Path) -> dict:
+def snapshot(root):
     """Every path under root, and enough of its state to notice a change."""
     tree = {}
     for path in sorted(root.rglob("*")):
@@ -248,7 +248,7 @@ def snapshot(root: Path) -> dict:
     return tree
 
 
-def differing(before: dict, after: dict) -> set:
+def differing(before, after):
     return {p for p in set(before) | set(after) if before.get(p) != after.get(p)}
 
 
@@ -259,9 +259,7 @@ def deployment(fake_root, bundle, monkeypatch, tmp_path, ini):
     import subprocess
     from types import SimpleNamespace
 
-    import pytest as _pytest
-
-    chatmaild = _pytest.importorskip("chatmaild.config")
+    chatmaild = pytest.importorskip("chatmaild.config")
     from cmrelay import paths, users
     from cmrelay.deploy import Deployment
     from cmrelay.output import Out

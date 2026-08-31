@@ -1,6 +1,7 @@
 """Generations, the migration selector, and release discovery."""
 
 import json
+import zipfile
 
 import pytest
 
@@ -237,8 +238,6 @@ def test_pinning_a_source_asks_only_that_one(answers, tmp_path):
 
 
 def test_a_wheel_without_a_signature_inside_is_refused(tmp_path):
-    import zipfile
-
     archive = tmp_path / "w.whl"
     with zipfile.ZipFile(archive, "w") as wheel:
         wheel.writestr(discovery.WHEEL_PAYLOAD, "#!/bin/sh\n")

@@ -73,12 +73,7 @@ def test_nothing_in_the_module_can_reach_the_network():
 
 
 def test_the_header_needs_no_host_tar():
-    """The property AlmaLinux's minimal image made visible.
-
-    makeself's stub unpacked with the host's tar before any cmrelay code
-    ran, so a host without it failed with "Extraction failed" and no way to
-    say why. The header slices its own tar out of itself instead.
-    """
+    """The header slices its own tar out of itself; a host may ship none."""
     header = (Path(__file__).parent.parent / "stub" / "header.sh").read_text()
     assert "tail -c" in header and "head -c" in header
     for line in header.splitlines():

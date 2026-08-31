@@ -3,6 +3,7 @@
 import pytest
 
 from cmrelay import host
+from cmrelay.preflight import Report
 
 
 @pytest.fixture
@@ -93,16 +94,12 @@ def test_a_modified_working_tree_is_reported(tree):
 
 
 def test_a_bare_host_with_a_conflict_is_foreign():
-    from cmrelay.preflight import Report
-
     report = Report()
     report.add("port 25", "held by exim4")
     assert host.escalate(host.Host(host.BARE), report).state == host.FOREIGN
 
 
 def test_a_cmdeploy_host_with_a_conflict_stays_cmdeploy():
-    from cmrelay.preflight import Report
-
     report = Report()
     report.add("postfix.service", "already present")
     where = host.Host(host.CMDEPLOY)

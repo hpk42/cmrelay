@@ -39,15 +39,19 @@ TEMPLATES_WITH_CONFIG = [
 ]
 
 
-@pytest.mark.parametrize("relpath", TEMPLATES_WITH_CONFIG)
-def test_config_templates_render(deployment, config, relpath):
-    text = render.render_template(
+def render_config_template(deployment, config, relpath):
+    return render.render_template(
         deployment.vendor(relpath),
         config=config,
         debug=False,
         disable_ipv6=config.disable_ipv6,
         **deployment.template_vars(),
     )
+
+
+@pytest.mark.parametrize("relpath", TEMPLATES_WITH_CONFIG)
+def test_config_templates_render(deployment, config, relpath):
+    text = render_config_template(deployment, config, relpath)
     assert text
     assert "{{" not in text
 
@@ -63,36 +67,19 @@ def test_no_debian_paths_survive_rendering(deployment, config):
         "load_module",
     ]
     for relpath in TEMPLATES_WITH_CONFIG:
-        text = render.render_template(
-            deployment.vendor(relpath),
-            config=config,
-            debug=False,
-            disable_ipv6=config.disable_ipv6,
-            **deployment.template_vars(),
-        )
+        text = render_config_template(deployment, config, relpath)
         for needle in forbidden:
             assert needle not in text, f"{relpath} still names {needle}"
 
 
 def test_postfix_config_points_at_cmrelay(deployment, config):
-    text = render.render_template(
-        deployment.vendor("config/postfix/main.cf.j2"),
-        config=config,
-        disable_ipv6=config.disable_ipv6,
-        **deployment.template_vars(),
-    )
+    text = render_config_template(deployment, config, "config/postfix/main.cf.j2")
     assert "regexp:/opt/cmrelay/config/postfix/login_map" in text
     assert "regexp:/opt/cmrelay/config/postfix/smtp_tls_policy_map" in text
 
 
 def test_dovecot_quota_expire_is_a_store_path(deployment, config):
-    text = render.render_template(
-        deployment.vendor("config/dovecot/dovecot.conf.j2"),
-        config=config,
-        debug=False,
-        disable_ipv6=config.disable_ipv6,
-        **deployment.template_vars(),
-    )
+    text = render_config_template(deployment, config, "config/dovecot/dovecot.conf.j2")
     assert "executable = script /nix/store/" in text
     assert "chatmail-quota-expire" in text
 
@@ -177,13 +164,7 @@ def test_the_profile_script_is_idempotent_and_valid_sh(tmp_path):
 
 
 def test_a_distro_drop_in_anchoring_the_root_is_detected(tmp_path):
-    """Debian's unbound ships root-auto-trust-anchor-file.conf.
-
-    Two anchors for the same zone is fatal to unbound, not additive, so
-    cmrelay has to notice and leave the directive to whoever set it first.
-    """
-    from cmrelay.deploy import Deployment
-
+    """Two anchors for one zone is fatal to unbound, so the distro's wins."""
     drop_ins = tmp_path / "unbound.conf.d"
     drop_ins.mkdir()
     assert Deployment.anchor_already_configured(drop_ins) is False
@@ -198,8 +179,6 @@ def test_a_distro_drop_in_anchoring_the_root_is_detected(tmp_path):
 
 
 def test_a_commented_out_anchor_does_not_count(tmp_path):
-    from cmrelay.deploy import Deployment
-
     drop_ins = tmp_path / "unbound.conf.d"
     drop_ins.mkdir()
     (drop_ins / "x.conf").write_text(
@@ -209,19 +188,13 @@ def test_a_commented_out_anchor_does_not_count(tmp_path):
 
 
 def test_a_missing_drop_in_directory_is_not_an_anchor(tmp_path):
-    from cmrelay.deploy import Deployment
-
     assert Deployment.anchor_already_configured(tmp_path / "absent") is False
 
 
 def test_the_tls_policy_map_is_a_regexp_table():
-    """cmrelay does not compile it, because postfix reads it as text.
-
-    Only the indexed table types are compiled. If this declaration ever
-    becomes hash: or lmdb:, postfix would look up an index nobody built, and
-    the postmap call removed for costing two seconds of the install would
-    have to come back.
-    """
+    """cmrelay does not compile it, because postfix reads a regexp table as text."""
+    # If this ever becomes an indexed type, postfix would look up an index
+    # nobody built, and the removed postmap call would have to come back.
     template = (REPO / "vendor/config/postfix/main.cf.j2").read_text()
     line = next(
         ln for ln in template.splitlines() if ln.startswith("smtp_tls_policy_maps")

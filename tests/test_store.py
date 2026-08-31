@@ -12,9 +12,15 @@ from cmrelay import store
 from cmrelay.store import StoreError
 
 
-def test_link_nix_creates_the_symlink_on_a_bare_host(tmp_path):
+@pytest.fixture
+def roots(tmp_path):
     root, target = tmp_path / "nix", tmp_path / "opt/cmrelay/nix"
     target.mkdir(parents=True)
+    return root, target
+
+
+def test_link_nix_creates_the_symlink_on_a_bare_host(roots):
+    root, target = roots
 
     store.link_nix(root, target)
 
@@ -22,9 +28,8 @@ def test_link_nix_creates_the_symlink_on_a_bare_host(tmp_path):
     assert root.readlink() == target
 
 
-def test_link_nix_is_idempotent(tmp_path):
-    root, target = tmp_path / "nix", tmp_path / "opt/cmrelay/nix"
-    target.mkdir(parents=True)
+def test_link_nix_is_idempotent(roots):
+    root, target = roots
     store.link_nix(root, target)
     store.link_nix(root, target)
     assert root.readlink() == target
@@ -51,9 +56,8 @@ def test_link_nix_refuses_somebody_elses_symlink(tmp_path):
         store.link_nix(root, target)
 
 
-def test_unlink_nix_removes_only_our_own(tmp_path):
-    root, target = tmp_path / "nix", tmp_path / "opt/cmrelay/nix"
-    target.mkdir(parents=True)
+def test_unlink_nix_removes_only_our_own(roots):
+    root, target = roots
     root.symlink_to(target)
 
     assert store.unlink_nix(root, target) is True

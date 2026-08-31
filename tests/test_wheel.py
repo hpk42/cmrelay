@@ -159,8 +159,6 @@ def test_a_wheel_without_a_signature_still_builds(script, tmp_path):
 
 def test_the_wheel_carries_the_terms_of_what_it_ships(built):
     """The payload travels in the wheel, so its licences travel with it."""
-    import zipfile
-
     with zipfile.ZipFile(built) as archive:
         names = set(archive.namelist())
     dist_info = "cmrelay-1.2.3.dist-info/licenses"

@@ -162,12 +162,7 @@ def test_a_detector_that_cannot_run_is_an_error(tmp_path):
 
 
 def test_systemd_resolved_is_taken_over_rather_than_refused(tmp_path):
-    """Every stock Debian and Fedora has it on port 53.
-
-    cmdeploy stops and masks systemd-resolved as an ordinary part of every
-    deploy, so refusing to install because of it would make `install` useless
-    on exactly the hosts it targets.
-    """
+    """Every stock Debian and Fedora has it on port 53; deploy takes it over."""
     ss = fake_tool(
         tmp_path,
         "ss",
