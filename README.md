@@ -4,8 +4,8 @@ Install and maintain a [chatmail](https://chatmail.at) relay from one file.
 
 Copy `cmrelay-installer-<version>-x86_64-linux.run` to a fresh machine,
 run it, and that machine becomes a working chatmail relay:
-postfix, dovecot, filtermail, OpenDKIM, nginx, unbound, chatmaild, acmetool,
-mtail, iroh-relay and chatmail-turn, all unpacked into `/opt/cmrelay`
+postfix, dovecot, filtermail, OpenDKIM, nginx, unbound, chatmaild,
+acmetool, iroh-relay and chatmail-turn, all unpacked into `/opt/cmrelay`
 with systemd units registered and services running.
 
     ./cmrelay-installer-0.4.0-x86_64-linux.run relay.example.org
@@ -41,7 +41,7 @@ so a wheel-installed `cmrelay` execs the payload
 and everything proceeds exactly as if you had copied the `.run` file
 across yourself -- which is the only path that is actually tested.
 
-Installing and deploying never make a network request.
+Installing and deploying never download software.
 `cmrelay upgrade` does, only when asked, and names the URL before it does.
 
 No apt, no pyinfra, no ssh orchestration, and nothing required
@@ -89,7 +89,7 @@ After that the domain is read from the ini
 and a supplied one is *checked* rather than obeyed:
 changing the mail domain strands every existing mailbox,
 and retyping it on each deploy is the only way a typo could ask for that.
-`--force` is reserved for exactly that override and is used for nothing else.
+`deploy --force` is reserved for exactly that override and nothing else.
 
 
 ### deploy
@@ -149,7 +149,7 @@ and takes under a second. That is an acceptance test, not an aspiration.
 ### upgrade
 
     cmrelay upgrade [FILE] [--check] [--rollback] [--auto]
-                    [--source github|pypi] [--allow-unsigned] [--yes]
+                    [--source github|pypi] [--allow-unsigned] [--force] [--yes]
 
 Generations, not snapshots. Store paths are content-addressed,
 so installing a new closure adds paths and removes none:
@@ -196,7 +196,9 @@ key  SHA256:0f3a9c...
 sig  bXlSZWxlYXNlU2lnbmF0dXJl...
 ```
 
-Two keys ship. `ci.pem` is the key the release workflow signs with,
+Two keys ship from the first signed release on;
+`release-keys/` is empty before it.
+`ci.pem` is the key the release workflow signs with,
 so **the trust root is GitHub plus whoever can cause
 that workflow to run** -- weaker than a key held offline,
 much stronger than nothing. `offline.pem` is the recovery key,
@@ -357,9 +359,9 @@ The right NixOS story is a module consuming the same derivations.
 
 ## Building
 
-    nix build .#payload        # the single file, in result/bin/
-    nix build .#closure        # just the store tree
-    nix develop                # a shell with pytest, ruff, makeself, quilt
+    nix build '.?submodules=1#payload'   # the single file, in result/bin/
+    nix build '.?submodules=1#closure'   # just the store tree
+    nix develop                          # a shell with pytest, ruff, quilt
 
 `VERSION` is the release version. `nix/closure.nix` writes it
 and the commit into `manifest.json`, and an installed host reads it back
@@ -433,7 +435,7 @@ Updating cmrelay is then one of exactly two kinds of change:
 Three ways in, and the tree is arranged so you can tell which at a glance.
 
 **Stock nixpkgs**, named only in `nix/closure.nix`:
-postfix, nginx, unbound, fcgiwrap, opendkim, mtail, ldns, python3
+postfix, nginx, unbound, fcgiwrap, ldns, python3
 and its packages. The web pages are rendered with markdown and jinja2,
 and the invite QR code is an SVG rather than relay's composited PNG:
 drawing that needs Pillow, which costs 74 MiB of image codecs
@@ -443,20 +445,22 @@ it is one 0.6 MiB store path against seven for bind's dnsutils,
 and `drill -Q` prints what `dig +short` prints
 for every record type the zone check compares.
 Their *configuration* still arrives through `vendor/config/`,
-which is why `vendor/config/opendkim/` exists
-while `nix/packages/opendkim.nix` does not.
+which is why `vendor/config/unbound/` exists
+while `nix/packages/unbound.nix` does not.
 
 **Pinned prebuilt binaries**, in `nix/fetch/`:
 filtermail, chatmail-turn and iroh-relay.
 Nothing is compiled; each is a `fetchurl`
 with the sha256 relay already records, read out of the extracted pins.
-Fetching rather than building means cmrelay ships byte-identical binaries
-to what deployed relays run, and buys no exposure to whether
+Each binary is stripped after that hash check,
+so the pin still proves the download,
+and building nothing buys no exposure to whether
 a given iroh release still compiles against a current rustc.
 
 **Built here**, in `nix/packages/`:
 dovecot (the chatmail fork with its quilt series), acmetool,
-chatmaild and crypt-r. dovecot is the only substantial compile.
+the opendkim milter (without its Perl genkey), chatmaild and crypt-r.
+dovecot is the only substantial compile.
 
 
 ## Testing

@@ -1,4 +1,3 @@
-# Copy to <repo>/cliff.toml and replace cmrelay with the repository name. 
 # Used by chatmail/workflow's scripts/make_new_release.py to generate the
 # CHANGELOG.md entry from Conventional Commits.
 #

@@ -138,13 +138,12 @@
             pythonEnv
             pkgs.python3Packages.pytest
             pkgs.ruff
-            pkgs.makeself
             pkgs.zstd
             pkgs.quilt
             pkgs.git
           ];
           shellHook = ''
-            echo "cmrelay devShell: pytest, ruff, makeself, quilt"
+            echo "cmrelay devShell: pytest, ruff, quilt"
           '';
         };
 

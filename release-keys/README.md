@@ -2,7 +2,9 @@
 
 Every `*.pem` in this directory is a public key `cmrelay upgrade` will accept
 on a host running this release. `cmrelay version` prints their fingerprints,
-and `upgrade` prints the one that actually verified a candidate.
+and `upgrade` prints the one that actually verified a candidate. The
+directory is empty until the first signed release, so until then every
+upgrade needs `--allow-unsigned`.
 
 Two keys belong here.
 

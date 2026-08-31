@@ -1,8 +1,8 @@
 # The units cmrelay authors
 
-Twenty-one of the units a chatmail relay runs are vendored verbatim
+Most of the units a chatmail relay runs are vendored verbatim
 from relay, because relay already ships them and they are already
-parameterised on the binary path. These six are the exception:
+parameterised on the binary path. The units here are the exception:
 they run the daemons Debian supplies units for and nixpkgs does not,
 since NixOS generates units from modules instead of shipping them in packages.
 
