@@ -1,23 +1,13 @@
-# The vendoring mapping: which files cmrelay copies out of relay, and where.
-#
-# `scripts/vendor-sync` walks every path under `roots` in the relay submodule
-# and matches it against the rules below, in order. A file matching no rule
-# is an error, not a warning. That is the whole point: when relay grows a new
-# component with new templates, the cmrelay build fails and somebody has to
-# decide how cmrelay realises it. Silent divergence would give us a relay
-# missing a service, discovered in production.
-#
-# Copying is byte for byte. Nothing here rewrites content; local deltas live
-# in `patches/` and are applied after the copy.
-
-relay_url = "https://github.com/chatmail/relay.git"
+# Which files cmrelay copies out of relay, and where. `scripts/vendor-sync`
+# walks every path under `roots` in the relay submodule and matches it
+# against the rules below, in order; a file matching no rule is an error.
+# Copying is byte for byte, and local deltas live in `patches/`.
 
 roots = [
   "cmdeploy/src/cmdeploy",
   "www/src",
 ]
 
-# Files that never take part, matched before any copy rule.
 # Build artefacts, editor droppings and relay's own test suite.
 [[skip]]
 patterns = [
@@ -26,19 +16,13 @@ patterns = [
   "**/*.swp",
   "cmdeploy/src/cmdeploy/tests/**",
 ]
-why = "build artefacts, editor droppings and relay's own test suite"
 
-# pins.py is data written as Python and imports nothing, which is why
-# scripts/extract-from-relay can run it. It is read from the submodule at
-# build time rather than copied, so vendoring it would give two truths.
+# pins.py is read from the submodule by vendor-sync, not copied.
 [[skip]]
 patterns = ["cmdeploy/src/cmdeploy/pins.py"]
-why = "read from the submodule by scripts/extract-from-relay, not vendored"
 
-# The pyinfra deployer modules. cmrelay reimplements their effects and never
-# vendors their code, because that is the part that would rot. `keep` names
-# the exceptions, which the copy rules below then claim: skips are matched
-# before copies, so a copy rule alone would never be reached.
+# The pyinfra deployer modules: cmrelay reimplements their effects and never
+# vendors their code. `keep` names the pure DNS helpers the copy rules claim.
 [[skip]]
 patterns = [
   "cmdeploy/src/cmdeploy/*.py",
@@ -50,11 +34,7 @@ keep = [
   "cmdeploy/src/cmdeploy/remote/rdns.py",
   "cmdeploy/src/cmdeploy/remote/rshell.py",
 ]
-why = "pyinfra deployer code; cmrelay reimplements the effects instead"
 
-# Pure functions over DNS, standard library only, so a relay bump that
-# changes the zone shows up as a diff to review rather than as two divergent
-# zone generators.
 [[copy]]
 src = "cmdeploy/src/cmdeploy/dns.py"
 dest = "pycode/dns.py"
@@ -67,28 +47,18 @@ dest = "pycode/rdns.py"
 src = "cmdeploy/src/cmdeploy/remote/rshell.py"
 dest = "pycode/rshell.py"
 
-# postfix-mta-sts-resolver is dead upstream. MtastsDeployer is now a pure
-# removal step, so these two files are only ever deleted from a host, never
-# installed. cmrelay does not package them.
+# Only ever removed from a host by relay, never installed.
 [[skip]]
 patterns = [
   "cmdeploy/src/cmdeploy/postfix/mta-sts-daemon.service",
   "cmdeploy/src/cmdeploy/postfix/mta-sts-daemon.yml",
 ]
-why = "mta-sts-daemon is removed by relay, never installed"
 
-# policy-rc.d exists to stop dpkg from starting daemons mid-install.
-# cmrelay installs no packages, so it has nothing to suppress.
+# A dpkg mechanism; cmrelay installs no packages.
 [[skip]]
 patterns = ["cmdeploy/src/cmdeploy/policy-rc.d"]
-why = "Debian dpkg mechanism; cmrelay installs no packages"
 
-# --- systemd units, timers and drop-ins ------------------------------------
-#
-# Eighteen units and two drop-in fragments, all verbatim. They are already
-# parameterised on the binary path, so pointing them at a Nix store path is a
-# template variable rather than an edit. Keeping the unit names identical is a
-# contract: the acceptance suite greps journald by unit name.
+# --- systemd units, timers and drop-ins, verbatim ---------------------------
 
 [[copy]]
 src = "cmdeploy/src/cmdeploy/service/*.f"
@@ -127,7 +97,7 @@ dest = "systemd/iroh-relay.service.j2"
 src = "cmdeploy/src/cmdeploy/opendkim/systemd.conf"
 dest = "systemd/opendkim-10-prevent-memory-leak.conf"
 
-# --- component configuration ----------------------------------------------
+# --- component configuration ------------------------------------------------
 
 [[copy]]
 src = "cmdeploy/src/cmdeploy/postfix/*"
@@ -169,16 +139,13 @@ dest = "config/iroh-relay.toml"
 src = "cmdeploy/src/cmdeploy/journald.conf"
 dest = "config/journald.conf"
 
-# --- assets ---------------------------------------------------------------
+# --- the web pages ------------------------------------------------------------
 
-# The logo and font relay composites into its PNG QR code. cmrelay emits an
-# SVG instead, so it needs neither; see patches/www-qr-svg.patch.
+# Inputs to relay's composited PNG QR code; cmrelay draws an SVG instead,
+# see patches/www-qr-svg.patch.
 [[skip]]
 patterns = ["cmdeploy/src/cmdeploy/data/*"]
-why = "inputs to relay's composited PNG QR code, which cmrelay does not draw"
 
-# The website source. cmrelay renders it with the same markdown and jinja2
-# pipeline relay uses, reimplemented in cmrelay/website.py.
 [[copy]]
 src = "www/src/*"
 dest = "www/"

@@ -1,14 +1,10 @@
-"""Generations, the migration selector, and release discovery."""
+"""Generations and release discovery."""
 
 import json
-import zipfile
 
 import pytest
 
-from cmrelay import discovery, fsops, generations, migrations, paths
-from cmrelay.output import Out
-
-# -- generations -----------------------------------------------------------
+from cmrelay import discovery, fsops, generations, paths, upgrade
 
 
 def closure(fake_root, name):
@@ -26,36 +22,19 @@ def test_the_first_generation_is_one_and_current_points_at_it(fake_root):
     assert generations.existing() == [1]
     assert generations.current() == 1
     assert paths.CLI.resolve().name == "cmrelay"
-
-
-def test_a_generation_link_is_relative_so_the_tree_can_move(fake_root):
-    journal = fsops.Journal()
-    generations.create(journal, 1, closure(fake_root, "aaa"))
     assert str((paths.GENERATIONS / "1").readlink()).startswith("../nix/store/")
 
 
 def test_rollback_repoints_current_without_removing_anything(fake_root):
     journal = fsops.Journal()
     for number, name in ((1, "aaa"), (2, "bbb")):
-        generations.create(journal, number, closure(fake_root, name))
+        generations.create(journal, number, closure(fake_root, name), [])
     generations.flip(journal, 2)
     assert generations.current() == 2
 
     generations.flip(journal, 1)
     assert generations.current() == 1
     assert generations.existing() == [1, 2]
-
-
-def test_state_is_snapshotted_and_restored(fake_root):
-    journal = fsops.Journal()
-    journal.write("x", paths.INI, "[params]\nmail_domain = a.example.org\n")
-    journal.write("x", paths.WWW_SRC / "index.md", "# mine\n")
-    generations.snapshot_state(journal, 1)
-
-    journal.write("x", paths.INI, "[params]\nmail_domain = b.example.org\n")
-    assert generations.restore_state(journal, 1)
-    assert "a.example.org" in paths.INI.read_text()
-    assert (paths.WWW_SRC / "index.md").read_text() == "# mine\n"
 
 
 def test_pruning_keeps_the_current_and_one_previous(fake_root, out):
@@ -65,8 +44,7 @@ def test_pruning_keeps_the_current_and_one_previous(fake_root, out):
         generations.create(journal, number, path, [path.name])
     generations.flip(journal, 4)
 
-    removed = generations.prune(journal, out)
-    assert sorted(removed) == [1, 2]
+    assert sorted(generations.prune(journal, out)) == [1, 2]
     assert generations.existing() == [3, 4]
     assert not (paths.STORE / "gen1-cmrelay-closure").exists()
     assert (paths.STORE / "gen4-cmrelay-closure").exists()
@@ -85,62 +63,12 @@ def test_pruning_never_removes_a_store_path_a_kept_generation_shares(fake_root, 
     assert (paths.STORE / shared).exists()
 
 
-# -- the migration selector -----------------------------------------------
-
-
-def fake_migration(version, name):
-    return migrations.Migration(version, name, "moves a path", lambda j, o: None)
-
-
-@pytest.fixture
-def three():
-    return [
-        fake_migration("0.4.0", "move-www"),
-        fake_migration("0.5.0", "rename-unit"),
-        fake_migration("0.6.0", "state-format"),
-    ]
-
-
-def test_only_migrations_strictly_newer_than_installed_apply(three):
-    chosen = migrations.pending("0.4.0", "0.6.0", migrations=three)
-    assert [m.name for m in chosen] == ["rename-unit", "state-format"]
-
-
-def test_a_migration_at_the_candidate_version_applies(three):
-    assert [m.name for m in migrations.pending("0.3.0", "0.4.0", migrations=three)] == [
-        "move-www"
-    ]
-
-
-def test_an_already_applied_migration_is_skipped(three):
-    chosen = migrations.pending(
-        "0.3.0", "0.6.0", done={"move-www", "rename-unit"}, migrations=three
-    )
-    assert [m.name for m in chosen] == ["state-format"]
-
-
-def test_no_migrations_between_adjacent_releases(three):
-    assert migrations.pending("0.6.0", "0.6.1", migrations=three) == []
-
-
-def test_an_unparseable_version_selects_nothing(three):
-    """Guessing an order between two names that are not versions is worse."""
-    assert migrations.pending("0.0.0.dev", "not-a-version", migrations=three) == []
-    assert migrations.pending("dev", "0.6.0", migrations=three) == []
-
-
-def test_migrations_run_in_version_order(three, out):
-    ran = []
-    listed = [
-        migrations.Migration("0.6.0", "third", "x", lambda j, o: ran.append("third")),
-        migrations.Migration("0.4.0", "first", "x", lambda j, o: ran.append("first")),
-        migrations.Migration("0.5.0", "second", "x", lambda j, o: ran.append("second")),
-    ]
-    applied = migrations.apply(
-        sorted(listed, key=lambda m: m.version), fsops.Journal(), out
-    )
-    assert ran == ["first", "second", "third"]
-    assert applied == ["first", "second", "third"]
+def test_only_a_newer_candidate_is_installed_without_force(monkeypatch):
+    monkeypatch.setattr(upgrade, "__version__", "0.4.0")
+    assert upgrade.newer("0.5.0", False)
+    assert not upgrade.newer("0.4.0", False)
+    assert not upgrade.newer("not-a-version", False)
+    assert upgrade.newer("0.3.0", True)
 
 
 # -- discovery -------------------------------------------------------------
@@ -158,104 +86,28 @@ def github_release(version, arch=discovery.arch(), signed=True):
     return {"draft": False, "prerelease": False, "assets": assets}
 
 
-def pypi_body(versions, arch=discovery.arch()):
-    releases = {}
-    for version in versions:
-        name = f"cmrelay-{version}-py3-none-manylinux_2_17_{arch}.whl"
-        releases[version] = [
-            {"filename": name, "url": f"https://pypi/{name}", "size": 64 * 2**20}
-        ]
-    return {"releases": releases}
+def canned(body):
+    return lambda url, ctx, timeout=None: json.dumps(body).encode()
 
 
-class Canned(dict):
-    """Canned bodies keyed by url prefix, served as the injected fetch."""
-
-    def fetch(self, url, ctx, timeout=None):
-        for prefix, body in self.items():
-            if url.startswith(prefix):
-                if isinstance(body, Exception):
-                    raise body
-                return json.dumps(body).encode()
-        raise AssertionError(url)
-
-
-@pytest.fixture
-def answers():
-    return Canned()
-
-
-def test_github_newer_wins(answers, tmp_path):
-    answers[discovery.GITHUB] = [github_release("0.5.0")]
-    answers[discovery.PYPI] = pypi_body(["0.4.2"])
-    results, failures = discovery.survey(str(tmp_path), fetch=answers.fetch)
-    assert not failures
-    assert discovery.best(results.values()).source == "GitHub"
-    assert discovery.best(results.values()).version == "0.5.0"
-
-
-def test_pypi_newer_wins(answers, tmp_path):
-    answers[discovery.GITHUB] = [github_release("0.4.0")]
-    answers[discovery.PYPI] = pypi_body(["0.5.1"])
-    results, _ = discovery.survey(str(tmp_path), fetch=answers.fetch)
-    assert discovery.best(results.values()).source == "PyPI"
-
-
-def test_one_source_down_leaves_the_other_usable(answers, tmp_path):
-    answers[discovery.GITHUB] = OSError("no route to host")
-    answers[discovery.PYPI] = pypi_body(["0.5.1"])
-    results, failures = discovery.survey(str(tmp_path), fetch=answers.fetch)
-    assert list(results) == ["PyPI"]
-    assert "GitHub" in failures
-
-
-def test_both_down_yields_no_candidate(answers, tmp_path):
-    answers[discovery.GITHUB] = OSError("down")
-    answers[discovery.PYPI] = OSError("down")
-    results, failures = discovery.survey(str(tmp_path), fetch=answers.fetch)
-    assert results == {}
-    assert sorted(failures) == ["GitHub", "PyPI"]
-
-
-def test_a_release_with_no_signature_beside_it_is_not_offered(answers, tmp_path):
-    answers[discovery.GITHUB] = [github_release("0.9.0", signed=False)]
-    answers[discovery.PYPI] = pypi_body([])
-    results, _ = discovery.survey(str(tmp_path), source="github", fetch=answers.fetch)
-    assert results == {}
-
-
-def test_a_release_for_another_architecture_is_not_offered(answers, tmp_path):
+def test_the_newest_signed_release_for_this_architecture_wins():
     other = "aarch64" if discovery.arch() == "x86_64" else "x86_64"
-    answers[discovery.GITHUB] = [github_release("0.9.0", arch=other)]
-    results, _ = discovery.survey(str(tmp_path), source="github", fetch=answers.fetch)
-    assert results == {}
-
-
-def test_pinning_a_source_asks_only_that_one(answers, tmp_path):
-    answers[discovery.GITHUB] = [github_release("0.5.0")]
-    results, _ = discovery.survey(str(tmp_path), source="github", fetch=answers.fetch)
-    assert list(results) == ["GitHub"]
-
-
-def test_a_wheel_without_a_signature_inside_is_refused(tmp_path):
-    archive = tmp_path / "w.whl"
-    with zipfile.ZipFile(archive, "w") as wheel:
-        wheel.writestr(discovery.WHEEL_PAYLOAD, "#!/bin/sh\n")
-    with pytest.raises(discovery.DiscoveryError, match="cmrelay.run.sig"):
-        discovery.unpack_wheel(archive.read_bytes(), tmp_path / "out", fsops.Journal())
+    found = discovery.releases(
+        None,
+        fetch=canned(
+            [
+                github_release("0.4.0"),
+                github_release("0.5.0"),
+                github_release("0.9.0", signed=False),
+                github_release("0.8.0", arch=other),
+            ]
+        ),
+    )
+    assert [c.version for c in found] == ["0.4.0", "0.5.0"]
+    assert discovery.newest(found).version == "0.5.0"
+    assert discovery.newest([]) is None
 
 
 def test_a_host_with_no_ca_bundle_says_to_download_by_hand(tmp_path):
     with pytest.raises(discovery.DiscoveryError, match="by hand"):
         discovery.context(str(tmp_path / "absent"))
-
-
-def test_the_report_names_the_laggard(answers, capsys, tmp_path):
-    answers[discovery.GITHUB] = [github_release("0.5.0")]
-    answers[discovery.PYPI] = pypi_body(["0.4.2"])
-    results, failures = discovery.survey(str(tmp_path), fetch=answers.fetch)
-    discovery.report(Out(colour=False), "0.3.0", results, failures)
-    printed = capsys.readouterr().out
-    assert "0.5.0" in printed
-    assert "0.4.2" in printed
-    assert str(tmp_path) not in printed

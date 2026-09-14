@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import paths
+from .errors import CmrelayError
 
 BARE = "bare"
 PARTIAL = "partial"
@@ -25,11 +26,8 @@ DESCRIPTIONS = {
     FOREIGN: "running a mail stack cmrelay did not install",
 }
 
-# Second line of /etc/chatmail-version; cmdeploy writes only the commit.
-CMRELAY_MARKER = "# installed by cmrelay"
 
-
-class DomainRefused(Exception):
+class DomainRefused(CmrelayError):
     """The domain given does not match the one this host is configured for."""
 
 
@@ -38,34 +36,22 @@ class Host:
     state: str
     ini: Path | None = None
     relay_commit: str | None = None
-    hand_modified: bool = False
-    cmrelay_version: str | None = None
 
     @property
     def description(self) -> str:
-        text = DESCRIPTIONS[self.state]
-        if self.state == INSTALLED and self.cmrelay_version:
-            return f"installed by cmrelay {self.cmrelay_version}"
-        return text
+        return DESCRIPTIONS[self.state]
 
     @property
     def takes_over(self) -> bool:
         return self.state == CMDEPLOY
 
 
-def read_marker(marker: Path):
-    """(relay commit, hand-modified, cmrelay version) from /etc/chatmail-version."""
+def read_marker(marker: Path) -> str | None:
+    """The relay commit on the first line of /etc/chatmail-version."""
     if not marker.is_file():
-        return None, False, None
+        return None
     lines = marker.read_text().splitlines()
-    commit = lines[0].strip() if lines else ""
-    rest = lines[1:] if len(lines) > 1 else []
-    modified = any(line.startswith("diff") for line in rest)
-    version = None
-    for line in rest:
-        if line.startswith(CMRELAY_MARKER):
-            version = line[len(CMRELAY_MARKER) :].strip() or "unknown"
-    return (commit or None), modified, version
+    return (lines[0].strip() or None) if lines else None
 
 
 def classify(
@@ -82,35 +68,29 @@ def classify(
     before `deploy` runs, so a host being taken over has the shape of
     `partial` and take-over would be unreachable the other way round.
 
-    A populated store on its own is not `partial` either -- that is what the
-    installer leaves behind on every fresh host. `partial` needs a trace of a
-    deploy that started and did not finish: the ini, or a unit file. Not
+    A populated store on its own is not `partial` either, since that is what
+    the installer leaves behind on every fresh host. `partial` needs a trace
+    of a deploy that started and did not finish: the ini, or a unit file. Not
     `state/`, which taking the deploy lock creates before this runs.
     """
-    commit, modified, version = read_marker(marker)
+    commit = read_marker(marker)
     store_populated = store.is_dir() and any(store.iterdir())
-    deployed_before = units.is_dir()
 
     if ini.is_file() and store_populated:
-        return Host(INSTALLED, ini, commit, modified, version)
+        return Host(INSTALLED, ini, commit)
 
-    if not ini.is_file() and (cmdeploy_ini.is_file() or (commit and not version)):
-        return Host(
-            CMDEPLOY,
-            cmdeploy_ini if cmdeploy_ini.is_file() else None,
-            commit,
-            modified,
-        )
+    if not ini.is_file() and (cmdeploy_ini.is_file() or commit):
+        return Host(CMDEPLOY, cmdeploy_ini if cmdeploy_ini.is_file() else None, commit)
 
-    if root.exists() and (ini.is_file() or deployed_before):
-        return Host(PARTIAL, ini if ini.is_file() else None, commit, modified, version)
+    if root.exists() and (ini.is_file() or units.is_dir()):
+        return Host(PARTIAL, ini if ini.is_file() else None, commit)
 
     return Host(BARE)
 
 
 def escalate(host: Host, report) -> Host:
     """A bare host with somebody else's mail stack on it is not bare."""
-    if host.state == BARE and not report.ok:
+    if host.state == BARE and report.conflicts:
         return Host(FOREIGN)
     return host
 
@@ -129,9 +109,7 @@ def config_domain(inipath: Path) -> str | None:
     return None
 
 
-def resolve_domain(
-    host: Host, given: str | None, force: bool = False, mailboxes_dir=None
-):
+def resolve_domain(host: Host, given: str | None, mailboxes_dir=None):
     """Which domain this deploy is for. A given domain is checked, not obeyed."""
     recorded = config_domain(host.ini)
 
@@ -151,8 +129,6 @@ def resolve_domain(
 
     if not given or given == recorded:
         return recorded
-    if force:
-        return given
     raise DomainRefused(mismatch_message(recorded, given, mailboxes_dir))
 
 
@@ -160,8 +136,8 @@ def mailbox_count(mailboxes_dir, cap: int = 10000) -> tuple:
     """How many maildirs there are, stopping at *cap*.
 
     cmrelay never walks the mailbox tree: a production relay holds hundreds
-    of thousands of maildirs. A capped scandir bounds how many getdents64
-    buffers are read rather than how large the directory is.
+    of thousands of maildirs, and the only thing worth knowing before
+    renaming a domain is the order of magnitude.
     """
     path = Path(mailboxes_dir)
     if not path.is_dir():
@@ -176,7 +152,6 @@ def mailbox_count(mailboxes_dir, cap: int = 10000) -> tuple:
 
 
 def mismatch_message(recorded: str, given: str, mailboxes_dir=None) -> str:
-    """What changing the domain would cost, as a number."""
     mailboxes_dir = mailboxes_dir or Path("/home/vmail/mail") / recorded
     lines = [
         f"this host is configured for {recorded}, not {given}.",
@@ -194,6 +169,6 @@ def mismatch_message(recorded: str, given: str, mailboxes_dir=None) -> str:
         f"      cmrelay uninstall {recorded}",
         f"      cmrelay deploy {given}",
         "",
-        "  To do it in place anyway, add --force.",
+        f"  To do it in place anyway, edit mail_domain in {paths.INI}.",
     ]
     return "\n".join(lines)

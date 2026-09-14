@@ -2,8 +2,8 @@
 
 cmrelay's own licensing is a work in progress;
 see [LICENSE](LICENSE). The installer it produces is
-a Nix closure of about 110 store paths, and everything
-in it is somebody else's software under somebody else's terms.
+a Nix closure, and everything in it is somebody else's software
+under somebody else's terms.
 This file lists what a `cmrelay-installer-*.run` contains.
 
 Where two licences are named with **or**, the component is offered under

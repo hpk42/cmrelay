@@ -1,8 +1,7 @@
 """`cmrelay uninstall`: hand the host back to `cmdeploy run`.
 
-The unmask is the load-bearing half; see paths.DISABLED_UNITS. Nothing
-is started here, deliberately: starting the distribution's stack while
-cmrelay's is being torn down would race it.
+Nothing is started here, deliberately: starting the distribution's stack
+while cmrelay's is being torn down would race it.
 """
 
 from pathlib import Path
@@ -12,14 +11,16 @@ from . import activation, fsops, host, paths, state, store, systemd
 
 def uninstall_verb(args, out) -> int:
     recorded = host.config_domain(paths.INI)
-    if not args.yes:
-        if recorded and args.domain != recorded:
-            raise host.DomainRefused(
-                f"this host serves {recorded}."
-                f"\n  Name it to confirm:  cmrelay uninstall {recorded}"
-            )
-        if not recorded and not args.domain:
-            raise host.DomainRefused("cmrelay uninstall needs the domain of this relay")
+    if args.domain and recorded and args.domain != recorded:
+        raise host.DomainRefused(
+            f"this host serves {recorded}, not {args.domain}."
+            f"\n  Name it to confirm:  cmrelay uninstall {recorded}"
+        )
+    if not args.domain and not args.yes:
+        hint = f"  cmrelay uninstall {recorded}" if recorded else ""
+        raise host.DomainRefused(
+            f"cmrelay uninstall needs the domain of this relay to confirm.\n{hint}"
+        )
 
     journal = fsops.Journal()
     out.section("Stopping cmrelay units")
@@ -57,6 +58,8 @@ def uninstall_verb(args, out) -> int:
         out.print("  removed /nix")
     if journal.remove_directory("cmrelay", paths.ROOT):
         out.print(f"  removed {paths.ROOT}")
+    # so the next classification does not take a bare host for a cmdeploy one
+    journal.remove_file("cmrelay", paths.VERSION_MARKER)
 
     systemd.daemon_reload()
     out.section("Done")

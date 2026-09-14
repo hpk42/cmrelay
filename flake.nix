@@ -97,11 +97,6 @@
           cmrelaySrc = ./.;
         };
 
-        wheel = pkgs.callPackage ./nix/wheel.nix {
-          inherit arch payload version;
-          cmrelaySrc = ./.;
-        };
-
         payload = pkgs.callPackage ./nix/payload.nix {
           inherit arch closure bsdtar-minimal version;
           cmrelaySrc = ./.;
@@ -112,7 +107,6 @@
           default = payload;
           inherit
             payload
-            wheel
             closure
             dovecot
             bsdtar-minimal
@@ -158,12 +152,8 @@
           in
           pkgs.runCommand "cmrelay-pytest" { nativeBuildInputs = [ pkgs.openssl ]; } ''
             cp -r ${./.}/src ${./.}/tests ${./.}/vendor .
-            cp -r ${./.}/patches ${./.}/nix ${./.}/units .
-            # The suite also reads the build scripts, the stub and the
-            # top-level metadata the wheel is built from.
-            cp -r ${./.}/scripts ${./.}/stub .
+            cp -r ${./.}/patches ${./.}/nix ${./.}/units ${./.}/stub .
             cp ${./.}/vendor.toml ${./.}/vendor.lock ${./.}/pyproject.toml .
-            cp ${./.}/LICENSE ${./.}/THIRD-PARTY.md ${./.}/README.md .
             chmod -R u+w .
             # The tests that read the pinned relay checkout skip without it;
             # a flake check has no submodule to read.

@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .bundle import Bundle, BundleError
+from .errors import CmrelayError
 
 MAGIC = "cmrelay-signature-v1"
 ALG = "ed25519"
@@ -35,7 +36,7 @@ _PEM_BODY = re.compile(
 )
 
 
-class SigningError(Exception):
+class SigningError(CmrelayError):
     pass
 
 

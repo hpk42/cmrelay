@@ -1,80 +1,42 @@
 [build-system]
-requires = ["setuptools>=68", "setuptools-git-versioning >=2.0,<3"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cmrelay"
-description = "Single-file installer for a chatmail relay, built as a Nix closure"
-readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "GPL-3.0-or-later"}
-# No dependencies, deliberately. A pip-installed cmrelay reaches only its
-# wheel-side modules -- cli, output, version, bundle and payload -- and then
-# execs the payload, which brings its own interpreter. jinja2, markdown,
-# qrcode and chatmaild are all used on the far side of that handover, by the
-# closure. chatmaild is not on PyPI at all; it is relay's own code, built
-# from the vendored commit.
-dependencies = []
+description = "Install and maintain a chatmail relay from one file"
+requires-python = ">=3.12"
 dynamic = ["version"]
 
-[tool.setuptools-git-versioning]
-enabled = true
-
-[project.urls]
-Repository = "https://github.com/chatmail/cmrelay"
-
-[project.scripts]
-cmrelay = "cmrelay.cli:main"
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-namespaces = true
 
 [dependency-groups]
-# chatmaild comes from the pinned relay submodule, which is where every other
-# consumer of it gets it too. jinja2, markdown and qrcode are here rather than
-# in dependencies for the same reason the wheel declares none: nothing a
-# wheel-installed cmrelay reaches imports them, because it execs a payload
-# carrying its own interpreter. The tests do reach them -- they render relay's
-# templates and build the website -- so they are test dependencies.
+# chatmaild comes from the pinned relay submodule, as it does in the closure.
 test = [
   "pytest",
   "chatmaild @ file://${PROJECT_ROOT}/cmdeploy-relay/chatmaild",
-  "jinja2>=3.1",
+  "jinja2",
   "markdown",
+  "packaging",
   "qrcode",
 ]
 doc = [
   "sphinx",
-  "sphinxcontrib-mermaid",
   "sphinx-autobuild",
   "furo",
 ]
 
 [tool.pytest.ini_options]
-addopts = "-v -ra --strict-markers"
+addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 
 [tool.ruff]
 extend-exclude = ["vendor", "cmdeploy-relay"]
-# requires-python is the wheel's floor, not this code's. The wheel only has
-# to parse far enough to exec a payload that carries its own 3.14, so it
-# declares 3.9 and the wheel-side modules that write `X | None` defer their
-# annotations. Everything else -- vendoring.py reads TOML with tomllib,
-# which is 3.11+ -- runs inside the closure. Without this, ruff infers 3.9
-# from the metadata and reclassifies stdlib modules as third-party.
-target-version = "py311"
-
-[tool.ruff.lint.per-file-ignores]
-# cli.py must import its verbs lazily: from a pip-installed wheel there is no
-# closure and no chatmaild, and the CLI has to reach the code that says so
-# rather than fail at import time. payload.py is the wheel's only real job.
-"src/cmrelay/cli.py" = ["PLC0415"]
-# version.py is imported by cmrelay/__init__.py, so it has to work under a
-# bare interpreter; packaging is only needed to order versions for `upgrade`.
-"src/cmrelay/version.py" = ["PLC0415"]
-# Tests import inside a test when the import itself is what is under test.
-"tests/*" = ["PLC0415"]
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [
@@ -85,3 +47,7 @@ select = [
   "PLE", # Pylint Error
   "PLW", # Pylint Warning
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests import inside a test when the import itself is what is under test.
+"tests/*" = ["PLC0415"]

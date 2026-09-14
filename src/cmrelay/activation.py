@@ -148,8 +148,6 @@ def needs_reconcile(d) -> bool:
     The only network access on the deploy path; the reconcile timer owns
     renewals, so this runs only without a usable certificate.
     """
-    if d.reconcile:
-        return True
     cert = Path(d.config.tls_cert_path)
     if not cert.is_file():
         return True

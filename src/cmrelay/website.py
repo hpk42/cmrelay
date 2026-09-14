@@ -17,13 +17,15 @@ import qrcode
 import qrcode.image.svg
 from jinja2 import Template
 
+from .errors import CmrelayError
+
 LAYOUT = "page-layout.html"
 
 # A page carrying these was never meant to be published.
 _MERGE_CONFLICT = re.compile(r"^<<<<<<<.+^=======.+^>>>>>>>", re.DOTALL | re.MULTILINE)
 
 
-class WebsiteError(Exception):
+class WebsiteError(CmrelayError):
     pass
 
 

@@ -16,15 +16,16 @@ from pathlib import Path
 
 from . import config as cfg
 from . import fsops, paths
+from .errors import CmrelayError
 
 PYCODE = "pycode"
 
 
-class DnsError(Exception):
+class DnsError(CmrelayError):
     pass
 
 
-def load_pycode(bundle, verbose=False):
+def load_pycode(bundle):
     """Load the three vendored modules under names their imports expect.
 
     Bytecode caching stays off: vendor/ is generated output that vendor-check
@@ -45,10 +46,9 @@ def load_pycode(bundle, verbose=False):
             modules[name] = module
     finally:
         sys.dont_write_bytecode = previous
-    if not verbose:
-        # rshell prints a dot per query to stderr; useful over ssh, noise here.
-        modules["rshell"].log_progress = lambda data: None
-        modules["rdns"].log_progress = lambda data: None
+    # rshell prints a dot per query to stderr; useful over ssh, noise here.
+    modules["rshell"].log_progress = lambda data: None
+    modules["rdns"].log_progress = lambda data: None
     return modules["dns"], modules["rdns"]
 
 

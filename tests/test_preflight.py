@@ -5,12 +5,11 @@ These exercise the parsing and the decisions, not the host: `ss` and
 code under test runs the same subprocess path it runs on a relay.
 """
 
-import json
 import os
 from types import SimpleNamespace
 
 import pytest
-from conftest import REPO, fake_tool  # noqa: I001 - added to sys.path by conftest
+from conftest import fake_tool  # noqa: I001 - added to sys.path by conftest
 
 from cmrelay import preflight, systemd
 
@@ -27,15 +26,8 @@ class Config:
     postfix_reinject_port_incoming = 10026
 
 
-@pytest.fixture
-def port_table():
-    return json.loads((REPO / "nix/generated/relay-pins.json").read_text())[
-        "port_table"
-    ]
-
-
-def test_the_real_table_resolves_completely(port_table):
-    resolved = preflight.resolve_port_table(port_table, Config())
+def test_the_table_resolves_completely():
+    resolved = preflight.resolve_port_table(Config())
     ports = {port for _, port in resolved}
     assert {25, 53, 80, 143, 443, 465, 587, 993, 3340, 3903, 3904, 8443} <= ports
     assert 402 in ports  # acme mode
@@ -43,19 +35,19 @@ def test_the_real_table_resolves_completely(port_table):
     assert all(isinstance(port, int) for _, port in resolved)
 
 
-def test_the_acme_only_entry_drops_out_in_self_signed_mode(port_table):
+def test_the_acme_only_entry_drops_out_in_self_signed_mode():
     config = Config()
     config.tls_cert_mode = "self"
-    ports = {port for _, port in preflight.resolve_port_table(port_table, config)}
+    ports = {port for _, port in preflight.resolve_port_table(config)}
     assert 402 not in ports
 
 
-def test_a_config_attribute_relay_added_and_we_lack_is_an_error(port_table):
+def test_a_port_setting_the_ini_lacks_is_an_error():
     class Sparse(Config):
         filtermail_smtp_port = None
 
     with pytest.raises(ValueError, match="filtermail_smtp_port"):
-        preflight.resolve_port_table(port_table, Sparse())
+        preflight.resolve_port_table(Sparse())
 
 
 def test_a_free_port_produces_no_finding(tmp_path):
@@ -218,3 +210,13 @@ def test_a_full_disk_is_refused_with_a_number(tmp_path):
     report = preflight.check_free_space(2**40, tmp_path)
     assert not report.ok
     assert "MiB free" in report.findings[0].detail
+    assert report.missing and not report.conflicts
+
+
+def test_a_missing_mtail_says_how_to_install_it(tmp_path):
+    report = preflight.check_mtail(
+        "127.0.0.1", ("https://x/mtail.tgz", "abc"), tmp_path / "mtail"
+    )
+    assert report.missing and not report.conflicts
+    assert "https://x/mtail.tgz" in report.findings[0].remedy
+    assert preflight.check_mtail("", ("u", "s"), tmp_path / "mtail").ok

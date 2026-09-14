@@ -1,13 +1,10 @@
-"""Finding the payload's own pieces, in staging and once installed.
+"""Finding the closure's own pieces, in staging and once installed.
 
-The installer runs once out of the stub's staging directory and again out of
-the installed store, needing the same manifest, vendored configuration, units
-and vendor.lock both times. `prefix` separates them: in staging every store
-path has the staging root in front of it, and once installed it is empty.
+The installer runs out of the stub's staging directory, the CLI out of the
+installed store, and both need the same manifest, vendored configuration,
+units and vendor.lock. `prefix` separates them: in staging every store path
+has the staging root in front of it, and once installed it is empty.
 """
-
-# Deferred so `X | None` parses on the 3.9 that RHEL 9 ships.
-from __future__ import annotations
 
 import json
 import os
@@ -15,21 +12,19 @@ from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
+from .errors import CmrelayError
+
 # Exported by the stub before it hands over.
 ENV_STAGE = "CMRELAY_STAGE"
 ENV_CLOSURE = "CMRELAY_CLOSURE"
-ENV_INSTALLER = "CMRELAY_INSTALLER"
 
 # How the stub tells a complete staging tree from a consumed one. Shared with
 # stub/header.sh.
 READY_MARKER = ".cmrelay-ready"
 
-# Written into the closure by nix/closure.nix.
-BOOTSTRAP = "bootstrap.env"
 
-
-class BundleError(Exception):
-    """The payload is not laid out the way the installer expects."""
+class BundleError(CmrelayError):
+    """The closure is not laid out the way cmrelay expects."""
 
 
 @dataclass
@@ -41,7 +36,7 @@ class Bundle:
 
     @classmethod
     def discover(cls) -> "Bundle":
-        """Locate the bundle from the stub's environment, or from our own path."""
+        """Locate the closure from the stub's environment, or from our own path."""
         closure = os.environ.get(ENV_CLOSURE)
         stage = os.environ.get(ENV_STAGE)
         if closure:
@@ -104,33 +99,6 @@ class Bundle:
 
     def version(self, component: str) -> str:
         return self.component(component).get("version", "unknown")
-
-    @cached_property
-    def _bootstrap(self) -> dict:
-        path = self.root / BOOTSTRAP
-        values = {}
-        for line in path.read_text().splitlines():
-            key, _, value = line.strip().partition("=")
-            if key:
-                values[key] = value
-        return values
-
-    def command(self, component: str, name: str | None = None) -> list[str]:
-        """An argv that runs one of the closure's binaries right now.
-
-        In staging the binary's ELF interpreter does not exist yet, so this
-        goes through ld.so, the same trick the stub uses. It matters most for
-        the preflight, where a detector that cannot run would look exactly
-        like one that found nothing.
-        """
-        binary = self.resolve(self.bin(component, name))
-        if self.prefix is None:
-            return [str(binary)]
-        loader = self.resolve(self._bootstrap["CMRELAY_LD"])
-        libs = ":".join(
-            str(p) for p in sorted((self.prefix / "nix/store").glob("*/lib"))
-        )
-        return [str(loader), "--library-path", libs, str(binary)]
 
     @cached_property
     def lock(self) -> dict:

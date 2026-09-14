@@ -4,9 +4,7 @@ cmrelay ships its own builds under the distribution's service names, onto a
 host where the distribution's packages may already be installed and
 listening. Two detectors, because a name collision catches the package about
 to fight us for port 25 while port occupancy catches the daemon cmrelay has
-never heard of.
-
-Nothing here modifies the host: only `deploy --take-over` acts on it.
+never heard of. Nothing here modifies the host.
 """
 
 import json
@@ -19,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths, systemd
+from .errors import CmrelayError
 
 # Shadowed rather than masked: masking writes /etc/systemd/system/<name> ->
 # /dev/null, the exact path cmrelay's own unit needs, so a masked name is one
@@ -53,6 +52,30 @@ RESOLVER_UNITS = [
     "unbound-resolvconf.service",
 ]
 
+# relay's own preflight table: which process names may hold which port.
+# A string names the chatmail.ini setting the port is read from.
+PORTS = [
+    (["master", "smtpd"], 25),
+    (["unbound"], 53),
+    (["imap-login", "dovecot"], 143),
+    (["acmetool", "nginx"], 80),
+    (["nginx"], 443),
+    (["master", "smtpd"], 465),
+    (["master", "smtpd"], 587),
+    (["dovecot", "imap-login"], 993),
+    (["iroh-relay"], 3340),
+    (["mtail"], 3903),
+    (["dovecot", "stats"], 3904),
+    (["nginx"], 8443),
+    (["master", "smtpd"], "postfix_reinject_port"),
+    (["master", "smtpd"], "postfix_reinject_port_incoming"),
+    (["filtermail"], "filtermail_smtp_port"),
+    (["filtermail"], "filtermail_smtp_port_incoming"),
+    (["filtermail"], "filtermail_http_port_incoming"),
+    (["filtermail"], "filtermail_lmtp_port_transport"),
+]
+ACME_PORT = (["acmetool"], 402)
+
 # Named so the refusal says more than "port 25 is busy".
 KNOWN_SQUATTERS = {
     "exim4": "Debian's default MTA",
@@ -69,12 +92,20 @@ KNOWN_SQUATTERS = {
 # `ss` truncates to 15 characters, hence the short forms.
 RESOLVER_PROCESSES = {"systemd-resolve", "systemd-r", "systemd-resolved"}
 
+# The unpacked closure, checked before anything moves or is staged.
+CLOSURE_MIB = 800
+
+# somebody else's stack is in the way, against something this host lacks
+CONFLICT = "conflict"
+MISSING = "missing"
+
 
 @dataclass
 class Finding:
     subject: str
     detail: str
     remedy: str | None = None
+    kind: str = CONFLICT
 
     def __str__(self):
         return f"{self.subject}: {self.detail}"
@@ -82,17 +113,25 @@ class Finding:
 
 @dataclass
 class Report:
-    findings: list[Finding] = field(default_factory=list)
+    findings: list = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return not self.findings
 
+    @property
+    def conflicts(self) -> list:
+        return [f for f in self.findings if f.kind == CONFLICT]
+
+    @property
+    def missing(self) -> list:
+        return [f for f in self.findings if f.kind == MISSING]
+
     def add(self, *args, **kwargs):
         self.findings.append(Finding(*args, **kwargs))
 
 
-class PreflightError(Exception):
+class PreflightError(CmrelayError):
     pass
 
 
@@ -100,30 +139,24 @@ class DetectorError(PreflightError):
     """A detector could not run, which is not the same as finding nothing."""
 
 
-def _run(argv, required=True) -> str:
+def _run(argv) -> str:
     try:
         return subprocess.run(
             argv, capture_output=True, text=True, timeout=30, check=False
         ).stdout
     except (OSError, subprocess.SubprocessError) as exc:
-        if required:
-            raise DetectorError(
-                f"could not run {' '.join(str(a) for a in argv)}: {exc}."
-                " Refusing to report a clean preflight from a detector that"
-                " did not run."
-            ) from exc
-        return ""
+        raise DetectorError(
+            f"could not run {' '.join(str(a) for a in argv)}: {exc}."
+            " Refusing to report a clean preflight from a detector that"
+            " did not run."
+        ) from exc
 
 
 _SS_HOLDER = re.compile(r'\("([^"]+)"')
 
 
 def listening(ss_argv=("ss",)) -> dict[int, set]:
-    """port -> the process names listening on it, from one `ss` call.
-
-    One listing costs 21 ms against 445 ms for twenty filtered ones. Store
-    paths do not change argv[0] basenames, so relay's table matches.
-    """
+    """port -> the process names listening on it, from one `ss` call."""
     holders: dict[int, set] = {}
     for line in _run([*ss_argv, "-lptnH"]).splitlines():
         fields = line.split(None, 5)
@@ -141,36 +174,30 @@ def listening(ss_argv=("ss",)) -> dict[int, set]:
     return holders
 
 
-def resolve_port_table(entries, config) -> list[tuple[list[str], int]]:
-    """Turn relay's extracted port table into concrete (names, port) pairs.
-
-    Some entries reference a `config.<attr>` rather than a literal and one is
-    conditional on acme mode, both resolved against relay's own Config.
-    """
+def resolve_port_table(config) -> list[tuple[list[str], int]]:
+    """The ports this configuration binds, as (names, port) pairs."""
     resolved = []
-    for entry in entries:
-        if entry.get("conditional") and getattr(config, "tls_cert_mode", "") != "acme":
+    for names, port in PORTS:
+        if isinstance(port, int):
+            resolved.append((names, port))
             continue
-        if "port" in entry:
-            port = entry["port"]
-        else:
-            attr = entry["config_attr"]
-            try:
-                port = int(getattr(config, attr))
-            except (AttributeError, TypeError, ValueError):
-                raise ValueError(
-                    f"relay's port table references config.{attr},"
-                    " which this chatmail.ini does not provide"
-                ) from None
-        resolved.append((entry["names"], port))
+        try:
+            resolved.append((names, int(getattr(config, port))))
+        except (AttributeError, TypeError, ValueError):
+            raise ValueError(
+                f"the port table references config.{port},"
+                " which this chatmail.ini does not provide"
+            ) from None
+    if getattr(config, "tls_cert_mode", "") == "acme":
+        resolved.append(ACME_PORT)
     return resolved
 
 
 def check_ports(port_table, ss_argv=("ss",), holders=None) -> Report:
     """Whoever actually holds each port, which catches daemons by no name.
 
-    Needs no equivalent of check_units' *ours*: a port held by the process
-    relay's table expects is right whoever installed it.
+    A port held by the process relay's table expects is right whoever
+    installed it.
     """
     if holders is None:
         holders = listening(ss_argv)
@@ -219,7 +246,7 @@ def check_units(names=None, ours=None) -> Report:
     return report
 
 
-def check_mtail(address, artifact, binary=Path("/usr/local/bin/mtail")) -> Report:
+def check_mtail(address, artifact, binary=paths.MTAIL) -> Report:
     """mtail is the operator's to install, so say exactly how."""
     report = Report()
     if not address or os.access(binary, os.X_OK):
@@ -235,6 +262,7 @@ def check_mtail(address, artifact, binary=Path("/usr/local/bin/mtail")) -> Repor
             f'        echo "{sha256}  /tmp/mtail" | sha256sum -c\n'
             f"        install -m755 /tmp/mtail {binary}"
         ),
+        kind=MISSING,
     )
     return report
 
@@ -274,12 +302,9 @@ def check_external_tls(config) -> Report:
                 "external TLS",
                 f"tls_external_cert_and_key names {path}, which is not a file",
                 remedy=f"put the certificate and key at {path}, or change the ini",
+                kind=MISSING,
             )
     return report
-
-
-# The unpacked closure, checked before anything moves or is staged.
-CLOSURE_MIB = 800
 
 
 def check_free_space(needed_mib: int, path=Path("/opt")) -> Report:
@@ -296,6 +321,7 @@ def check_free_space(needed_mib: int, path=Path("/opt")) -> Report:
             "disk space",
             f"{target} has {free_mib} MiB free, and this needs {needed_mib} MiB",
             remedy=f"free {needed_mib - free_mib} MiB on {target}",
+            kind=MISSING,
         )
     return report
 
@@ -324,13 +350,10 @@ def run(
     return report
 
 
-def relay_pins(bundle) -> dict:
-    return json.loads((bundle.root / "relay-pins.json").read_text())
-
-
 def mtail_artifact(bundle) -> tuple:
     """The release relay pins for this architecture: (url, sha256)."""
-    artifacts = relay_pins(bundle)["pins"]["MTAIL_ARTIFACTS"]
+    pins = json.loads((bundle.root / "relay-pins.json").read_text())
+    artifacts = pins["MTAIL_ARTIFACTS"]
     machine = platform.machine()
     try:
         return tuple(artifacts[machine])
@@ -342,20 +365,16 @@ def mtail_artifact(bundle) -> tuple:
 
 
 def run_preflight(bundle, config, needed_mib=0):
-    """relay's port table resolved against this host's config, then one look."""
-    resolved = resolve_port_table(relay_pins(bundle)["port_table"], config)
+    """The port table resolved against this host's config, then one look."""
     report = run(
-        resolved,
-        ss_argv=bundle.command("iproute2", "ss"),
+        resolve_port_table(config),
+        ss_argv=[bundle.bin("iproute2", "ss")],
         ours=paths.owned_unit,
         config=config,
         needed_mib=needed_mib,
     )
-    report.findings.extend(
-        check_mtail(
-            getattr(config, "mtail_address", ""), mtail_artifact(bundle)
-        ).findings
-    )
+    mtail = check_mtail(getattr(config, "mtail_address", ""), mtail_artifact(bundle))
+    report.findings.extend(mtail.findings)
     return report
 
 

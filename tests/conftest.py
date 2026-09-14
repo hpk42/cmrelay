@@ -60,17 +60,6 @@ def bundle(tmp_path):
     shutil.copyfile(REPO / "vendor.lock", root / "vendor.lock")
     shutil.copyfile(REPO / "nix/generated/relay-pins.json", root / "relay-pins.json")
 
-    # nix/closure.nix writes this; Bundle.command() reads it to find the
-    # loader that runs a store binary before the store is installed.
-    glibc = tmp_path / "nix/store/aaa-glibc-2.42/lib"
-    glibc.mkdir(parents=True)
-    (glibc / "ld-linux-x86-64.so.2").write_text("")
-    (root / "bootstrap.env").write_text(
-        "CMRELAY_LD=/nix/store/aaa-glibc-2.42/lib/ld-linux-x86-64.so.2\n"
-        "CMRELAY_PYTHON=/nix/store/lll-python/bin/python3.14\n"
-        "CMRELAY_SITE=/nix/store/lll-python/lib/python3.14/site-packages\n"
-    )
-
     (root / "manifest.json").write_text(
         json.dumps(
             {
@@ -86,8 +75,6 @@ def bundle(tmp_path):
                         "daemon_directory": "/nix/store/aaa-postfix/libexec/postfix",
                         "command_directory": "/nix/store/aaa-postfix/bin",
                         "meta_directory": "/nix/store/aaa-postfix/etc/postfix",
-                        "shlib_directory": "no",
-                        "manpage_directory": "/nix/store/aaa-postfix/share/man",
                     },
                     "dovecot": {
                         "path": "/nix/store/bbb-dovecot",
@@ -115,7 +102,6 @@ def bundle(tmp_path):
                         "path": "/nix/store/eee-opendkim",
                         "version": "2.11.0",
                         "opendkim": "/nix/store/eee-opendkim/bin/opendkim",
-                        "opendkim-genkey": "/nix/store/eee-opendkim/bin/opendkim-genkey",
                     },
                     "fcgiwrap": {
                         "path": "/nix/store/fff-fcgiwrap",
@@ -131,6 +117,7 @@ def bundle(tmp_path):
                         "path": "/nix/store/hhh-filtermail",
                         "version": "0.7.4",
                         "filtermail": "/nix/store/hhh-filtermail/bin/filtermail",
+                        "mtail_program": "/nix/store/hhh-filtermail-mtail/filtermail.mtail",
                     },
                     "chatmail-turn": {
                         "path": "/nix/store/iii-turn",
@@ -154,6 +141,11 @@ def bundle(tmp_path):
                         "lastlogin": "/nix/store/lll-python/bin/lastlogin",
                     },
                     "coreutils": {"path": "/nix/store/mmm-coreutils", "version": "9.8"},
+                    "ldns": {
+                        "path": "/nix/store/kkk-ldns",
+                        "version": "1.9.2",
+                        "drill": "/nix/store/kkk-ldns/bin/drill",
+                    },
                     "openssl": {
                         "path": "/nix/store/nnn-openssl",
                         "version": "3.6.3",

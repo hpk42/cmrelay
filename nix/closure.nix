@@ -188,7 +188,7 @@ runCommand "cmrelay-closure"
     # So a host has the terms of everything running on it, on the host.
     cp ${cmrelaySrc}/LICENSE ${cmrelaySrc}/THIRD-PARTY.md $out/
     cp ${cmrelaySrc}/vendor.lock $out/vendor.lock
-    # the preflight port table, extracted from relay's deployers at build time
+    # relay's pinned binaries, for the mtail installation hint
     cp ${cmrelaySrc}/nix/generated/relay-pins.json $out/relay-pins.json
 
     cp -r ${cmrelaySrc}/vendor $out/vendor

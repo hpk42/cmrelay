@@ -36,12 +36,6 @@ def test_a_one_path_external_cert_is_a_message_not_a_traceback(ini):
         cfg.read_config(ini)
 
 
-def test_an_override_must_be_key_equals_value():
-    with pytest.raises(cfg.ConfigError, match="key=value"):
-        cfg.parse_overrides(["nonsense"])
-    assert cfg.parse_overrides(["a = 1", "b=2"]) == {"a": "1", "b": "2"}
-
-
 # -- the warnings ----------------------------------------------------------
 
 
@@ -178,13 +172,6 @@ def test_a_missing_certificate_needs_a_reconcile(fake_root, bundle, ini):
     assert (
         activation.needs_reconcile(deployment(bundle, config, fsops.Journal())) is True
     )
-
-
-def test_the_reconcile_flag_forces_it(fake_root, bundle, ini):
-    unit = Deployment(
-        bundle, cfg.read_config(ini), Out(colour=False), fsops.Journal(), reconcile=True
-    )
-    assert activation.needs_reconcile(unit) is True
 
 
 def test_postfix_own_settings_are_carried_forward(tmp_path):

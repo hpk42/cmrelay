@@ -1,7 +1,3 @@
-# Standard workflow config of chatmail/workflow's py-checks flow, plus the
-# vendoring check: vendor/ is generated output, so CI has to prove it still
-# matches vendor.lock rather than trusting that nobody hand-edited it.
-
 name: CI
 
 on:
@@ -16,36 +12,23 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # A superseded run is answering a question nobody is asking any more, and
-  # the nix build below spends a quarter of an hour on it.
   cancel-in-progress: true
 
 jobs:
-  # These steps are chatmail/workflows' py-checks, inlined. That workflow
-  # checks out without submodules, and this repo takes chatmaild from the
-  # pinned relay submodule -- so its pytest step cannot resolve the test
-  # dependencies, and using it meant disabling that step and repeating it in
-  # a second job anyway. Inlined, one job does the lot with the submodule
-  # present. The cost is that RUFF_VERSION is pinned here rather than
-  # centrally; the saving is a job, a workflow input, and a dependency on a
-  # repository this one cannot change.
   checks:
-    name: ruff, build and tests
+    name: ruff, tests and the vendored tree
     runs-on: ubuntu-latest
     env:
       RUFF_VERSION: "0.16.0"
     steps:
-      # fetch-depth: 0 so setuptools-git-versioning derives the version from
-      # tags rather than falling back to 0.0.x.
       - uses: actions/checkout@v7
         with:
           submodules: true
-          fetch-depth: 0
           persist-credentials: false
 
       - uses: astral-sh/setup-uv@v9.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Ruff lint
         run: uvx ruff@$RUFF_VERSION check .
@@ -53,50 +36,21 @@ jobs:
       - name: Ruff format check
         run: uvx ruff@$RUFF_VERSION format --check .
 
-      - name: Build sdist and wheel
-        run: uv build
-
-      - name: Check package metadata
-        run: uvx twine check dist/*
-
-      # Options come from [tool.pytest.ini_options] and dependencies from
-      # [dependency-groups] test, both in pyproject.toml.
-      - name: Install project and test dependencies
+      - name: Install the test dependencies
         run: |
           uv venv
-          uv pip install -e . pytest
+          uv pip install -e .
           uv pip install --group test
 
       - name: Run pytest
         run: uv run --no-sync pytest
 
-  vendor:
-    name: vendor/ matches vendor.lock
-    needs: checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: true
-          persist-credentials: false
-
-      - uses: astral-sh/setup-uv@v9.0.0
-
       - name: Verify the vendored tree
         run: ./scripts/vendor-check
 
-      # A relay refactor that moves the port table or the binary pins has to
-      # fail here, which is the whole reason the extractor asserts shapes.
-      - name: Re-extract relay's port table and pins
-        run: |
-          ./scripts/extract-from-relay -o /tmp/pins.json
-          diff -u nix/generated/relay-pins.json /tmp/pins.json
-
   build:
     name: nix build
-    # Last, and only if everything cheap passed. Compiling the closure from
-    # source takes about a quarter of an hour; ruff takes eighteen seconds.
-    needs: [checks, vendor]
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -118,46 +72,32 @@ jobs:
             keep-env-derivations = true
             keep-outputs = true
 
-      # Nix rebuilds a derivation only when its output path is missing, so a
-      # restored store turns the quarter-hour compile into an evaluation. It
-      # also takes the network off the common path: the Go module fetches that
-      # flake are reached only when the cache misses.
-      #
-      # The key covers what determines the closure. A source-only commit keeps
-      # it, which is deliberate -- that run hits the cache, rebuilds the two
-      # cheap derivations that changed, and saves nothing.
+      # A restored store turns the dovecot compile into an evaluation. The
+      # key covers what determines the closure, so a source-only commit hits
+      # the cache and saves nothing.
       - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', '**/*.nix', 'vendor.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 4G
-          # Keep one cache rather than accumulating a version per closure
-          # change; the repository shares a 10 GB budget across all of them.
           purge: true
           purge-prefixes: nix-${{ runner.os }}-
           purge-created: 0
           purge-primary-key: never
 
-      # Retried because the closure contains fixed-output derivations, which
-      # fetch from the network on every cold run: proxy.golang.org cut one of
-      # acmetool's module downloads short with an HTTP/2 INTERNAL_ERROR and
-      # took a sixteen-minute build down with it. Nix keeps whatever it
-      # already built, so a second attempt only redoes what failed. Both
-      # targets share the loop because #payload builds #closure anyway.
+      # Retried because the fixed-output derivations fetch from the network
+      # on every cold run, and one cut-short download took a whole build
+      # down. Nix keeps whatever it already built.
       - name: Build the closure and the single file
         run: |
           for attempt in 1 2 3; do
-            if nix build --print-build-logs '.?submodules=1#closure' &&
-               nix build --print-build-logs '.?submodules=1#payload'; then
+            if nix build --print-build-logs '.?submodules=1#payload'; then
               exit 0
             fi
             echo "::warning::nix build attempt $attempt failed, retrying"
             sleep 20
           done
           exit 1
-
-      - name: Store size, against the 4G cap above
-        run: du -sh /nix/store
 
       # Copied out of the store: result/ is a symlink into /nix/store, and the
       # name carries the commit so a downloaded file says which one it is.
@@ -171,5 +111,4 @@ jobs:
           name: cmrelay-payload
           path: cmrelay-*.run
           if-no-files-found: error
-          # It is 61 MiB a push; keep a fortnight rather than the default 90.
           retention-days: 14

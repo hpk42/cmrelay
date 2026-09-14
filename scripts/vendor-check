@@ -1,62 +1,44 @@
 #!/usr/bin/env python3
-"""Verify vendor/ against vendor.lock and against relay. Runs in CI.
+"""Verify that vendor/ and the generated files match the submodule. Runs in CI.
 
-Two different failures, and only the first is about this repository.
-
-A hash mismatch means somebody hand-edited generated output; the fix is to
-move the change into patches/ and re-run scripts/vendor-sync.
-
-An uncovered relay file means upstream grew something the mapping does not
-know how to realise. That is the whole point of the mapping, so it has to be
-re-checked here rather than trusted from the last sync: comparing hashes
-alone would stay green through a relay bump that added a component.
+A fresh sync into a temporary directory is compared byte for byte, so a
+hand edit under vendor/, a moved submodule without a re-sync, and a relay
+file the mapping does not cover all fail here.
 """
 
-import json
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-from cmrelay.vendoring import Mapping, VendorError, plan, verify  # noqa: E402
+from cmrelay.vendoring import VendorError, refresh  # noqa: E402
+
+GENERATED = ("vendor.lock", "nix/generated/relay-pins.json")
+
+
+def files(root: Path) -> dict:
+    return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
 
 
 def main():
-    lockpath = REPO / "vendor.lock"
-    if not lockpath.is_file():
-        print("vendor-check: no vendor.lock; run scripts/vendor-sync", file=sys.stderr)
-        return 1
-    lock = json.loads(lockpath.read_text())
-
-    problems = verify(REPO / "vendor", lock["files"])
-    if problems:
-        print("vendor-check: vendor/ does not match vendor.lock", file=sys.stderr)
-        for problem in problems:
-            print(f"  {problem}", file=sys.stderr)
-        return 1
-
-    relay_root = REPO / "cmdeploy-relay"
-    if not (relay_root / "cmdeploy").is_dir():
-        print("vendor-check: no submodule checkout, skipping the mapping re-check")
-    else:
+    with tempfile.TemporaryDirectory() as tmp:
+        fresh = Path(tmp)
         try:
-            mapped = plan(relay_root, Mapping.load(REPO / "vendor.toml"))
+            refresh(REPO, REPO / "cmdeploy-relay", fresh)
         except VendorError as exc:
             print(f"vendor-check: {exc}", file=sys.stderr)
             return 1
-        if set(mapped.values()) != set(lock["files"]):
-            print(
-                "vendor-check: the mapping resolves to a different set of files"
-                " than vendor.lock records; run scripts/vendor-sync",
-                file=sys.stderr,
-            )
-            return 1
-
-    print(
-        f"vendor-check: {len(lock['files'])} files match relay"
-        f" {lock['relay_commit'][:12]}"
-    )
+        want, have = files(fresh / "vendor"), files(REPO / "vendor")
+        stale = [f"vendor/{n}" for n in sorted(set(want) | set(have)) if want.get(n) != have.get(n)]
+        stale += [n for n in GENERATED if (fresh / n).read_bytes() != (REPO / n).read_bytes()]
+    if stale:
+        print("vendor-check: out of date, run scripts/vendor-sync:", file=sys.stderr)
+        for name in stale:
+            print(f"  {name}", file=sys.stderr)
+        return 1
+    print("vendor-check: vendor/ matches the relay submodule")
     return 0
 
 

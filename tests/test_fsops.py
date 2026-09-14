@@ -16,10 +16,9 @@ from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 from cmrelay import activation, fsops
 
 # store.py moves the whole closure by rename and reports it as one line;
-# payload.py runs from a pip-installed wheel, where there is no journal;
 # vendoring.py runs from scripts/vendor-sync on a developer machine and
 # writes vendor/, never a relay.
-ALLOWED = {"fsops.py", "store.py", "payload.py", "vendoring.py"}
+ALLOWED = {"fsops.py", "store.py", "vendoring.py"}
 
 # Calls on the journal itself are the point, not a violation.
 JOURNALS = {"journal", "self.j", "self.journal", "d.j", "fsops.Journal()"}
@@ -130,13 +129,6 @@ def test_a_write_reports_added_then_changed_then_nothing(tmp_path):
     assert journal.seen["x"] == 3
 
 
-def test_a_dry_run_records_the_change_and_performs_none(tmp_path):
-    journal = fsops.Journal(dry_run=True)
-    target = tmp_path / "a.conf"
-    assert journal.write("x", target, "one\n").kind == fsops.ADDED
-    assert not target.exists()
-
-
 def test_paths_under_opt_cmrelay_are_not_system_files():
     assert fsops.is_system(Path("/etc/mailname"))
     assert fsops.is_system(Path("/usr/local/bin/doveadm"))
@@ -144,50 +136,12 @@ def test_paths_under_opt_cmrelay_are_not_system_files():
     assert not fsops.is_system(Path("/opt/cmrelay/config/postfix/main.cf"))
 
 
-def test_only_system_paths_are_recorded_for_hand_edit_detection(tmp_path, monkeypatch):
-    from cmrelay import paths
-
-    monkeypatch.setattr(paths, "ROOT", tmp_path / "opt/cmrelay")
-    journal = fsops.Journal()
-    journal.write("x", tmp_path / "opt/cmrelay/own", "a\n")
-    journal.write("x", tmp_path / "etc/theirs", "b\n")
-    assert list(journal.wrote) == [str(tmp_path / "etc/theirs")]
-
-
-def test_an_owned_file_edited_by_hand_is_replaced_and_the_original_kept(tmp_path):
-    target = tmp_path / "etc/mailname"
-    first = fsops.Journal()
-    first.write("x", target, "one\n")
-
-    target.write_text("edited by somebody\n")
-    second = fsops.Journal(prior=first.wrote)
-    change = second.write("x", target, "two\n")
-
-    assert change.detail == "was edited by hand"
-    assert target.read_text() == "two\n"
-    assert (tmp_path / "etc/mailname.replaced").read_text() == "edited by somebody\n"
-
-
-def test_a_guest_file_edited_by_hand_is_left_alone(tmp_path):
-    target = tmp_path / "etc/journald.conf"
-    first = fsops.Journal()
-    first.write("x", target, "one\n")
-
-    target.write_text("the operator's retention\n")
-    second = fsops.Journal(prior=first.wrote)
-
-    assert second.write("x", target, "two\n", guest=True) is None
-    assert target.read_text() == "the operator's retention\n"
-    assert second.hand_edited == [(target, "left alone")]
-
-
-def test_a_file_cmrelay_never_wrote_is_not_a_hand_edit(tmp_path):
+def test_a_file_somebody_else_wrote_is_replaced_and_reported(tmp_path):
     target = tmp_path / "etc/aliases"
     target.parent.mkdir(parents=True)
     target.write_text("somebody else's\n")
-    journal = fsops.Journal()
-    assert journal.write("x", target, "ours\n").kind == fsops.CHANGED
-    assert journal.hand_edited == []
+    assert fsops.Journal().write("x", target, "ours\n").kind == fsops.CHANGED
+    assert target.read_text() == "ours\n"
 
 
 def test_created_parent_directories_are_reported(tmp_path):
@@ -199,12 +153,11 @@ def test_created_parent_directories_are_reported(tmp_path):
     assert tmp_path / "a/b/c" in created
 
 
-def test_a_removed_file_drops_out_of_the_record(tmp_path):
+def test_a_removed_file_is_reported_once(tmp_path):
     target = tmp_path / "etc/gone"
     journal = fsops.Journal()
     journal.write("x", target, "x\n")
     assert journal.remove_file("x", target).kind == fsops.REMOVED
-    assert journal.wrote == {}
     assert journal.remove_file("x", target) is None
 
 
@@ -319,7 +272,7 @@ def test_a_second_deploy_against_the_same_root_changes_nothing(deployment, fake_
     activation.install_daemon_units(deployment)
 
     before = snapshot(fake_root)
-    deployment.j = fsops.Journal(prior=deployment.j.wrote)
+    deployment.j = fsops.Journal()
     deployment.configure()
     activation.install_daemon_units(deployment)
     after = snapshot(fake_root)

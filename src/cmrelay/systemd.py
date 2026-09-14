@@ -16,13 +16,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths
+from .errors import CmrelayError
 
 # States meaning "already enabled", so enabling again would spend a process.
 ENABLED_STATES = ("enabled", "enabled-runtime", "static", "alias", "indirect")
 RUNNING_STATES = ("active", "activating", "reloading")
 
 
-class SystemdError(Exception):
+class SystemdError(CmrelayError):
     pass
 
 

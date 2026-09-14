@@ -10,9 +10,10 @@ through `d.j`.
 from pathlib import Path
 
 from . import fsops, paths, render, users
+from .errors import CmrelayError
 
 
-class DeployError(Exception):
+class DeployError(CmrelayError):
     pass
 
 
@@ -126,9 +127,6 @@ def configure_selfsigned(d):
 
 
 def configure_external_tls(d):
-    for path in (d.config.tls_cert_path, d.config.tls_key_path):
-        if not Path(path).exists():
-            raise DeployError(f"External TLS file not found on server: {path}")
     d.unit_from_template(
         "external-tls",
         "systemd/tls-cert-reload.path.j2",
@@ -244,7 +242,10 @@ def configure_dovecot(d):
         disable_ipv6=d.config.disable_ipv6,
         **d.template_vars(),
     )
-    d.put_file("dovecot", "config/dovecot/auth.conf", conf_dir / "auth.conf")
+    d.put_template(
+        "dovecot", "config/dovecot/auth.lua.j2", conf_dir / "auth.lua", config=d.config
+    )
+    d.j.remove_file("dovecot", conf_dir / "auth.conf")
     d.put_file(
         "dovecot",
         "config/dovecot/push_notification.lua",

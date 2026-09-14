@@ -23,14 +23,11 @@ STATE = ROOT / "state"
 # enabling again, DISABLED_UNITS wants unmasking.
 SHADOWED_UNITS_STATE = STATE / "shadowed-units"
 
-# The unmask is the load-bearing part of rollback: `systemctl enable` fails on
-# a masked unit, so a `cmdeploy run` against leftover masks would not come up.
+# Uninstall must unmask these: `systemctl enable` fails on a masked unit, so
+# a `cmdeploy run` against leftover masks would not come up.
 DISABLED_UNITS = STATE / "disabled-units"
 
 LINKED_TOOLS = STATE / "linked-tools"
-
-# sha256 per file cmrelay wrote outside its own tree, to spot hand edits.
-WRITTEN = STATE / "written.json"
 
 # What the operator asked for and chatmail.ini cannot express.
 INTENT = STATE / "intent.json"
@@ -40,9 +37,6 @@ LOCK = STATE / "lock"
 
 # What deploy last published under /var/www/html, so stale pages go.
 WWW_FILES = STATE / "www-files"
-
-MIGRATIONS = STATE / "migrations"
-SIGNATURE = STATE / "signature.json"
 
 NIX = ROOT / "nix"
 STORE = NIX / "store"

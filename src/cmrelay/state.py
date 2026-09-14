@@ -1,8 +1,8 @@
 """The facts about a host that no chatmail.ini records.
 
-Files under /opt/cmrelay/state: what cmrelay wrote, what the operator asked
-for that the ini cannot express, which web pages are published, which
-migrations ran, and whether another deploy is running.
+Files under /opt/cmrelay/state: which units take-over disabled or masked,
+what the operator asked for that the ini cannot express, and which web
+pages are published.
 """
 
 import json
@@ -23,40 +23,17 @@ def record_units(journal, path: Path, names) -> None:
     journal.write("cmrelay", path, "\n".join(merged) + "\n")
 
 
-def read_json(path: Path, default):
-    try:
-        return json.loads(path.read_text())
-    except (OSError, ValueError):
-        return default
-
-
-def write_json(journal, component: str, path: Path, data) -> None:
-    journal.write(component, path, json.dumps(data, indent=2, sort_keys=True) + "\n")
-
-
-def read_written() -> dict:
-    """path -> sha256, for every file cmrelay wrote outside its own tree."""
-    data = read_json(paths.WRITTEN, {})
-    return data if isinstance(data, dict) else {}
-
-
-def save_written(journal) -> None:
-    """Fold this run's writes into the record, keeping what it did not touch."""
-    merged = dict(journal.prior)
-    merged.update(journal.wrote)
-    for path in list(merged):
-        if not Path(path).exists():
-            del merged[path]
-    write_json(journal, "cmrelay", paths.WRITTEN, merged)
-
-
 def read_intent() -> dict:
-    data = read_json(paths.INTENT, {})
+    try:
+        data = json.loads(paths.INTENT.read_text())
+    except (OSError, ValueError):
+        return {}
     return data if isinstance(data, dict) else {}
 
 
 def save_intent(journal, intent: dict) -> None:
-    write_json(journal, "cmrelay", paths.INTENT, intent)
+    text = json.dumps(intent, indent=2, sort_keys=True) + "\n"
+    journal.write("cmrelay", paths.INTENT, text)
 
 
 def resolve_mail_intent(previous: dict, enable=None) -> bool:
@@ -75,11 +52,3 @@ def read_www_files() -> list:
 
 def save_www_files(journal, names) -> None:
     journal.write("website", paths.WWW_FILES, "\n".join(sorted(names)) + "\n")
-
-
-def read_migrations() -> set:
-    return set(read_lines(paths.MIGRATIONS))
-
-
-def save_migrations(journal, names) -> None:
-    journal.write("cmrelay", paths.MIGRATIONS, "\n".join(sorted(names)) + "\n")

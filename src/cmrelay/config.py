@@ -8,19 +8,18 @@ settings with no effect, foreign privacy contacts, and an empty acme_email.
 import tempfile
 from pathlib import Path
 
-# Deliberately not a PyPI dependency: relay's own code, built from the
-# vendored commit into the same interpreter as the rest of the closure.
 from chatmaild.config import read_config as _read_config
 from chatmaild.config import write_initial_config as _write_initial_config
 
 from . import paths
+from .errors import CmrelayError
 
 # relay refuses these for a domain it is not itself responsible for, so that
 # a relay does not publish somebody else's privacy contact on its own page.
 BLOCKED_PRIVACY_WORDS = ("merlinux", "schmieder", "testrun.org")
 
 
-class ConfigError(Exception):
+class ConfigError(CmrelayError):
     """The ini cannot be read, and the message says where to fix it."""
 
 
@@ -40,40 +39,24 @@ def read_config(inipath: Path = paths.INI):
         raise ConfigError(f"{inipath}: {exc}") from None
 
 
-def write_initial_config(inipath: Path, mail_domain: str, overrides=None):
+def write_initial_config(inipath: Path, mail_domain: str):
     """The same function `cmdeploy init` calls, so the ini is relay's, not ours."""
-    _write_initial_config(Path(inipath), mail_domain, overrides or {})
+    _write_initial_config(Path(inipath), mail_domain, {})
 
 
-def default_config(mail_domain: str, overrides=None):
+def default_config(mail_domain: str):
     """A Config from relay's own defaults, for a host that has no ini yet."""
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "chatmail.ini"
-        _write_initial_config(path, mail_domain, overrides or {})
+        _write_initial_config(path, mail_domain, {})
         return _read_config(path)
-
-
-def parse_overrides(pairs) -> dict:
-    overrides = {}
-    for item in pairs or []:
-        if "=" not in item:
-            raise ConfigError(f"--set expects key=value, got {item!r}")
-        key, value = item.split("=", 1)
-        overrides[key.strip()] = value.strip()
-    return overrides
-
-
-def unused_settings(config) -> list:
-    """Settings chatmaild parsed and no component reads."""
-    return list(getattr(config, "_unused_keys", []) or [])
 
 
 def foreign_privacy_contacts(config) -> list:
     """Privacy settings still naming relay's own operators.
 
-    Reimplemented because relay keeps this in deployers.py, which imports
-    pyinfra; its right home is chatmaild.config. A warning rather than
-    relay's hard error, which is for deployments relay is responsible for.
+    A warning rather than relay's hard error, which is for deployments relay
+    is responsible for.
     """
     domain = config.mail_domain
     if domain == "testrun.org" or domain.endswith(".testrun.org"):
@@ -89,7 +72,7 @@ def foreign_privacy_contacts(config) -> list:
 def warnings(config, inipath: Path = paths.INI) -> list:
     """Everything worth saying about this ini before anything is written."""
     found = []
-    unused = unused_settings(config)
+    unused = list(getattr(config, "_unused_keys", []) or [])
     if unused:
         found.append(
             f"{inipath} sets {', '.join(sorted(unused))}, which nothing reads."

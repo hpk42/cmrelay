@@ -1,118 +1,89 @@
 """Install a newer signed release, with a rollback that works.
 
-The sequence is arranged so that everything before the store is published
-modifies nothing a failure would leave broken, publishing is additive, and the
-flip is atomic. Only the final deploy can leave a mixed state, and that is
-exactly the state `deploy`'s own classification knows how to finish.
-
-A failure after the flip reports and stops rather than rolling back by itself:
+Everything before the store is published modifies nothing a failure would
+leave broken, publishing is additive, and the flip is atomic. A failure in
+the deploy that follows reports and stops rather than rolling back by itself:
 the previous generation is intact on disk either way, and an automatic
 rollback on a partial failure can turn one problem into two.
 """
 
 import json
 import subprocess
-import sys
 from pathlib import Path
 
-from . import (
-    discovery,
-    fsops,
-    generations,
-    migrations,
-    paths,
-    preflight,
-    signing,
-    state,
-    store,
-)
+from . import discovery, fsops, generations, paths, preflight, signing, store
 from .bundle import READY_MARKER, Bundle
 from .deploy import Deployment
+from .errors import CmrelayError
 from .installer import exec_installed
 from .version import __version__, parse_version
 
 DOWNLOADS = paths.STATE / "downloads"
 
 
-class UpgradeError(Exception):
+class UpgradeError(CmrelayError):
     pass
 
 
 def upgrade_verb(args, bundle, out) -> int:
-    if args.finish:
-        return finish(args, out)
     if args.rollback:
         return rollback(args, out)
 
-    candidate, signature = obtain(args, bundle, out)
+    candidate, signature = obtain(args, out)
     verdict = check_signature(bundle, candidate, signature, args, out)
-    if verdict is None:
-        return 1
-
     staged = stage(candidate, out)
-    manifest = read_manifest(staged)
-    new_version = manifest.get("version") or ""
+    new_version = read_manifest(staged).get("version") or ""
     if not newer(new_version, args.force):
         raise UpgradeError(
             f"{new_version or 'that candidate'} is not newer than the"
             f" installed {__version__}; --force installs it anyway"
         )
 
-    steps = migrations.pending(__version__, new_version, state.read_migrations())
-    announce(out, new_version, staged, steps, verdict)
+    announce(out, new_version, staged, verdict)
     if args.check:
         return 0
     if not args.yes and not out.confirm("Upgrade?"):
         out.print("aborted; nothing was modified")
         return 1
 
-    journal = fsops.Journal(prior=state.read_written())
+    journal = fsops.Journal()
     number = publish(staged, journal, out)
-    record_signature(journal, verdict, new_version)
-    exec_installed(
-        ["upgrade", "--finish", str(number), "--previous-version", __version__]
-    )
+    generations.flip(journal, number)
+    generations.prune(journal, out)
+    out.ok(f"generation {number} is live; deploying {new_version}")
+    exec_installed(["deploy"])
     return 1
 
 
-# -- obtaining a candidate -------------------------------------------------
-
-
-def obtain(args, bundle, out) -> tuple:
+def obtain(args, out) -> tuple:
+    """The candidate and its signature text, from a file or from GitHub."""
     if args.file:
         candidate = Path(args.file).expanduser().resolve()
         if not candidate.is_file():
             raise UpgradeError(f"no installer at {candidate}")
         signature = Path(f"{candidate}.sig")
         return candidate, signature.read_text() if signature.is_file() else ""
-    return download(args, bundle, out)
 
-
-def download(args, bundle, out) -> tuple:
-    ca_path = Deployment.ca_path()
-    if not args.auto and not args.yes:
-        out.print(f"cmrelay upgrade will ask {discovery.GITHUB} and {discovery.PYPI}.")
-        if not out.confirm("Check for a newer release?"):
-            out.print("aborted; nothing was modified")
-            raise UpgradeError("no candidate")
-
-    results, failures = discovery.survey(ca_path, args.source)
-    out.print("")
-    discovery.report(out, __version__, results, failures)
-    if not results:
-        raise UpgradeError(
-            "neither source answered. Download an installer by hand and run"
-            f"\n\n      cmrelay upgrade <file>\n\n  {discovery.GITHUB}"
-            f"\n  {discovery.PYPI}"
-        )
-
-    chosen = discovery.best(results.values())
-    out.print(f"\n  Newest is {chosen.version}, from {chosen.source}.")
-    if not args.yes and not out.confirm("  Download and verify?"):
+    if not args.yes and not out.confirm(
+        f"Ask {discovery.GITHUB} for the newest release?"
+    ):
         raise UpgradeError("aborted; nothing was modified")
-
-    journal = fsops.Journal()
-    run, signature = discovery.download(chosen, ca_path, DOWNLOADS, journal)
+    ctx = discovery.context(Deployment.ca_path())
+    try:
+        chosen = discovery.newest(discovery.releases(ctx))
+    except (OSError, ValueError, KeyError) as exc:
+        raise UpgradeError(
+            f"GitHub could not be asked: {exc}\n  Download an installer by hand"
+            " and run\n\n      cmrelay upgrade <file>"
+        ) from exc
+    if chosen is None:
+        raise UpgradeError(f"GitHub lists no signed release for {discovery.arch()}")
+    out.print(f"  installed   {__version__}")
+    out.print(f"  newest      {chosen.version}  {chosen.filename}")
+    out.print(f"  size        {chosen.size / (1024 * 1024):.1f} MiB")
+    if not args.yes and not out.confirm("Download and verify?"):
+        raise UpgradeError("aborted; nothing was modified")
+    run, signature = discovery.download(chosen, ctx, DOWNLOADS, fsops.Journal())
     out.detail(f"sha256 {fsops.file_digest(run)}")
     return run, signature.read_text()
 
@@ -148,9 +119,6 @@ def unsigned_warning(out, candidate: Path, reason: str = "") -> None:
         "\n  is for a payload you built yourself and can account for."
         f"\n  sha256 {fsops.file_digest(candidate)}"
     )
-
-
-# -- staging and publishing ------------------------------------------------
 
 
 def stage(candidate: Path, out) -> Path:
@@ -199,7 +167,7 @@ def newer(candidate: str, force: bool) -> bool:
     return want > have
 
 
-def announce(out, new_version, staged, steps, verdict) -> None:
+def announce(out, new_version, staged, verdict) -> None:
     out.print("")
     out.print(f"  installed   {__version__}")
     out.print(f"  candidate   {new_version}")
@@ -208,12 +176,6 @@ def announce(out, new_version, staged, steps, verdict) -> None:
     )
     if verdict.key and verdict.key != "none":
         out.print(f"  signed by   {verdict.key} ({verdict.fingerprint})")
-    if steps:
-        out.print("  migrations")
-        for step in steps:
-            out.print(f"    {step.name:<28}{step.describe}")
-    else:
-        out.print("  migrations  none")
     out.print(f"  disk        {directory_size(staged) // (1024 * 1024)} MiB to publish")
 
 
@@ -241,45 +203,11 @@ def publish(staged: Path, journal, out) -> int:
     # looking whole to the next installer run.
     journal.remove_file("cmrelay", staged / READY_MARKER)
     number = generations.next_number()
-    generations.snapshot_state(journal, generations.current() or 0)
     moved = store.install(staged / "nix/store")
     store.label_for_selinux()
     out.print(f"  published {moved} new store paths")
     generations.create(journal, number, closure, names)
     return number
-
-
-def record_signature(journal, verdict, version: str) -> None:
-    state.write_json(
-        journal,
-        "cmrelay",
-        paths.SIGNATURE,
-        {"version": version, "key": verdict.key, "fingerprint": verdict.fingerprint},
-    )
-
-
-# -- the second half, running from the new closure -------------------------
-
-
-def finish(args, out) -> int:
-    """Migrations, the flip, and the deploy that does the rest."""
-    number = int(args.finish)
-    journal = fsops.Journal(prior=state.read_written())
-    previous = args.previous_version or ""
-
-    steps = migrations.pending(previous, __version__, state.read_migrations())
-    if steps:
-        with out.step("Migrations"):
-            applied = migrations.apply(steps, journal, out)
-            state.save_migrations(journal, set(state.read_migrations()) | set(applied))
-
-    generations.flip(journal, number)
-    generations.prune(journal, out)
-    state.save_written(journal)
-    out.ok(f"generation {number} is live; deploying {__version__}")
-    sys.stdout.flush()
-    exec_installed(["deploy"])
-    return 1
 
 
 def rollback(args, out) -> int:
@@ -294,11 +222,6 @@ def rollback(args, out) -> int:
     if not args.yes and not out.confirm("Continue?"):
         out.print("aborted; nothing was modified")
         return 1
-
-    journal = fsops.Journal(prior=state.read_written())
-    if not generations.restore_state(journal, target):
-        out.warn(f"generation {target} has no saved state; keeping the current one")
-    generations.flip(journal, target)
-    state.save_written(journal)
+    generations.flip(fsops.Journal(), target)
     exec_installed(["deploy"])
     return 1

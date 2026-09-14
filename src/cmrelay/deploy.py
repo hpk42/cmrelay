@@ -24,6 +24,18 @@ from . import daemons, installer, paths, render, users, www
 from .daemons import DeployError
 from .version import __version__
 
+
+def first_nameserver(resolv: Path = None) -> str:
+    resolv = paths.RESOLV_CONF if resolv is None else resolv
+    if not resolv.is_file():
+        return ""
+    for line in resolv.read_text(errors="replace").splitlines():
+        fields = line.split("#", 1)[0].split()
+        if len(fields) >= 2 and fields[0] == "nameserver":
+            return fields[1]
+    return ""
+
+
 # Matches ChatmailVenvDeployer.units; the timers own expire and fsreport.
 CHATMAILD_UNITS = [
     "doveauth",
@@ -47,14 +59,12 @@ class Deployment:
         out,
         journal,
         disable_mail=False,
-        reconcile=False,
     ):
         self.bundle = bundle
         self.config = config
         self.out = out
         self.j = journal
         self.disable_mail = disable_mail
-        self.reconcile = reconcile
         self.spool_created = False
 
     @property
@@ -175,12 +185,8 @@ class Deployment:
     # JournaldDeployer
 
     def configure_journald(self):
-        # guest: the distribution ships it and operators put retention in it
         self.j.copy(
-            "journald",
-            self.vendor("config/journald.conf"),
-            paths.JOURNALD_CONF,
-            guest=True,
+            "journald", self.vendor("config/journald.conf"), paths.JOURNALD_CONF
         )
 
     # UnboundDeployer
@@ -206,18 +212,12 @@ class Deployment:
         Rewriting resolv.conf outright would delete an operator's fallback
         resolver or search domain. Once 127.0.0.1 is first, leave it alone.
         """
-        resolv = paths.RESOLV_CONF
-        first = ""
-        if resolv.is_file():
-            for line in resolv.read_text(errors="replace").splitlines():
-                fields = line.split("#", 1)[0].split()
-                if len(fields) >= 2 and fields[0] == "nameserver":
-                    first = fields[1]
-                    break
-        if first == "127.0.0.1":
+        if first_nameserver() == "127.0.0.1":
             return
         # trailing newline: a SolusVM bug needs it
-        self.j.write("unbound", resolv, "nameserver 127.0.0.1\nnameserver 9.9.9.9\n")
+        self.j.write(
+            "unbound", paths.RESOLV_CONF, "nameserver 127.0.0.1\nnameserver 9.9.9.9\n"
+        )
 
     def write_unbound_base(self, conf_dir: Path, drop_in_dir: Path):
         """The top-level unbound.conf, which relay never supplies.
@@ -421,7 +421,12 @@ class Deployment:
             self.put_wrapper(paths.LOCAL_BIN / name, target, args)
             names.append(name)
         for name, target in plain.items():
-            self.j.symlink("tools", paths.LOCAL_BIN / name, target)
+            link = paths.LOCAL_BIN / name
+            if link.exists() and not link.is_symlink():
+                # cmdeploy's own binary on a taken-over host stays usable
+                self.out.detail(f"leaving {link} alone: not a symlink")
+                continue
+            self.j.symlink("tools", link, target)
             names.append(name)
 
         self.j.write("tools", paths.LINKED_TOOLS, "\n".join(sorted(names)) + "\n")
@@ -454,12 +459,5 @@ class Deployment:
     # GithashDeployer
 
     def configure_version_marker(self):
-        """The marker cmdeploy writes from its working tree.
-
-        cmrelay writes its own version and the relay commit vendor.lock names.
-        """
-        self.j.write(
-            "cmrelay",
-            paths.VERSION_MARKER,
-            f"{self.bundle.relay_commit}\n# installed by cmrelay {__version__}\n",
-        )
+        """The relay commit, in the format cmdeploy and its test suite expect."""
+        self.j.write("cmrelay", paths.VERSION_MARKER, f"{self.bundle.relay_commit}\n")

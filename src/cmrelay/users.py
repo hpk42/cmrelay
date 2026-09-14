@@ -15,6 +15,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .errors import CmrelayError
+
 # (user, primary group, secondary groups), matching relay's required_users.
 REQUIRED_USERS = [
     ("vmail", "vmail", []),
@@ -39,7 +41,7 @@ PACKAGE_USERS = [
 ALL_USERS = REQUIRED_USERS + PACKAGE_USERS
 
 
-class UserError(Exception):
+class UserError(CmrelayError):
     pass
 
 

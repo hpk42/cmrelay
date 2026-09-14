@@ -33,6 +33,7 @@ TEMPLATES_WITH_CONFIG = [
     "config/postfix/main.cf.j2",
     "config/postfix/master.cf.j2",
     "config/dovecot/dovecot.conf.j2",
+    "config/dovecot/auth.lua.j2",
     "config/nginx/nginx.conf.j2",
     "config/nginx/autoconfig.xml.j2",
     "config/nginx/mta-sts.txt.j2",
@@ -134,29 +135,6 @@ def test_strict_undefined_is_an_error(tmp_path):
     template.write_text("value = {{ missing }}\n")
     with pytest.raises(UndefinedError):
         render.render_template(template)
-
-
-def test_the_profile_script_is_idempotent_and_valid_sh(fake_root):
-    """It is sourced on every login, so it must not grow PATH each time."""
-    import subprocess
-
-    from cmrelay import installer, paths
-
-    paths.PROFILE_D.mkdir(parents=True)
-    assert installer.write_profile_script(fsops.Journal())
-    script = paths.PROFILE_SCRIPT
-    bin_dir = str(paths.BIN)
-    # Sourcing it three times must add the directory exactly once, and it must
-    # append rather than prepend so nothing here shadows a distribution tool.
-    out = subprocess.run(
-        ["sh", "-c", f". {script}; . {script}; . {script}; echo $PATH"],
-        capture_output=True,
-        text=True,
-        env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
-        check=True,
-    ).stdout.strip()
-    assert out.count(bin_dir) == 1
-    assert out.endswith(f":{bin_dir}")
 
 
 def test_a_distro_drop_in_anchoring_the_root_is_detected(tmp_path):

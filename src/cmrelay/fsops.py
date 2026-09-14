@@ -2,10 +2,7 @@
 
 Every mutating primitive lives here and returns a `Change` the `Journal`
 collects, so a deploy's report is complete by construction; a test walks the
-AST of every other module to keep it that way. `--dry-run` is then a flag on
-the journal, and hand-edit detection has one place to look:
-`state/written.json` holds the sha256 of every file cmrelay wrote outside its
-own tree.
+AST of every other module to keep it that way.
 """
 
 import fcntl
@@ -14,19 +11,19 @@ import hashlib
 import os
 import pwd
 import shutil
-import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths
+from .errors import CmrelayError
 
 ADDED = "+"
 CHANGED = "~"
 REMOVED = "-"
 
 
-class LockBusy(Exception):
+class LockBusy(CmrelayError):
     """Another cmrelay process holds the lock."""
 
 
@@ -73,30 +70,16 @@ def is_system(path) -> bool:
     return path != paths.ROOT and paths.ROOT not in path.parents
 
 
-def digest(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def file_digest(path: Path) -> str | None:
-    try:
-        return digest(path.read_bytes())
-    except OSError:
-        return None
+def file_digest(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 @dataclass
 class Journal:
     """What this run changed, and the only way to change anything."""
 
-    dry_run: bool = False
-    prior: dict = field(default_factory=dict)
     changes: list = field(default_factory=list)
-    wrote: dict = field(default_factory=dict)
-    hand_edited: list = field(default_factory=list)
     seen: dict = field(default_factory=dict)
-    system_seconds: float = 0.0
-
-    # -- reporting ---------------------------------------------------------
 
     def note(self, change: Change | None) -> Change | None:
         if change is not None:
@@ -127,85 +110,26 @@ class Journal:
     def paths(self) -> set:
         return {c.path for c in self.changes}
 
-    # -- hand edits --------------------------------------------------------
-
-    def edited_by_hand(self, path: Path, data: bytes) -> bool:
-        """Whether somebody other than cmrelay last wrote this file.
-
-        Without a recorded hash there is no evidence either way, so a
-        pre-existing file never counts as edited.
-        """
-        recorded = self.prior.get(str(path))
-        if recorded is None:
-            return False
-        current = file_digest(path)
-        if current is None:
-            return False
-        return current not in (recorded, digest(data))
-
-    def record(self, path: Path, data: bytes) -> None:
-        if is_system(path):
-            self.wrote[str(path)] = digest(data)
-
-    # -- primitives --------------------------------------------------------
-
     def write(
-        self,
-        component: str,
-        dest,
-        content,
-        mode: int = 0o644,
-        owner=None,
-        detail: str = "",
-        guest: bool = False,
+        self, component: str, dest, content, mode: int = 0o644, owner=None, detail=""
     ) -> Change | None:
         """Write a file if its content differs, and say whether it moved.
 
-        Content-based because this drives service restarts. `guest` marks a
-        path cmrelay writes but does not own: a hand edit there is left in
-        place, where on an owned path the previous content is kept beside it
-        as `<file>.replaced`.
+        Content-based because this drives service restarts.
         """
         dest = Path(dest)
         data = content.encode() if isinstance(content, str) else content
         existed = dest.exists()
-        started = time.monotonic()
         self.examined(component)
-
-        if existed and self.edited_by_hand(dest, data):
-            return self.note(self._hand_edit(component, dest, data, mode, guest))
-
-        changed = True
-        if existed:
-            current = dest.read_bytes() if dest.is_file() else None
-            changed = current != data
-
-        if changed and not self.dry_run:
+        changed = not (existed and dest.is_file() and dest.read_bytes() == data)
+        if changed:
             self._ensure_parents(component, dest.parent)
             self._replace(dest, data)
-        if not self.dry_run:
-            changed = self._apply_modes(dest, mode, owner) or changed
-
-        self.record(dest, data)
-        if is_system(dest):
-            self.system_seconds += time.monotonic() - started
+        changed = self._apply_modes(dest, mode, owner) or changed
         if not changed:
             return None
         kind = CHANGED if existed else ADDED
         return self.note(Change(dest, kind, component, is_system(dest), detail))
-
-    def _hand_edit(self, component, dest, data, mode, guest) -> Change | None:
-        if guest:
-            self.hand_edited.append((dest, "left alone"))
-            return None
-        kept = dest.with_name(dest.name + ".replaced")
-        self.hand_edited.append((dest, f"overwritten, previous kept as {kept.name}"))
-        if not self.dry_run:
-            shutil.copyfile(dest, kept)
-            self._replace(dest, data)
-            self._apply_modes(dest, mode, None)
-        self.record(dest, data)
-        return Change(dest, CHANGED, component, is_system(dest), "was edited by hand")
 
     def _replace(self, dest: Path, data: bytes) -> None:
         # through a temporary, so a killed deploy leaves no half file
@@ -237,9 +161,9 @@ class Journal:
                 moved = True
         return moved
 
-    def copy(self, component: str, src, dest, mode: int = 0o644, owner=None, **kw):
+    def copy(self, component: str, src, dest, mode: int = 0o644, owner=None):
         return self.write(
-            component, dest, Path(src).read_bytes(), mode=mode, owner=owner, **kw
+            component, dest, Path(src).read_bytes(), mode=mode, owner=owner
         )
 
     def ensure_directory(
@@ -247,12 +171,6 @@ class Journal:
     ) -> Change | None:
         path = Path(path)
         created = not path.exists()
-        if self.dry_run:
-            return (
-                self.note(Change(path, ADDED, component, is_system(path), detail))
-                if created
-                else None
-            )
         self._ensure_parents(component, path.parent)
         path.mkdir(parents=True, exist_ok=True)
         moved = self._apply_modes(path, mode, owner)
@@ -265,17 +183,14 @@ class Journal:
         path = Path(path)
         if not (path.is_file() or path.is_symlink()):
             return None
-        if not self.dry_run:
-            path.unlink()
-        self.wrote.pop(str(path), None)
+        path.unlink()
         return self.note(Change(path, REMOVED, component, is_system(path), detail))
 
     def remove_directory(self, component: str, path, detail: str = "") -> Change | None:
         path = Path(path)
         if not path.is_dir() or path.is_symlink():
             return None
-        if not self.dry_run:
-            shutil.rmtree(path)
+        shutil.rmtree(path)
         return self.note(Change(path, REMOVED, component, is_system(path), detail))
 
     def symlink(self, component: str, link, target, detail: str = "") -> Change | None:
@@ -283,11 +198,10 @@ class Journal:
         if link.is_symlink() and link.readlink() == target:
             return None
         existed = link.is_symlink() or link.exists()
-        if not self.dry_run:
-            self._ensure_parents(component, link.parent)
-            if existed:
-                link.unlink()
-            link.symlink_to(target)
+        self._ensure_parents(component, link.parent)
+        if existed:
+            link.unlink()
+        link.symlink_to(target)
         kind = CHANGED if existed else ADDED
         return self.note(
             Change(link, kind, component, is_system(link), detail or f"-> {target}")
@@ -295,9 +209,7 @@ class Journal:
 
     def chown(self, component: str, path, user: str, group: str) -> Change | None:
         path = Path(path)
-        if self.dry_run or not path.exists():
-            return None
-        if not self._apply_modes(path, None, (user, group)):
+        if not path.exists() or not self._apply_modes(path, None, (user, group)):
             return None
         return self.note(
             Change(path, CHANGED, component, is_system(path), f"owner {user}:{group}")
@@ -305,15 +217,11 @@ class Journal:
 
     def chmod(self, component: str, path, mode: int) -> Change | None:
         path = Path(path)
-        if self.dry_run or not path.exists():
-            return None
-        if not self._apply_modes(path, mode, None):
+        if not path.exists() or not self._apply_modes(path, mode, None):
             return None
         return self.note(
             Change(path, CHANGED, component, is_system(path), f"mode {mode:o}")
         )
-
-    # -- systemd units -----------------------------------------------------
 
     def install_unit(self, component: str, name: str, content: str, detail: str = ""):
         """Real file in /etc/systemd/system, symlink under /opt/cmrelay/systemd.
@@ -322,7 +230,7 @@ class Journal:
         itself a symlink in the search path.
         """
         real = paths.unit_file(name)
-        if real.is_symlink() and not self.dry_run:
+        if real.is_symlink():
             # a mask (-> /dev/null), which must go before a real file can
             real.unlink()
         change = self.write(component, real, content, mode=0o644, detail=detail)
@@ -337,8 +245,6 @@ class Journal:
 
     def sysctl(self, path, value: str) -> bool:
         """Set a live kernel tunable. Not journalled: the sysctl.d drop-in is."""
-        if self.dry_run:
-            return True
         try:
             Path(path).write_text(value)
         except OSError:

@@ -1,10 +1,8 @@
 """What the `.run` file does, and nothing more.
 
-Unpacking a 50 MiB archive happens once per host per release; deploying
-happens whenever configuration changes. So the installer publishes the store,
-links the CLI and stops. It takes no arguments at all beyond -y: offering a
-domain would make one command both install and configure, and an operator
-who has seen that shortcut has no way to tell which half failed.
+Unpacking the archive happens once per host per release; deploying happens
+whenever configuration changes. So the installer publishes the store, links
+the CLI and stops.
 """
 
 import os
@@ -13,15 +11,12 @@ import sys
 from pathlib import Path
 
 from . import fsops, generations, paths, store
-from .bundle import ENV_CLOSURE, ENV_INSTALLER, ENV_STAGE, READY_MARKER, Bundle
+from .bundle import ENV_CLOSURE, ENV_STAGE, READY_MARKER, Bundle
+from .errors import CmrelayError
 from .version import __version__
 
-# Only to phrase the refusal below: a domain wants `cmrelay deploy DOMAIN`
-# and a verb wants `cmrelay VERB`. test_cli pins it against the dispatch table.
-VERBS = ("deploy", "dns", "install", "status", "uninstall", "upgrade", "version")
 
-
-class InstallerError(Exception):
+class InstallerError(CmrelayError):
     pass
 
 
@@ -39,43 +34,15 @@ def installer_verb(args, out) -> int:
         print(bundle.prefix)
         return 0
 
-    if store_populated():
-        raise InstallerError(already_installed())
-    refuse_arguments(args)
-
     if not args.yes and not confirm(bundle, out):
         out.print("aborted; nothing was modified")
         return 1
 
-    journal = fsops.Journal()
-    publish(bundle, journal, out)
+    publish(bundle, fsops.Journal(), out)
     hint = "" if paths.INI.is_file() else " relay.example.org"
     out.print("\nInstalled; nothing is configured or running yet. Next:")
     out.print(f"\n    cmrelay deploy{hint}")
     return 0
-
-
-def store_populated(target: Path = paths.STORE) -> bool:
-    return target.is_dir() and any(target.iterdir())
-
-
-def already_installed() -> str:
-    """The store is here. Whether that is finished or half-done differs."""
-    if not paths.INI.is_file():
-        return (
-            f"{paths.STORE} already holds a closure, but this host has no"
-            f" {paths.INI} yet, so an earlier run did not finish."
-            "\n  Carry on from where it stopped:"
-            "\n\n      cmrelay deploy [DOMAIN]"
-        )
-    # Named when this came from a .run file; from `cmrelay install` there is
-    # no file to name, and a bare `upgrade` finds the newest release itself.
-    installer = os.environ.get(ENV_INSTALLER, "")
-    return (
-        f"{paths.STORE} already holds an installed relay."
-        "\n  To replace the release running here:"
-        f"\n\n      {f'cmrelay upgrade {installer}'.rstrip()}"
-    )
 
 
 def staged_size(prefix: Path) -> str:
@@ -142,21 +109,6 @@ def write_profile_script(journal) -> bool:
     return True
 
 
-def refuse_arguments(args) -> None:
-    """Anything but -y is somebody expecting this to configure the relay too."""
-    rest = [a for a in (args.rest or []) if a != "--"]
-    if not rest:
-        return None
-    installer = os.environ.get(ENV_INSTALLER, "<installer>")
-    wanted = " ".join(rest if rest[0] in VERBS else ["deploy", *rest])
-    raise InstallerError(
-        f"the installer installs and takes no arguments, so {rest[0]!r} is"
-        " nothing it can do.\n  Install first, then run the command:"
-        f"\n\n      {installer}"
-        f"\n      cmrelay {wanted}"
-    )
-
-
 def exec_installed(argv) -> None:
     """Hand over to the CLI now living in the store. Does not return."""
     installed = paths.CLI.resolve()
@@ -165,9 +117,7 @@ def exec_installed(argv) -> None:
     env = dict(os.environ)
     # Bundle.discover() keys off these; without them it locates the closure
     # from its own __file__, which is now the installed copy.
-    env.pop(ENV_STAGE, None)
-    env.pop(ENV_CLOSURE, None)
-    env.pop(ENV_INSTALLER, None)
-    env.pop("PYTHONPATH", None)
+    for name in (ENV_STAGE, ENV_CLOSURE, "PYTHONPATH"):
+        env.pop(name, None)
     sys.stdout.flush()
     os.execve(str(installed), [str(installed), *argv], env)

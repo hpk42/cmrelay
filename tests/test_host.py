@@ -3,7 +3,7 @@
 import pytest
 
 from cmrelay import host
-from cmrelay.preflight import Report
+from cmrelay.preflight import MISSING, Report
 
 
 @pytest.fixture
@@ -35,12 +35,11 @@ def test_a_bare_host_is_bare(tree):
 def test_an_ini_and_a_store_mean_installed(tree):
     put(tree["ini"], "[params]\nmail_domain = relay.example.org\n")
     populate_store(tree["store"])
-    put(tree["marker"], "abc123\n# installed by cmrelay 0.4.0\n")
+    put(tree["marker"], "abc123\n")
 
     where = host.classify(**tree)
     assert where.state == host.INSTALLED
-    assert where.cmrelay_version == "0.4.0"
-    assert where.description == "installed by cmrelay 0.4.0"
+    assert where.relay_commit == "abc123"
 
 
 def test_a_store_alone_is_what_the_installer_leaves_and_is_not_partial(tree):
@@ -83,20 +82,16 @@ def test_a_bare_version_marker_alone_means_cmdeploy(tree):
     assert where.relay_commit == "cae03e2714"
 
 
-def test_a_cmrelay_marker_alone_does_not_mean_cmdeploy(tree):
-    put(tree["marker"], "cae03e2714\n# installed by cmrelay 0.4.0\n")
-    assert host.classify(**tree).state == host.BARE
-
-
-def test_a_modified_working_tree_is_reported(tree):
-    put(tree["marker"], "cae03e2714\ndiff --git a/x b/x\n")
-    assert host.classify(**tree).hand_modified is True
-
-
 def test_a_bare_host_with_a_conflict_is_foreign():
     report = Report()
     report.add("port 25", "held by exim4")
     assert host.escalate(host.Host(host.BARE), report).state == host.FOREIGN
+
+
+def test_something_missing_does_not_make_a_bare_host_foreign():
+    report = Report()
+    report.add("mtail", "is missing", kind=MISSING)
+    assert host.escalate(host.Host(host.BARE), report).state == host.BARE
 
 
 def test_a_cmdeploy_host_with_a_conflict_stays_cmdeploy():
@@ -134,7 +129,7 @@ def test_the_refusal_names_the_uninstall_route(tmp_path):
         host.resolve_domain(installed(tmp_path), "relay2.example.org")
     message = str(caught.value)
     assert "cmrelay uninstall relay.example.org" in message
-    assert "--force" in message
+    assert "mail_domain" in message
 
 
 def test_the_refusal_counts_the_mailboxes_it_would_strand(tmp_path):
@@ -145,13 +140,6 @@ def test_the_refusal_counts_the_mailboxes_it_would_strand(tmp_path):
         host.resolve_domain(
             installed(tmp_path), "relay2.example.org", mailboxes_dir=mailboxes
         )
-
-
-def test_force_accepts_a_different_domain(tmp_path):
-    where = installed(tmp_path)
-    assert host.resolve_domain(where, "relay2.example.org", force=True) == (
-        "relay2.example.org"
-    )
 
 
 def test_a_bare_host_needs_a_domain():

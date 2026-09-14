@@ -1,12 +1,8 @@
-"""The vendoring mapping has one job: never let a new relay file go unnoticed.
-
-These tests exercise that property directly, because it is the single most
-valuable thing the vendoring layer does. Everything else about vendor-sync is
-a file copy.
-"""
+"""The vendoring mapping has one job: never let a new relay file go unnoticed."""
 
 import json
 import shutil
+import textwrap
 
 import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
@@ -16,9 +12,8 @@ from cmrelay.vendoring import (
     Rule,
     VendorError,
     plan,
-    sha256_file,
-    sync,
-    verify,
+    read_pins,
+    refresh,
 )
 
 
@@ -27,20 +22,11 @@ def mapping():
     return Mapping.load(REPO / "vendor.toml")
 
 
-def make_relay(tmp_path, files):
-    for relpath, content in files.items():
-        path = tmp_path / relpath
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
-    return tmp_path
-
-
 def test_the_real_mapping_covers_the_real_relay(mapping, relay_root):
-    """The mapping and the pinned relay commit agree, right now."""
     mapped = plan(relay_root, mapping)
     assert len(mapped) > 40
     assert "systemd/doveauth.service.f" in mapped.values()
-    assert "config/postfix/main.cf.j2" in mapped.values()
+    assert "config/dovecot/auth.lua.j2" in mapped.values()
 
 
 def test_an_uncovered_file_is_an_error(tmp_path, mapping, relay_root):
@@ -62,75 +48,54 @@ def test_an_uncovered_file_is_an_error(tmp_path, mapping, relay_root):
     assert "vendor.toml" in str(excinfo.value)
 
 
-def test_deployer_python_is_skipped_not_copied(mapping):
-    kind, _ = mapping.classify("cmdeploy/src/cmdeploy/deployers.py")
-    assert kind == "skip"
-    kind, _ = mapping.classify("cmdeploy/src/cmdeploy/dovecot/deployer.py")
-    assert kind == "skip"
-
-
-def test_dead_mtasts_files_are_skipped(mapping):
-    for name in ("mta-sts-daemon.service", "mta-sts-daemon.yml"):
-        kind, _ = mapping.classify(f"cmdeploy/src/cmdeploy/postfix/{name}")
-        assert kind == "skip", name
-
-
-def test_units_land_in_one_flat_directory(mapping):
-    for src, want in [
-        (
-            "cmdeploy/src/cmdeploy/service/doveauth.service.f",
-            "systemd/doveauth.service.f",
-        ),
-        (
-            "cmdeploy/src/cmdeploy/filtermail/filtermail.service.j2",
-            "systemd/filtermail.service.j2",
-        ),
-        (
-            "cmdeploy/src/cmdeploy/iroh-relay.service.j2",
-            "systemd/iroh-relay.service.j2",
-        ),
-    ]:
-        assert mapping.classify(src) == ("copy", want)
+def test_deployer_python_is_skipped_and_units_land_flat(mapping):
+    assert mapping.classify("cmdeploy/src/cmdeploy/deployers.py")[0] == "skip"
+    assert mapping.classify("cmdeploy/src/cmdeploy/dovecot/deployer.py")[0] == "skip"
+    assert mapping.classify("cmdeploy/src/cmdeploy/postfix/mta-sts-daemon.yml")[0] == (
+        "skip"
+    )
+    assert mapping.classify("cmdeploy/src/cmdeploy/service/doveauth.service.f") == (
+        "copy",
+        "systemd/doveauth.service.f",
+    )
+    assert mapping.classify("cmdeploy/src/cmdeploy/iroh-relay.service.j2") == (
+        "copy",
+        "systemd/iroh-relay.service.j2",
+    )
 
 
 def test_colliding_destinations_are_rejected(tmp_path):
-    relay = make_relay(
-        tmp_path / "relay",
-        {"a/one.conf": "1\n", "b/one.conf": "2\n"},
-    )
+    for relpath in ("a/one.conf", "b/one.conf"):
+        (tmp_path / relpath).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relpath).write_text("x\n")
     mapping = Mapping(
-        relay_url="x",
         roots=["a", "b"],
         copies=[Rule("a/*", "config/one.conf"), Rule("b/*", "config/one.conf")],
     )
     with pytest.raises(VendorError, match="collide"):
-        plan(relay, mapping)
+        plan(tmp_path, mapping)
 
 
-def test_sync_then_verify_round_trips(tmp_path, mapping, relay_root):
-    vendor = tmp_path / "vendor"
-    hashes = sync(relay_root, vendor, mapping)
-    assert verify(vendor, hashes) == []
-
-    (vendor / "config/postfix/login_map").write_text("tampered\n")
-    problems = verify(vendor, hashes)
-    assert problems == ["modified: config/postfix/login_map"]
-
-
-def test_verify_reports_extra_files(tmp_path, mapping, relay_root):
-    vendor = tmp_path / "vendor"
-    hashes = sync(relay_root, vendor, mapping)
-    (vendor / "config" / "stray.conf").write_text("x\n")
-    assert "unexpected: config/stray.conf" in verify(vendor, hashes)
-
-
-def test_shipped_vendor_matches_its_lock():
-    """What is committed under vendor/ is what vendor.lock says it is."""
-    lock = json.loads((REPO / "vendor.lock").read_text())
-    assert verify(REPO / "vendor", lock["files"]) == []
+def test_the_shipped_tree_is_what_a_fresh_refresh_produces(relay_root, tmp_path):
+    """What is committed is what scripts/vendor-check verifies in CI."""
+    refresh(REPO, relay_root, tmp_path)
+    fresh = {
+        p.relative_to(tmp_path / "vendor"): p.read_bytes()
+        for p in (tmp_path / "vendor").rglob("*")
+        if p.is_file()
+    }
+    shipped = {
+        p.relative_to(REPO / "vendor"): p.read_bytes()
+        for p in (REPO / "vendor").rglob("*")
+        if p.is_file()
+    }
+    assert fresh == shipped
+    for name in ("vendor.lock", "nix/generated/relay-pins.json"):
+        assert (tmp_path / name).read_bytes() == (REPO / name).read_bytes()
 
 
-def test_lock_records_the_patch_series():
+def test_every_patch_changes_something(relay_root, mapping):
+    """A patch that no longer applies to anything is dead weight."""
     lock = json.loads((REPO / "vendor.lock").read_text())
     series = [
         line.split("#", 1)[0].strip()
@@ -138,18 +103,11 @@ def test_lock_records_the_patch_series():
     ]
     assert lock["patches"] == [s for s in series if s]
 
-
-def test_patched_files_differ_from_upstream(relay_root):
-    """Every patch has to actually change something, or it is dead weight."""
-    lock = json.loads((REPO / "vendor.lock").read_text())
-    mapping = Mapping.load(REPO / "vendor.toml")
-    mapped = plan(relay_root, mapping)
-    reverse = {dest: src for src, dest in mapped.items()}
-
+    reverse = {dest: src for src, dest in plan(relay_root, mapping).items()}
     patched = [
         dest
-        for dest, digest in lock["files"].items()
-        if sha256_file(relay_root / reverse[dest]) != digest
+        for dest, src in reverse.items()
+        if (REPO / "vendor" / dest).read_bytes() != (relay_root / src).read_bytes()
     ]
     assert sorted(patched) == [
         "config/dovecot/dovecot.conf.j2",
@@ -161,3 +119,66 @@ def test_patched_files_differ_from_upstream(relay_root):
         "pycode/rdns.py",
         "www/index.md",
     ]
+
+
+# -- relay's pins ----------------------------------------------------------
+
+
+def write(tmp_path, source):
+    path = tmp_path / "pins.py"
+    path.write_text(textwrap.dedent(source))
+    return path
+
+
+def test_the_real_pins_name_both_architectures(relay_root):
+    pins = read_pins(relay_root / "cmdeploy/src/cmdeploy/pins.py")
+    for table in (
+        "FILTERMAIL_ARTIFACTS",
+        "MTAIL_ARTIFACTS",
+        "TURN_ARTIFACTS",
+        "IROH_ARTIFACTS",
+    ):
+        assert {"x86_64", "aarch64"} <= set(pins[table])
+        for url, digest in pins[table].values():
+            assert url.startswith("https://")
+            assert len(digest) == 64
+
+
+def test_a_pins_module_that_imports_is_refused(tmp_path):
+    """Running upstream code is only acceptable while it pulls in nothing."""
+    path = write(
+        tmp_path,
+        """
+        import os
+
+        FILTERMAIL_ARTIFACTS = {}
+        MTAIL_ARTIFACTS = {}
+        TURN_ARTIFACTS = {}
+        IROH_ARTIFACTS = {}
+    """,
+    )
+    with pytest.raises(VendorError, match="imports something"):
+        read_pins(path)
+
+
+def test_a_missing_artifact_table_is_an_error(tmp_path):
+    path = write(tmp_path, "FILTERMAIL_ARTIFACTS = {}\nMTAIL_ARTIFACTS = {}\n")
+    with pytest.raises(VendorError, match="TURN_ARTIFACTS, IROH_ARTIFACTS"):
+        read_pins(path)
+
+
+def test_values_json_cannot_express_are_dropped(tmp_path):
+    """relay keys DOVECOT_SHA256 by tuples; cmrelay builds dovecot itself."""
+    path = write(
+        tmp_path,
+        """
+        FILTERMAIL_ARTIFACTS = {"x86_64": ("https://example.org/x", "a")}
+        MTAIL_ARTIFACTS = {}
+        TURN_ARTIFACTS = {}
+        IROH_ARTIFACTS = {}
+        DOVECOT_SHA256 = {("core", "amd64"): "deadbeef"}
+    """,
+    )
+    pins = read_pins(path)
+    assert "DOVECOT_SHA256" not in pins
+    assert pins["FILTERMAIL_ARTIFACTS"]["x86_64"] == ("https://example.org/x", "a")

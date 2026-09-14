@@ -1,9 +1,9 @@
 # The binaries relay fetches rather than packages, fetched the same way.
 #
 # Nothing here is compiled. Each is a fetchurl with the sha256 relay already
-# records, read out of nix/generated/relay-pins.json, which
-# scripts/extract-from-relay parses out of relay's deployers. A relay bump
-# therefore moves these versions with no edit here.
+# records, read out of nix/generated/relay-pins.json, which scripts/vendor-sync
+# writes from relay's pins.py. A relay bump therefore moves these versions
+# with no edit here.
 #
 # Fetching rather than building buys no exposure to whether a given iroh
 # release still compiles against a current rustc. The install strips each
@@ -31,7 +31,7 @@
 }:
 
 let
-  pins = (lib.importJSON ../generated/relay-pins.json).pins;
+  pins = lib.importJSON ../generated/relay-pins.json;
 
   arch =
     {

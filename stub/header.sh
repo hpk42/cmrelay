@@ -40,32 +40,44 @@ fail() {
 
 # Before anything is unpacked, because the answer cannot change: installing
 # and configuring are separate commands, so the only flags here are the
-# installer's own. cmrelay.installer.refuse_arguments says the same thing
-# from inside the closure, for a `cmrelay installer` invoked directly.
+# installer's own.
+stage_only=
 for arg in "$@"; do
     case $arg in
-        -y | --yes | --stage-only | --) continue ;;
+        --stage-only) stage_only=1 ;;
+        -y | --yes | --) ;;
+        *)
+            echo "cmrelay: the installer takes no arguments; it unpacks the relay" \
+                 "stack and nothing more." >&2
+            echo "  Run it, then configure the relay with:" >&2
+            echo >&2
+            echo "      cmrelay deploy DOMAIN" >&2
+            exit 1 ;;
     esac
-    # A domain wants `cmrelay deploy DOMAIN`, a verb wants `cmrelay VERB`.
-    # test_payload pins these names against cmrelay.installer.VERBS.
-    case $1 in
-        deploy | dns | install | status | uninstall | upgrade | version)
-            wanted=$* ;;
-        *) wanted="deploy $*" ;;
-    esac
-    echo "cmrelay: the installer takes no arguments, so '$arg' is" \
-         "nothing it can do." >&2
-    echo "  Install first, then run the command:" >&2
-    echo >&2
-    echo "      $self" >&2
-    echo "      cmrelay $wanted" >&2
-    exit 1
 done
 
 # Root only: everything cmrelay does needs it, and the alternative was a
 # second staging path for the verbs that do not.
 if [ "$(id -u)" != 0 ]; then
     fail "cmrelay must run as root"
+fi
+
+# A populated store is replaced by `cmrelay upgrade`, which stages through
+# --stage-only; anything else would unpack the whole closure to be refused.
+if [ -z "$stage_only" ] && [ -n "$(ls -A /opt/cmrelay/nix/store 2>/dev/null)" ]; then
+    if [ -f /opt/cmrelay/chatmail.ini ]; then
+        echo "cmrelay: /opt/cmrelay already holds an installed relay." >&2
+        echo "  To replace the release running here:" >&2
+        echo >&2
+        echo "      cmrelay upgrade $self" >&2
+    else
+        echo "cmrelay: /opt/cmrelay already holds the relay stack, but no" \
+             "chatmail.ini: an earlier run stopped before deploying." >&2
+        echo "  Carry on from where it stopped:" >&2
+        echo >&2
+        echo "      cmrelay deploy DOMAIN" >&2
+    fi
+    exit 1
 fi
 
 ready=.cmrelay-ready
@@ -248,10 +260,7 @@ python="$stage$CMRELAY_PYTHON"
 libs=$(ls -d "$stage"/nix/store/*/lib 2>/dev/null | tr '\n' ':')
 
 CMRELAY_STAGE="$stage"
-# The installer's own path, which argv cannot carry once the CLI is running
-# out of the staged closure.
-CMRELAY_INSTALLER="$self"
-export CMRELAY_STAGE CMRELAY_CLOSURE CMRELAY_INSTALLER
+export CMRELAY_STAGE CMRELAY_CLOSURE
 staged_site=$(printf '%s' "$CMRELAY_SITE" | sed "s|:|:$stage|g")
 PYTHONPATH="$stage$CMRELAY_CLOSURE:$stage$staged_site"
 export PYTHONPATH

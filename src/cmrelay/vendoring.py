@@ -3,43 +3,46 @@
 relay is the source of truth for every template, static config file and
 systemd unit a chatmail relay runs on. cmrelay copies them byte for byte
 rather than reimplementing them, so the only question worth engineering for
-is whether the copy is complete.
-
-The mapping in vendor.toml is exhaustive by construction: sync walks relay's
-config surface and fails on any file no rule covers. Upstream adding a
-component with new templates therefore breaks the cmrelay build, instead of
-silently producing a relay that is missing a service.
-
-vendor.lock records the relay commit plus a sha256 per copied file, which is
-what makes a cmrelay tag name an exact relay tree.
+is whether the copy is complete. The mapping in vendor.toml is exhaustive by
+construction: `refresh` walks relay's config surface and fails on any file no
+rule covers, so upstream adding a component with new templates breaks the
+cmrelay build instead of silently producing a relay that is missing a
+service.
 """
 
-import hashlib
+import ast
+import json
 import re
 import shutil
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .errors import CmrelayError
 
-class VendorError(Exception):
+# relay pins the binaries cmrelay fetches in a module that imports nothing,
+# which is what makes running it to read the tables acceptable.
+PINS_SOURCE = "cmdeploy/src/cmdeploy/pins.py"
+EXPECTED_PINS = [
+    "FILTERMAIL_ARTIFACTS",
+    "MTAIL_ARTIFACTS",
+    "TURN_ARTIFACTS",
+    "IROH_ARTIFACTS",
+]
+
+
+class VendorError(CmrelayError):
     """The mapping and relay's tree no longer agree."""
 
 
 def globmatch(path: str, pattern: str) -> bool:
     """Match a relay-relative path, with `*` stopping at a directory boundary.
 
-    Written out rather than built on fnmatch, for two reasons. fnmatch
-    translates `*` to `.*`, which crosses separators, so a rule for
-    `dovecot/*` would silently claim `dovecot/conf.d/10-mail.conf` and
-    flatten it into the wrong destination: exactly the drift the mapping
-    exists to catch. And post-processing `fnmatch.translate`'s output means
-    depending on its shape, which changed in Python 3.14 (a lowercase
-    end-of-string anchor) and broke this on the interpreter the closure
-    actually ships.
-
-    `*` matches within one path segment, `**` matches across segments, `?`
-    matches one character that is not a separator. Nothing else is special.
+    fnmatch translates `*` to `.*`, which crosses separators, so a rule for
+    `dovecot/*` would silently claim `dovecot/conf.d/10-mail.conf` and flatten
+    it into the wrong destination: exactly the drift the mapping exists to
+    catch. `**` matches across segments and `?` one character.
     """
     expr = []
     index = 0
@@ -68,7 +71,6 @@ class Rule:
 @dataclass
 class Skip:
     patterns: list[str]
-    why: str
     keep: list[str] = field(default_factory=list)
 
     def claims(self, relpath: str) -> bool:
@@ -79,7 +81,6 @@ class Skip:
 
 @dataclass
 class Mapping:
-    relay_url: str
     roots: list[str]
     skips: list[Skip] = field(default_factory=list)
     copies: list[Rule] = field(default_factory=list)
@@ -88,17 +89,13 @@ class Mapping:
     def load(cls, path: Path) -> "Mapping":
         raw = tomllib.loads(Path(path).read_text())
         return cls(
-            relay_url=raw["relay_url"],
             roots=raw["roots"],
-            skips=[
-                Skip(s["patterns"], s["why"], s.get("keep", []))
-                for s in raw.get("skip", [])
-            ],
+            skips=[Skip(s["patterns"], s.get("keep", [])) for s in raw.get("skip", [])],
             copies=[Rule(c["src"], c["dest"]) for c in raw.get("copy", [])],
         )
 
     def classify(self, relpath: str) -> tuple[str, str | None]:
-        """Return ("skip"|"copy", destination) for one relay-relative path."""
+        """Return ("skip"|"copy"|"unmatched", destination) for one relay path."""
         for skip in self.skips:
             if skip.claims(relpath):
                 return "skip", None
@@ -111,7 +108,6 @@ class Mapping:
 
 
 def walk_surface(relay_root: Path, mapping: Mapping):
-    """Yield every relay-relative file path under the mapped roots, sorted."""
     for root in mapping.roots:
         base = relay_root / root
         if not base.is_dir():
@@ -122,11 +118,10 @@ def walk_surface(relay_root: Path, mapping: Mapping):
 
 
 def plan(relay_root: Path, mapping: Mapping) -> dict[str, str]:
-    """Resolve the mapping against a relay checkout.
+    """Resolve the mapping against a relay checkout: relay path -> vendor path.
 
     Raises VendorError listing every uncovered file, because an upstream
-    refactor usually adds several at once and fixing them one error at a
-    time is needless work.
+    refactor usually adds several at once.
     """
     result, unmatched = {}, []
     for relpath in walk_surface(relay_root, mapping):
@@ -153,36 +148,93 @@ def plan(relay_root: Path, mapping: Mapping) -> dict[str, str]:
     return result
 
 
-def sha256_file(path: Path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def sync(relay_root: Path, vendor_dir: Path, mapping: Mapping) -> dict[str, str]:
-    """Copy the mapped files into vendor_dir, returning dest -> sha256."""
+def sync(relay_root: Path, vendor_dir: Path, mapping: Mapping) -> int:
+    """Copy the mapped files into an emptied vendor_dir; returns the count."""
     mapped = plan(relay_root, mapping)
     if vendor_dir.exists():
         shutil.rmtree(vendor_dir)
-    hashes = {}
     for src, dest in sorted(mapped.items()):
         target = vendor_dir / dest
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(relay_root / src, target)
-        hashes[dest] = sha256_file(target)
-    return hashes
+    return len(mapped)
 
 
-def verify(vendor_dir: Path, expected: dict[str, str]) -> list[str]:
-    """Return a list of human-readable differences against vendor.lock."""
-    problems = []
-    present = {
-        str(p.relative_to(vendor_dir)) for p in vendor_dir.rglob("*") if p.is_file()
+def apply_patches(repo: Path, vendor_dir: Path) -> list[str]:
+    """Apply patches/series to a freshly synced vendor tree, in order."""
+    series = repo / "patches" / "series"
+    applied = []
+    for line in series.read_text().splitlines():
+        name = line.split("#", 1)[0].strip()
+        if not name:
+            continue
+        subprocess.run(
+            ["patch", "-p1", "--quiet", "-i", str(repo / "patches" / name)],
+            cwd=vendor_dir,
+            check=True,
+        )
+        applied.append(name)
+    return applied
+
+
+def read_pins(path: Path) -> dict:
+    """Run relay's pins module and return its artefact tables.
+
+    Running data written as Python is fine; running something that pulls in
+    pyinfra is not, so an import anywhere in the module is refused. Tables
+    JSON cannot express (DOVECOT_SHA256 is keyed by tuples) are dropped.
+    """
+    tree = ast.parse(Path(path).read_text(), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            raise VendorError(
+                f"{path} imports something at line {node.lineno};"
+                " cmrelay only runs it because it does not"
+            )
+    namespace = {}
+    exec(compile(tree, str(path), "exec"), namespace)
+    pins = {
+        name: value
+        for name, value in namespace.items()
+        if not name.startswith("__") and _jsonable(value)
     }
-    for dest, want in sorted(expected.items()):
-        path = vendor_dir / dest
-        if not path.is_file():
-            problems.append(f"missing: {dest}")
-        elif sha256_file(path) != want:
-            problems.append(f"modified: {dest}")
-    for extra in sorted(present - set(expected)):
-        problems.append(f"unexpected: {extra}")
-    return problems
+    missing = [name for name in EXPECTED_PINS if name not in pins]
+    if missing:
+        raise VendorError(
+            f"{path} no longer defines {', '.join(missing)};"
+            " relay changed how it pins the binaries cmrelay fetches"
+        )
+    return pins
+
+
+def _jsonable(value) -> bool:
+    if isinstance(value, str):
+        return True
+    if isinstance(value, dict):
+        return all(isinstance(k, str) for k in value) and all(
+            _jsonable(v) for v in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return all(_jsonable(v) for v in value)
+    return False
+
+
+def refresh(repo: Path, relay_root: Path, target: Path) -> int:
+    """Write vendor/, vendor.lock and nix/generated/relay-pins.json under target."""
+    mapping = Mapping.load(repo / "vendor.toml")
+    count = sync(relay_root, target / "vendor", mapping)
+    patches = apply_patches(repo, target / "vendor")
+    commit = subprocess.run(
+        ["git", "-C", str(relay_root), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    lock = {"relay_commit": commit, "patches": patches}
+    (target / "vendor.lock").write_text(json.dumps(lock, indent=2) + "\n")
+    pins = read_pins(relay_root / PINS_SOURCE)
+    generated = target / "nix" / "generated"
+    generated.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(pins, indent=2, sort_keys=True) + "\n"
+    (generated / "relay-pins.json").write_text(text)
+    return count

@@ -2,36 +2,15 @@
 
 Store paths are content-addressed, so installing a new closure adds paths and
 removes none: the previous release stays complete and runnable at no copying
-cost, and rollback is one rename. What is not content-addressed is small --
-chatmail.ini, www/ and state/ -- and is copied beside each generation
-before the flip.
+cost, and rollback is one rename.
 """
 
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 from . import paths
 
-# Copied into <n>.state before a flip. Kilobytes, and the only things a
-# rollback cannot reconstruct from the closure.
-STATE_MEMBERS = ("chatmail.ini", "www", "state")
-
 _NUMBER = re.compile(r"^\d+$")
-
-
-@dataclass(frozen=True)
-class Generation:
-    number: int
-    closure: Path
-
-    @property
-    def link(self) -> Path:
-        return paths.GENERATIONS / str(self.number)
-
-    @property
-    def store_paths(self) -> Path:
-        return paths.GENERATIONS / f"{self.number}.paths"
 
 
 def existing() -> list:
@@ -58,49 +37,14 @@ def next_number() -> int:
     return (max(numbers) + 1) if numbers else 1
 
 
-def relative_closure(closure: Path) -> Path:
-    """The closure as `../nix/store/<name>`, so the tree can be moved."""
-    return Path("..") / "nix" / "store" / Path(closure).name
-
-
-def create(journal, number: int, closure: Path, store_names=()) -> Generation:
-    generation = Generation(number, Path(closure))
-    journal.symlink(
-        "cmrelay", generation.link, relative_closure(closure), detail=str(closure)
-    )
-    if store_names:
-        journal.write(
-            "cmrelay", generation.store_paths, "\n".join(sorted(store_names)) + "\n"
-        )
-    return generation
-
-
-def _copy_members(journal, source_root, target_root):
-    for name in STATE_MEMBERS:
-        member = source_root / name
-        if member.is_file():
-            journal.copy("cmrelay", member, target_root / name)
-        elif member.is_dir():
-            for path in sorted(member.rglob("*")):
-                if path.is_file():
-                    journal.copy(
-                        "cmrelay", path, target_root / name / path.relative_to(member)
-                    )
-
-
-def snapshot_state(journal, number: int) -> None:
-    """Copy the small, non-content-addressed state beside a generation."""
-    target = paths.GENERATIONS / f"{number}.state"
-    journal.ensure_directory("cmrelay", target)
-    _copy_members(journal, paths.ROOT, target)
-
-
-def restore_state(journal, number: int) -> bool:
-    source = paths.GENERATIONS / f"{number}.state"
-    if not source.is_dir():
-        return False
-    _copy_members(journal, source, paths.ROOT)
-    return True
+def create(journal, number: int, closure: Path, store_names) -> None:
+    """Link the generation to its closure and record the store paths it needs."""
+    # relative, so the whole tree can be moved
+    relative = Path("..") / "nix" / "store" / Path(closure).name
+    link = paths.GENERATIONS / str(number)
+    journal.symlink("cmrelay", link, relative, detail=str(closure))
+    listing = "\n".join(sorted(store_names)) + "\n"
+    journal.write("cmrelay", paths.GENERATIONS / f"{number}.paths", listing)
 
 
 def flip(journal, number: int) -> None:
@@ -128,9 +72,6 @@ def prune(journal, out, keep: int = 2) -> list:
     keeping = sorted(n for n in numbers if n <= live)[-keep:]
     keeping += [n for n in numbers if n > live]
     doomed = [n for n in numbers if n not in keeping]
-    if not doomed:
-        return []
-
     protected = live_store_paths(keeping)
     for number in doomed:
         for name in sorted(live_store_paths([number]) - protected):
@@ -139,6 +80,5 @@ def prune(journal, out, keep: int = 2) -> list:
             journal.remove_file("generations", path)
         journal.remove_file("generations", paths.GENERATIONS / str(number))
         journal.remove_file("generations", paths.GENERATIONS / f"{number}.paths")
-        journal.remove_directory("generations", paths.GENERATIONS / f"{number}.state")
         out.detail(f"removed generation {number}")
     return doomed

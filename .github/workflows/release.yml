@@ -1,20 +1,9 @@
-# Standard chatmail/workflow's PyPI/OIDC release publishing workflow 
-#
-# Publishes to PyPI via trusted publishing (OIDC) when a v* tag is
-# pushed, which scripts/make_new_release.py does. 
-# One-time setup per project:
-#
-#   1. On PyPI, add a trusted publisher: owner and repository of
-#      the project, workflow name "release.yml", environment "pypi".
-#      For a project not yet on PyPI, create a "pending publisher"
-#      at https://pypi.org/manage/account/publishing/ with the same
-#      values plus the PyPI project name, which must match `name`
-#      in pyproject.toml.
-#
-#   2. In the GitHub repo, create an (empty) environment named
-#      "pypi" under Settings -> Environments.
+# A v* tag builds the installer for both architectures, signs each and
+# publishes them as a GitHub release. The release asset names are a contract
+# with src/cmrelay/discovery.py: cmrelay-installer-<version>-<arch>-linux.run
+# and its .sig beside it.
 
-name: Release to PyPI
+name: Release
 
 on:
   push:
@@ -25,11 +14,6 @@ permissions:
   contents: read
 
 jobs:
-  # Checks, tests and build via the shared reusable workflow, which
-  # uploads the built distributions as a "dist" artifact.
-  py-checks:
-    uses: chatmail/workflows/.github/workflows/py-checks.yml@main
-
   # VERSION is what nix/closure.nix writes into manifest.json and what an
   # installed host reports, so a tag that disagrees with it would publish a
   # relay that misidentifies itself and an `upgrade` that compares the wrong
@@ -50,15 +34,8 @@ jobs:
           fi
           echo "releasing $version"
 
-  # The payload is the actual deliverable, and it ships twice: on the GitHub
-  # release as a .run an operator can copy across by hand, and inside a
-  # per-architecture wheel so that `pip install cmrelay` is the last step
-  # needing the network. Release asset names are a contract with
-  # src/cmrelay/discovery.py:
-  # cmrelay-installer-<version>-<arch>-linux.run and its .sig
-  #
-  # Each arch builds on its own native runner. There is no cross-building
-  # here: the payload is a Nix closure of real binaries for that host.
+  # Each arch builds on its own native runner: the payload is a Nix closure
+  # of real binaries for that host, and there is no cross-building here.
   payload:
     name: payload (${{ matrix.arch }})
     needs: version
@@ -82,7 +59,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: true
-          fetch-depth: 0
           persist-credentials: false
 
       - uses: cachix/install-nix-action@v31
@@ -130,63 +106,3 @@ jobs:
             cmrelay-installer-*.run
             cmrelay-installer-*.run.sig
           fail_on_unmatched_files: true
-
-      # Standard library only, so no environment to set up. The version comes
-      # from the tag rather than from git describe, and the script refuses one
-      # containing a '-', which pip would read as a build tag.
-      # The signature travels inside the wheel too: `cmrelay upgrade` can
-      # take a candidate from PyPI, and a wheel with no signature in it is
-      # one nothing can verify against the release keys.
-      - name: Build the wheel around the payload
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          run="cmrelay-installer-$version-${{ matrix.arch }}-linux.run"
-          python3 scripts/wheel-cmrelay.py \
-            --payload "$run" \
-            --signature "$run.sig" \
-            --arch "${{ matrix.arch }}" \
-            --version "$version" \
-            --outdir wheelhouse
-
-      - name: Check the tags read back
-        run: |
-          pip install --quiet wheel
-          cp -r wheelhouse tagcheck
-          python3 -m wheel tags tagcheck/*.whl
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.arch }}
-          path: wheelhouse/*.whl
-          if-no-files-found: error
-
-  # The publish job must stay here in the repo's own workflow: PyPI
-  # trusted publishing rejects publishes from reusable workflows.
-  # See https://github.com/pypi/warehouse/issues/11096
-  publish:
-    needs: [version, py-checks, payload]
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      # Only the per-architecture wheels, each carrying its own payload.
-      # Deliberately not the sdist or the pure-python wheel that py-checks
-      # builds: both would install a cmrelay with no relay in it, which could
-      # only go and fetch one. Publishing neither means pip says "no matching
-      # distribution" on a platform cmrelay does not support, instead of
-      # installing something that fails later.
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: wheels-*
-          merge-multiple: true
-          path: dist/
-
-      - name: Show what is about to be published
-        run: ls -lh dist/
-
-      - uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
-        with:
-          # Fail loudly instead of skipping silently when the
-          # version was already published.
-          skip-existing: false

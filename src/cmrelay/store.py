@@ -9,9 +9,10 @@ import subprocess
 from pathlib import Path
 
 from . import paths
+from .errors import CmrelayError
 
 
-class StoreError(Exception):
+class StoreError(CmrelayError):
     pass
 
 
