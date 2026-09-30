@@ -1,5 +1,5 @@
 {
-  "relay_commit": "2eb0ef5f9e9eb094bf8f0d775014d99a26be6ed3",
+  "relay_commit": "becc825c8bf143b7fcdaee5e7f39f36bd8677706",
   "patches": [
     "nginx-store-paths.patch",
     "postfix-store-paths.patch",
