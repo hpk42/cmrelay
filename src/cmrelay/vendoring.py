@@ -168,8 +168,9 @@ def apply_patches(repo: Path, vendor_dir: Path) -> list[str]:
         name = line.split("#", 1)[0].strip()
         if not name:
             continue
+        path = repo / "patches" / name
         subprocess.run(
-            ["patch", "-p1", "--quiet", "-i", str(repo / "patches" / name)],
+            ["patch", "-p1", "--quiet", "--no-backup-if-mismatch", "-i", str(path)],
             cwd=vendor_dir,
             check=True,
         )

@@ -11,6 +11,7 @@ from cmrelay.vendoring import (
     Mapping,
     Rule,
     VendorError,
+    apply_patches,
     plan,
     read_pins,
     refresh,
@@ -119,6 +120,20 @@ def test_every_patch_changes_something(relay_root, mapping):
         "pycode/rdns.py",
         "www/index.md",
     ]
+
+
+def test_a_patch_applied_at_an_offset_leaves_no_backup(tmp_path):
+    (tmp_path / "patches").mkdir()
+    (tmp_path / "patches/series").write_text("one.patch\n")
+    (tmp_path / "patches/one.patch").write_text(
+        "--- a/one.conf\n+++ b/one.conf\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n"
+    )
+    vendor = tmp_path / "vendor"
+    vendor.mkdir()
+    (vendor / "one.conf").write_text("new\na\nb\n")
+    apply_patches(tmp_path, vendor)
+    assert [p.name for p in vendor.iterdir()] == ["one.conf"]
+    assert (vendor / "one.conf").read_text() == "new\na\nc\n"
 
 
 # -- relay's pins ----------------------------------------------------------
