@@ -46,7 +46,7 @@ def render_config_template(deployment, config, relpath):
         config=config,
         debug=False,
         disable_ipv6=config.disable_ipv6,
-        **deployment.template_vars(),
+        **deployment.template_vars(relpath.split("/")[1]),
     )
 
 
@@ -58,7 +58,7 @@ def test_config_templates_render(deployment, config, relpath):
 
 
 def test_no_debian_paths_survive_rendering(deployment, config):
-    """The patch series exists to remove exactly these."""
+    """The template paths exist to replace exactly these."""
     forbidden = [
         "/usr/local/lib/chatmaild",
         "/usr/lib/cgi-bin",
@@ -114,10 +114,11 @@ def test_opendkim_conf_renders_with_a_trust_anchor(deployment):
     text = render.render_template(
         deployment.vendor("config/opendkim/opendkim.conf"),
         config={"domain_name": "relay.example.org", "opendkim_selector": "opendkim"},
-        trust_anchor_file="/var/lib/unbound/root.key",
+        **deployment.template_vars("opendkim"),
     )
     assert "TrustAnchorFile\t\t/var/lib/unbound/root.key" in text
     assert "/usr/share/dns/root.key" not in text
+    assert "KeyFile\t\t  /etc/dkimkeys/opendkim.private" in text
 
 
 def test_authored_units_have_every_field_supplied(deployment):

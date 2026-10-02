@@ -150,12 +150,13 @@ def configure_opendkim(d):
     }
     conf_dir = paths.config_dir("opendkim")
     d.j.ensure_directory("opendkim", conf_dir)
+    tvars = d.template_vars("opendkim")
     d.put_template(
         "opendkim",
         "config/opendkim/opendkim.conf",
         conf_dir / "opendkim.conf",
         config=opendkim_config,
-        trust_anchor_file=str(paths.UNBOUND_ANCHOR),
+        **tvars,
     )
 
     d.j.ensure_directory(
@@ -171,6 +172,7 @@ def configure_opendkim(d):
             f"config/opendkim/{name}",
             paths.DKIM_KEYS / name,
             config=opendkim_config,
+            **tvars,
         )
         d.j.chown("opendkim", paths.DKIM_KEYS / name, "opendkim", "opendkim")
 
@@ -240,7 +242,7 @@ def configure_dovecot(d):
         config=d.config,
         debug=False,
         disable_ipv6=d.config.disable_ipv6,
-        **d.template_vars(),
+        **d.template_vars("dovecot"),
     )
     d.put_template(
         "dovecot", "config/dovecot/auth.lua.j2", conf_dir / "auth.lua", config=d.config
@@ -341,7 +343,7 @@ def postfix_own_settings(conf_dir: Path) -> str:
 def configure_postfix(d):
     conf_dir = paths.config_dir("postfix")
     d.j.ensure_directory("postfix", conf_dir)
-    tvars = d.template_vars()
+    tvars = d.template_vars("postfix")
 
     # One write, not a template write followed by an append: two writes
     # of the same file would report a change on every deploy and so
@@ -463,7 +465,7 @@ def ensure_aliases(d):
 def configure_nginx(d):
     conf_dir = paths.config_dir("nginx")
     d.j.ensure_directory("nginx", conf_dir)
-    tvars = d.template_vars()
+    tvars = d.template_vars("nginx")
 
     d.put_template(
         "nginx",

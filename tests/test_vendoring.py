@@ -111,11 +111,6 @@ def test_every_patch_changes_something(relay_root, mapping):
         if (REPO / "vendor" / dest).read_bytes() != (relay_root / src).read_bytes()
     ]
     assert sorted(patched) == [
-        "config/dovecot/dovecot.conf.j2",
-        "config/nginx/nginx.conf.j2",
-        "config/opendkim/opendkim.conf",
-        "config/postfix/main.cf.j2",
-        "config/postfix/master.cf.j2",
         "pycode/dns.py",
         "pycode/rdns.py",
         "www/index.md",

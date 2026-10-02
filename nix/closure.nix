@@ -80,8 +80,8 @@ let
 
     # relay's nginx.conf uses a stream {} block for the TLS-multiplexing
     # listener. On Debian that needs libnginx-mod-stream and a load_module
-    # line; nixpkgs builds --with-stream in, which is why the vendored config
-    # carries a patch removing that line.
+    # line; nixpkgs builds --with-stream in, which is why cmrelay passes
+    # an empty stream_module.
     nginx = component nginx {
       nginx = "${nginx}/bin/nginx";
       prefix = "${nginx}";

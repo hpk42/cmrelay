@@ -77,21 +77,33 @@ class Deployment:
     def vendor(self, relpath) -> Path:
         return self.bundle.vendor_file(relpath)
 
-    def template_vars(self) -> dict:
-        """The values the patched templates need beyond relay's own Config.
-
-        Every entry corresponds to a hunk in patches/.
-        """
-        return {
-            "postfix_config_dir": str(paths.config_dir("postfix")),
-            "dovecot_config_dir": str(paths.config_dir("dovecot")),
-            "nginx_prefix": self.bin("nginx", "prefix"),
-            "cgi_bin_dir": str(paths.CGI_BIN),
-            "quota_expire_bin": self.bin("python", "chatmail-quota-expire"),
-            "ssl_dh_path": self.bin("dovecot", "dh_params"),
-            "tls_ca_path": self.ca_path(),
-            "www_root": str(paths.WWW_ROOT),
-        }
+    def template_vars(self, component) -> dict:
+        """The paths relay's deployer for `component` passes to its templates."""
+        match component:
+            case "postfix":
+                return {
+                    "config_dir": str(paths.config_dir("postfix")),
+                    "ca_path": self.ca_path(),
+                }
+            case "dovecot":
+                return {
+                    "config_dir": str(paths.config_dir("dovecot")),
+                    "dh_path": self.bin("dovecot", "dh_params"),
+                    "quota_expire_bin": self.bin("python", "chatmail-quota-expire"),
+                }
+            case "nginx":
+                return {
+                    "config_dir": f"{self.bin('nginx', 'prefix')}/conf",
+                    "stream_module": "",
+                    "www_root": str(paths.WWW_ROOT),
+                    "cgi_dir": str(paths.CGI_BIN),
+                }
+            case "opendkim":
+                return {
+                    "keys_dir": str(paths.DKIM_KEYS),
+                    "trust_anchor": str(paths.UNBOUND_ANCHOR),
+                }
+        raise ValueError(f"no template paths for {component}")
 
     @staticmethod
     def ca_path() -> str:

@@ -1,15 +1,7 @@
 # Local deltas to relay's vendored configuration, applied by vendor-sync
-# after the copy. Every hunk here does the same thing: it turns a path that
-# upstream hardcodes to Debian's layout into a template variable, so cmrelay
-# can point it at a Nix store path or at its own tree. Nothing changes what
-# a directive means.
+# after the copy.
 #
 # vendor/ is generated output. A change belongs here, never there.
-
-nginx-store-paths.patch
-postfix-store-paths.patch
-dovecot-store-paths.patch
-opendkim-trust-anchor.patch
 
 # relay's DNS helpers are written for an ssh connection and a Debian host:
 # they install dnsutils with apt and shell out to dig. On a relay they run
