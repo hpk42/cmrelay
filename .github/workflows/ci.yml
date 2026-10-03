@@ -6,6 +6,7 @@ on:
     tags-ignore: [ '**' ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   checks:
     name: ruff, tests and the vendored tree
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     env:
       RUFF_VERSION: "0.16.0"
     steps:
@@ -51,7 +52,7 @@ jobs:
   build:
     name: nix build
     needs: checks
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_LARGE || 'ubuntu-latest' }}
     permissions:
       contents: read
       # cache-nix-action drops superseded caches through the Actions API.
