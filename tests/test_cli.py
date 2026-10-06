@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from cmrelay import cli, fsops
+from cmrelay import cli, fsops, host
 from cmrelay.errors import CmrelayError
-from cmrelay.verbs import VERBS, wants_dns_report
+from cmrelay.verbs import VERBS, supplied_config, wants_dns_report
 
 
 def test_every_verb_the_parser_offers_has_a_handler():
@@ -67,6 +67,19 @@ def test_a_refusal_is_one_message_and_exit_one(monkeypatch, capsys):
     monkeypatch.setitem(cli.VERBS, "version", refuse)
     assert cli.main(["version"]) == 1
     assert "error: nothing doing" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("domain", ["relay.example.org", "203.0.113.10"])
+def test_a_supplied_config_must_be_for_the_domain_given(tmp_path, domain):
+    chatmaild = pytest.importorskip("chatmaild.config")
+    path = tmp_path / "chatmail.ini"
+    chatmaild.write_initial_config(path, domain, {})
+    args = SimpleNamespace(config=str(path))
+    bare = host.Host(host.BARE)
+
+    assert supplied_config(args, bare, domain).mail_domain_bare == domain
+    with pytest.raises(CmrelayError, match=f"is for {domain}, not other.example.org"):
+        supplied_config(args, bare, "other.example.org")
 
 
 def test_a_no_op_deploy_reaches_the_network_never():

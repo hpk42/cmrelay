@@ -213,3 +213,19 @@ def test_the_deploy_plan_starts_unbound_before_opendkim(fake_root, bundle, ini):
     order = list(plan.intents)
     assert order.index("unbound.service") < order.index("opendkim.service")
     assert order.index("dovecot.service") < order.index("postfix.service")
+
+
+def test_an_ipv4_relay_gets_no_opendkim_unit(fake_root, bundle, tmp_path):
+    cfg = pytest.importorskip("chatmaild.config")
+    from cmrelay import activation, fsops, paths
+    from cmrelay.deploy import Deployment
+    from cmrelay.output import Out
+
+    ini = tmp_path / "chatmail.ini"
+    cfg.write_initial_config(ini, "203.0.113.10", {})
+    unit = Deployment(bundle, cfg.read_config(ini), Out(colour=False), fsops.Journal())
+    activation.install_daemon_units(unit)
+
+    stems = {p.stem for p in paths.UNITS.iterdir()}
+    assert stems == {"dovecot", "nginx", "postfix", "unbound"}
+    assert "opendkim.service" not in activation.plan(unit).intents

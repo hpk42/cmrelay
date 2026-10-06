@@ -47,16 +47,12 @@ def deploy(args, bundle, out) -> int:
     journal = fsops.Journal()
 
     where = host.classify()
-    supplied = supplied_config(args, where)
     existing = cfg.read_config(where.ini) if where.ini else None
     domain = host.resolve_domain(
         where, args.domain, mailboxes_dir=getattr(existing, "mailboxes_dir", None)
     )
+    supplied = supplied_config(args, where, domain)
     config = existing or supplied or cfg.default_config(domain)
-    if config.mail_domain != domain:
-        raise VerbError(
-            f"--config {args.config} is for {config.mail_domain}, not {domain}"
-        )
     disable_mail = not state.resolve_mail_intent(state.read_intent(), args.enable_mail)
 
     out.header(
@@ -109,7 +105,8 @@ def deploy(args, bundle, out) -> int:
     for problem in problems:
         out.error(f"  {problem}")
     if not problems:
-        out.detail("DKIM key present, TLS material present, services running")
+        dkim = "" if config.ipv4_relay else "DKIM key present, "
+        out.detail(f"{dkim}TLS material present, services running")
 
     summarise(out, journal, issued, domain, time.monotonic() - started, disable_mail)
     if wants_dns_report(args, journal, issued, problems):
@@ -136,7 +133,7 @@ def report_dns(bundle, config, out) -> None:
         out.detail(f"could not check DNS: {exc}")
 
 
-def supplied_config(args, where):
+def supplied_config(args, where, domain):
     """The ini --config seeds a host with, only while it has none."""
     if not args.config:
         return None
@@ -147,7 +144,13 @@ def supplied_config(args, where):
     source = Path(args.config)
     if not source.is_file():
         raise VerbError(f"--config {source} does not exist")
-    return cfg.read_config(source)
+    config = cfg.read_config(source)
+    # mail_domain is bracketed for an IPv4 relay; the argument never is.
+    if config.mail_domain_bare != domain:
+        raise VerbError(
+            f"--config {source} is for {config.mail_domain_bare}, not {domain}"
+        )
+    return config
 
 
 def check_domain_resolves(bundle, config, args, out) -> bool:

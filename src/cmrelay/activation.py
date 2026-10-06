@@ -31,6 +31,8 @@ ACME_UNITS = (
 
 def install_daemon_units(d):
     for name in AUTHORED_UNITS:
+        if name == "opendkim" and d.config.ipv4_relay:
+            continue
         source = d.bundle.units / f"{name}.service"
         content = source.read_text().format(**daemon_unit_vars(d))
         d.j.install_unit(
