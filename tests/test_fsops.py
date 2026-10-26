@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from conftest import REPO  # noqa: I001 - added to sys.path by conftest
 
-from cmrelay import activation, fsops
+from cmrelay import activation, fsops, paths
 
 # store.py moves the whole closure by rename and reports it as one line;
 # vendoring.py runs from scripts/vendor-sync on a developer machine and
@@ -213,7 +213,7 @@ def deployment(fake_root, bundle, monkeypatch, tmp_path, ini):
     from types import SimpleNamespace
 
     chatmaild = pytest.importorskip("chatmaild.config")
-    from cmrelay import paths, users
+    from cmrelay import users
     from cmrelay.deploy import Deployment
     from cmrelay.output import Out
 
@@ -256,6 +256,11 @@ def deployment(fake_root, bundle, monkeypatch, tmp_path, ini):
 
 
 def test_the_journal_covers_every_path_a_deploy_changes(deployment, fake_root):
+    # an older deploy's journald.conf, which this one removes
+    dropin = deployment.vendor("config/90-volatile-logging.conf")
+    paths.JOURNALD_CONF.parent.mkdir(parents=True)
+    paths.JOURNALD_CONF.write_bytes(dropin.read_bytes())
+
     before = snapshot(fake_root)
     deployment.configure()
     activation.install_daemon_units(deployment)
@@ -265,6 +270,7 @@ def test_the_journal_covers_every_path_a_deploy_changes(deployment, fake_root):
     assert moved, "the deploy changed nothing, so this proves nothing"
     unreported = moved - deployment.j.paths
     assert not unreported, sorted(str(p) for p in unreported)
+    assert paths.JOURNALD_CONF not in after
 
 
 def test_a_second_deploy_against_the_same_root_changes_nothing(deployment, fake_root):

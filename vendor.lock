@@ -1,5 +1,5 @@
 {
-  "relay_commit": "672cea6dbec20067771f4427539c364689f990b0",
+  "relay_commit": "daffa925ab9f6b71c22048594e66ba626984fd5c",
   "patches": [
     "pycode-local-dns.patch",
     "www-qr-svg.patch"

@@ -86,7 +86,7 @@ path                           what happens
 ``/etc/mailname``              content-compared write
 ``/etc/environment``           the ``TZ`` line is appended once
 ``/etc/aliases``               written only when absent
-``/etc/systemd/journald.conf`` written, as ``cmdeploy`` writes it
+``/etc/systemd/journald.conf`` removed if an older deploy wrote it; relay's drop-in goes into ``journald.conf.d``
 ``/etc/chatmail-version``      the relay commit, as ``cmdeploy`` writes it
 ``/var/www/html``              pages cmrelay no longer produces are removed, others left
 ``/usr/local/bin/*``           tool links, recorded and removed only if cmrelay put them there

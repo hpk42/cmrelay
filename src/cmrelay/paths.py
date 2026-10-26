@@ -88,6 +88,7 @@ ALIASES_DB = Path("/etc/aliases.db")
 SYSCTL_INOTIFY = Path("/etc/sysctl.d/60-cmrelay-inotify.conf")
 PROC_INOTIFY = Path("/proc/sys/fs/inotify")
 JOURNALD_CONF = Path("/etc/systemd/journald.conf")
+JOURNALD_DROPINS = Path("/etc/systemd/journald.conf.d")
 UNBOUND_STATE = Path("/var/lib/unbound")
 UNBOUND_DROPINS = Path("/etc/unbound/unbound.conf.d")
 UNBOUND_ANCHOR = UNBOUND_STATE / "root.key"

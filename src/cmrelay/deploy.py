@@ -197,9 +197,14 @@ class Deployment:
     # JournaldDeployer
 
     def configure_journald(self):
-        self.j.copy(
-            "journald", self.vendor("config/journald.conf"), paths.JOURNALD_CONF
-        )
+        dropin = self.vendor("config/90-volatile-logging.conf")
+        self.j.copy("journald", dropin, paths.JOURNALD_DROPINS / dropin.name)
+        # Older deploys overwrote the packaged file with this content.
+        # relay reinstalls systemd to restore it; removing it is the same
+        # to journald, since the packaged file sets nothing.
+        old = paths.JOURNALD_CONF
+        if old.is_file() and old.read_bytes() == dropin.read_bytes():
+            self.j.remove_file("journald", old)
 
     # UnboundDeployer
 

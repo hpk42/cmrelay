@@ -136,8 +136,8 @@ src = "cmdeploy/src/cmdeploy/iroh-relay.toml"
 dest = "config/iroh-relay.toml"
 
 [[copy]]
-src = "cmdeploy/src/cmdeploy/journald.conf"
-dest = "config/journald.conf"
+src = "cmdeploy/src/cmdeploy/90-volatile-logging.conf"
+dest = "config/90-volatile-logging.conf"
 
 # --- the web pages ------------------------------------------------------------
 
