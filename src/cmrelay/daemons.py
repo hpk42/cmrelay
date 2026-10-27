@@ -325,8 +325,13 @@ STORE_MARKER = "# --- written by cmrelay: store layout ---"
 CMRELAY_SETTINGS = ("config_directory", "queue_directory", "data_directory")
 
 
-def postfix_own_settings(conf_dir: Path) -> str:
-    """The settings postfix itself has written into main.cf, kept verbatim."""
+def postfix_own_settings(conf_dir: Path, postfix_path: str) -> str:
+    """The settings postfix itself has written into main.cf, kept verbatim.
+
+    Except those naming another postfix's store path: carried across an
+    upgrade, they run the previous postfix's daemons until its generation is
+    pruned, and then none at all.
+    """
     main_cf = Path(conf_dir) / "main.cf"
     if not main_cf.is_file():
         return ""
@@ -336,7 +341,9 @@ def postfix_own_settings(conf_dir: Path) -> str:
     return "".join(
         line
         for line in tail.splitlines(keepends=True)
-        if line.strip() and line.split("=", 1)[0].strip() not in CMRELAY_SETTINGS
+        if line.strip()
+        and line.split("=", 1)[0].strip() not in CMRELAY_SETTINGS
+        and ("/nix/store/" not in line or postfix_path in line)
     )
 
 
@@ -354,10 +361,11 @@ def configure_postfix(d):
         disable_ipv6=d.config.disable_ipv6,
         **tvars,
     )
+    own = postfix_own_settings(conf_dir, d.bin("postfix", "path"))
     d.j.write(
         "postfix",
         conf_dir / "main.cf",
-        main_cf + store_layout(conf_dir) + postfix_own_settings(conf_dir),
+        main_cf + store_layout(conf_dir) + own,
     )
     d.put_template(
         "postfix",

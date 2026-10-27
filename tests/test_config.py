@@ -180,7 +180,7 @@ def test_postfix_own_settings_are_carried_forward(tmp_path):
 
     conf = tmp_path / "postfix"
     conf.mkdir()
-    assert postfix_own_settings(conf) == ""
+    assert postfix_own_settings(conf, "/nix/store/abc-postfix") == ""
 
     (conf / "main.cf").write_text(
         "smtpd_banner = x\n"
@@ -191,8 +191,13 @@ def test_postfix_own_settings_are_carried_forward(tmp_path):
         "command_directory = /nix/store/abc-postfix/bin\n"
         "mail_owner = postfix\n"
     )
-    assert postfix_own_settings(conf) == (
+    assert postfix_own_settings(conf, "/nix/store/abc-postfix") == (
         "command_directory = /nix/store/abc-postfix/bin\nmail_owner = postfix\n"
+    )
+    # after an upgrade, the previous postfix's directories would keep its
+    # daemons running until that generation is pruned
+    assert postfix_own_settings(conf, "/nix/store/def-postfix") == (
+        "mail_owner = postfix\n"
     )
 
 
@@ -202,4 +207,4 @@ def test_a_main_cf_without_the_marker_carries_nothing_forward(tmp_path):
     conf = tmp_path / "postfix"
     conf.mkdir()
     (conf / "main.cf").write_text("smtpd_banner = x\n")
-    assert postfix_own_settings(conf) == ""
+    assert postfix_own_settings(conf, "/nix/store/abc-postfix") == ""
