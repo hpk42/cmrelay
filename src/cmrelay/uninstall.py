@@ -13,7 +13,7 @@ def uninstall_verb(args, out) -> int:
     recorded = host.config_domain(paths.INI)
     if args.domain and recorded and args.domain != recorded:
         raise host.DomainRefused(
-            f"this host serves {recorded}, not {args.domain}."
+            f"this host serves '{recorded}', not '{args.domain}'."
             f"\n  Name it to confirm:  cmrelay uninstall {recorded}"
         )
     if not args.domain and not args.yes:

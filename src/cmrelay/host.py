@@ -154,7 +154,7 @@ def mailbox_count(mailboxes_dir, cap: int = 10000) -> tuple:
 def mismatch_message(recorded: str, given: str, mailboxes_dir=None) -> str:
     mailboxes_dir = mailboxes_dir or Path("/home/vmail/mail") / recorded
     lines = [
-        f"this host is configured for {recorded}, not {given}.",
+        f"this host is configured for '{recorded}', not '{given}'.",
         "",
         "  Changing the mail domain strands the existing accounts:",
     ]

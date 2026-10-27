@@ -120,8 +120,9 @@ def test_a_matching_domain_proceeds(tmp_path):
 
 
 def test_a_different_domain_is_refused(tmp_path):
-    with pytest.raises(host.DomainRefused, match="not relay2.example.org"):
+    with pytest.raises(host.DomainRefused) as caught:
         host.resolve_domain(installed(tmp_path), "relay2.example.org")
+    assert "for 'relay.example.org', not 'relay2.example.org'." in str(caught.value)
 
 
 def test_the_refusal_names_the_uninstall_route(tmp_path):

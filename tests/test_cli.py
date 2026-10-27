@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cmrelay import cli, fsops, host
+from cmrelay import cli, fsops, host, paths, uninstall
 from cmrelay.errors import CmrelayError
 from cmrelay.verbs import VERBS, supplied_config, wants_dns_report
 
@@ -60,6 +60,15 @@ def test_disable_and_enable_mail_are_the_same_switch():
 def test_uninstall_wants_the_domain_as_the_confirmation():
     args = cli.build_parser().parse_args(["uninstall", "relay.example.org"])
     assert args.domain == "relay.example.org"
+
+
+def test_uninstall_refuses_another_domain(fake_root):
+    paths.INI.parent.mkdir(parents=True)
+    paths.INI.write_text("[params]\nmail_domain = a.example.org\n")
+    args = SimpleNamespace(domain="b.example.org", yes=False)
+    with pytest.raises(host.DomainRefused) as caught:
+        uninstall.uninstall_verb(args, None)
+    assert "serves 'a.example.org', not 'b.example.org'." in str(caught.value)
 
 
 def test_the_installer_verb_takes_the_stubs_flags_and_hides_from_help():
