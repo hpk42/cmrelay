@@ -39,9 +39,9 @@
 
 let
   # The interpreter and its modules as *real* store paths, for the stub.
-  # The env under $out is a symlink farm pointing at absolute /nix/store
-  # paths, and during staging /nix does not exist yet, so every one of those
-  # links dangles. Naming the packages themselves is what survives the
+  # The env under $out is a symlink farm pointing at absolute store paths,
+  # and during staging those do not exist yet, so every one of the links
+  # dangles. Naming the packages themselves is what survives the
   # relocation.
   stagingPythonPath = python3Packages.makePythonPath (
     python3Packages.requiredPythonModules pythonDeps

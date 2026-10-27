@@ -24,6 +24,9 @@ def test_bin_never_carries_the_staging_prefix(bundle):
 def test_resolve_finds_the_file_where_it_actually_is(bundle):
     resolved = bundle.resolve(bundle.bin("filtermail"))
     assert str(resolved).startswith(str(bundle.prefix))
+    # staging stands in for /opt/cmrelay, where the relocated store lives
+    relocated = bundle.resolve("/opt/cmrelay/nix/store/aaa-x/bin/x")
+    assert relocated == bundle.prefix / "nix/store/aaa-x/bin/x"
 
 
 def test_an_installed_bundle_resolves_to_itself():

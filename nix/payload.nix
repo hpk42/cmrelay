@@ -12,6 +12,7 @@
   zstd,
   pkgsStatic,
   gnutar,
+  python3,
   coreutils,
   closureInfo,
   closure,
@@ -26,11 +27,11 @@ let
   info = closureInfo { rootPaths = [ closure ]; };
   staticZstd = pkgsStatic.zstd;
   # Files a relay never reads, dropped on the way into the payload. This
-  # departs from Nix's usual contract: the installed paths are no longer
-  # byte-for-byte what their hashes name. Sound only because the host has no
-  # Nix at all, nothing that verifies or rebuilds a path, and an uninstall
-  # that deletes the tree; the cost is that such a store cannot be an input to
-  # Nix again, which nothing does.
+  # departs from Nix's usual contract, and so does nix/relocate.py: the
+  # installed paths are no longer byte-for-byte what their hashes name, nor
+  # where. Sound only because nothing on the host verifies or rebuilds a path,
+  # and an uninstall deletes the tree; the cost is that such a store cannot be
+  # an input to Nix again, which nothing does.
   #
   # libtool .la files are kept: dovecot's module loader has historically read
   # them, and they are 0.2 MiB.
@@ -73,16 +74,33 @@ runCommand "cmrelay-${version}"
       zstd
       gnutar
       coreutils
+      python3
     ];
     inherit version;
     passthru = { inherit closure; };
     meta.description = "self-extracting chatmail relay installer";
   }
   ''
+    # Relative to /, so the copy lands in tree/nix/store/...
+    sed 's|^/||' ${info}/store-paths > paths.txt
+    echo "packing $(wc -l < paths.txt) store paths"
+
+    # The excludes have to precede --files-from: GNU tar applies them only to
+    # names that come after them on the command line.
+    mkdir tree
+    tar --create \
+        --directory=/ \
+        ${lib.concatMapStringsSep " " (p: "--exclude='${p}'") deadWeight} \
+        --files-from=paths.txt \
+      | tar --extract --directory=tree
+    chmod -R u+w tree
+    relocated=$(python3 ${cmrelaySrc}/nix/relocate.py tree/nix/store ${closure})
+    chmod -R a-w tree/nix/store
+
     # The header carries the closure path, so patching it changes the
     # header's own length. Substitute that first, measure, then patch the
     # numeric fields, whose widths are fixed and therefore free.
-    sed "s|@CLOSURE@|${closure}|" ${cmrelaySrc}/stub/header.sh > header.sh
+    sed "s|@CLOSURE@|$relocated|" ${cmrelaySrc}/stub/header.sh > header.sh
 
     cp ${staticZstd}/bin/zstd zstd
     chmod +w zstd
@@ -91,23 +109,19 @@ runCommand "cmrelay-${version}"
     # since nothing exists yet that could unpack it.
     zstd -${toString zstdLevel} -q -o tar.zst ${bsdtar-minimal}/bin/bsdtar
 
-    # Relative to /, so unpacking under a staging directory yields
-    # <staging>/nix/store/...
-    sed 's|^/||' ${info}/store-paths > paths.txt
-    echo "packing $(wc -l < paths.txt) store paths"
+    # Relative to tree/, so unpacking under a staging directory yields
+    # <staging>/nix/store/..., the layout it is published with under
+    # /opt/cmrelay.
+    (cd tree && find nix/store -mindepth 1 -maxdepth 1 | sort) > relocated.txt
 
-    # The excludes have to precede --files-from: GNU tar applies them only to
-    # names that come after them on the command line.
-    #
     # --long=27 buys 6% over the same level with the default 8 MiB window,
     # because the closure repeats itself across store paths at distances a
     # small window cannot reach. It costs a 128 MiB decompression window,
     # which is exactly zstd's default memory ceiling, so the bundled 1.5.7
     # takes the frame without being asked for extra flags.
     tar --create \
-        --directory=/ \
-        ${lib.concatMapStringsSep " " (p: "--exclude='${p}'") deadWeight} \
-        --files-from=paths.txt \
+        --directory=tree \
+        --files-from=relocated.txt \
         --owner=0 --group=0 --numeric-owner \
         --sort=name \
         --mtime=@1 \

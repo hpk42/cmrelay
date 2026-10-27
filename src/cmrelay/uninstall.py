@@ -121,7 +121,7 @@ def remove_profile_script(out, journal):
 def is_ours(link: Path) -> bool:
     """Removing by name alone would delete whatever had since taken it."""
     if link.is_symlink():
-        return str(link.readlink()).startswith(("/nix/store/", str(paths.ROOT)))
+        return str(link.readlink()).startswith(str(paths.ROOT))
     if link.is_file():
         try:
             return "written by cmrelay" in link.read_text()

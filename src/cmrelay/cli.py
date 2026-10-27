@@ -121,7 +121,7 @@ def build_parser():
         "uninstall",
         help="hand the host back, so `cmdeploy run` can take over",
         description=(
-            "Remove /opt/cmrelay and /nix, and unmask the distribution units"
+            "Remove /opt/cmrelay and unmask the distribution units"
             " take-over masked. Name the domain to confirm."
         ),
     )

@@ -1,9 +1,8 @@
-"""The two decisions that make /nix cmrelay's to remove, or not.
+"""Publishing the store, and removing the /nix link older releases made.
 
-`link_nix` decides whether cmrelay adopts a host's /nix or refuses it, and
-`unlink_nix` decides whether uninstall removes the symlink or leaves one
-dangling into a deleted tree. Both take their roots as parameters precisely
-so they can be exercised without a container.
+`unlink_nix` decides whether uninstall removes that symlink or leaves one
+dangling into a deleted tree. It takes its roots as parameters precisely so
+it can be exercised without a container.
 """
 
 import pytest
@@ -17,43 +16,6 @@ def roots(tmp_path):
     root, target = tmp_path / "nix", tmp_path / "opt/cmrelay/nix"
     target.mkdir(parents=True)
     return root, target
-
-
-def test_link_nix_creates_the_symlink_on_a_bare_host(roots):
-    root, target = roots
-
-    store.link_nix(root, target)
-
-    assert root.is_symlink()
-    assert root.readlink() == target
-
-
-def test_link_nix_is_idempotent(roots):
-    root, target = roots
-    store.link_nix(root, target)
-    store.link_nix(root, target)
-    assert root.readlink() == target
-
-
-def test_link_nix_refuses_a_host_that_already_runs_nix(tmp_path):
-    """Uninstall removes the whole tree, so mingling closures is not on."""
-    root, target = tmp_path / "nix", tmp_path / "opt/cmrelay/nix"
-    (root / "store").mkdir(parents=True)
-    target.mkdir(parents=True)
-
-    with pytest.raises(StoreError, match="already runs Nix"):
-        store.link_nix(root, target)
-
-
-def test_link_nix_refuses_somebody_elses_symlink(tmp_path):
-    root, target = tmp_path / "nix", tmp_path / "opt/cmrelay/nix"
-    other = tmp_path / "somewhere/else"
-    other.mkdir(parents=True)
-    target.mkdir(parents=True)
-    root.symlink_to(other)
-
-    with pytest.raises(StoreError, match="already points at"):
-        store.link_nix(root, target)
 
 
 def test_unlink_nix_removes_only_our_own(roots):

@@ -239,7 +239,7 @@ To hand the host back::
 
    cmrelay uninstall chat.example.org
 
-This removes ``/opt/cmrelay`` and ``/nix``
+This removes ``/opt/cmrelay``
 and unmasks what the take-over masked, and starts nothing:
 ``cmdeploy run`` then restores the distribution's stack, at no cost
 because nothing was taken away from the shared state directories.
@@ -251,17 +251,18 @@ Supported platforms
 -------------------
 
 cmrelay needs a Linux kernel, systemd, x86_64 or aarch64, a POSIX shell,
-coreutils, root, and a writable ``/`` so ``/nix`` can be created.
+coreutils, root, and a writable ``/opt``, ``/etc`` and ``/usr/local``.
 The host's libc is irrelevant, because the relay stack carries its own,
 and so is its ``tar``: the installer brings one.
+A Nix the host already runs is irrelevant too,
+since nothing is installed under ``/nix``.
 
 Out of scope:
 
 - Alpine and the other musl or non-systemd distributions.
 
-- Immutable and atomic distributions,
-  because ``/nix`` cannot be created on a read-only root.
-
-- NixOS, which already has a store and its own service model;
+- NixOS, which generates its units and ``/etc`` itself;
   the right NixOS story is a module consuming
   the same derivations rather than this installer.
+
+Immutable and atomic distributions are untested.

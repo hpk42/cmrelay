@@ -60,8 +60,8 @@ Edit `index.md` and run `cmrelay deploy`.
 
 Everything cmrelay *defines* lives in `/opt/cmrelay`:
 the ini, the rendered configuration for every component,
-the unit files it indexes, and the software
-under `/opt/cmrelay/nix` with `/nix` as a symlink to it.
+the unit files it indexes, and the software under `/opt/cmrelay/nix`,
+a Nix store whose paths are rewritten to live there when the installer is built.
 Everything holding live *state* stays where a `cmdeploy` relay keeps it:
 mail and credentials under `/home/vmail/mail/<domain>`,
 the DKIM key under `/etc/dkimkeys`, certificates
@@ -79,8 +79,8 @@ and asks before doing any of it. To hand the host back:
 
     cmrelay uninstall chat.example.org
 
-This removes `/opt/cmrelay` and `/nix` and unmasks what
-the take-over masked; `cmdeploy run` then restores the distribution's stack.
+This removes `/opt/cmrelay` and unmasks what the take-over masked;
+`cmdeploy run` then restores the distribution's stack.
 
 
 ## Upgrading
@@ -98,10 +98,11 @@ on disk, so `cmrelay upgrade --rollback` goes back in one step.
 ## Supported platforms
 
 A Linux kernel, systemd, x86_64 or aarch64, a POSIX shell,
-coreutils, root, and a writable `/` so `/nix` can be created.
-The host's libc and package manager are never involved. Out of scope:
-Alpine and other musl or non-systemd distributions, immutable distributions
-whose root cannot take `/nix`, and NixOS, which has a store of its own.
+coreutils, root, and a writable `/opt`, `/etc` and `/usr/local`.
+The host's libc and package manager are never involved,
+and neither is a Nix it may run: nothing is installed under `/nix`. Out of scope:
+Alpine and other musl or non-systemd distributions, and NixOS,
+which generates its units and `/etc` itself. Immutable distributions are untested.
 
 
 ## Building and developing

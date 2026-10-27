@@ -1,7 +1,4 @@
-"""Move the closure into place, and make /nix resolve to it.
-
-See cmrelay.paths for why the store keeps its paths and only the bytes move.
-"""
+"""Move the closure into place."""
 
 import os
 import shutil
@@ -42,22 +39,8 @@ def install(stage_store: Path, target: Path = paths.STORE) -> int:
     return moved
 
 
-def link_nix(root: Path = paths.NIX_ROOT, target: Path = paths.NIX) -> None:
-    """Point /nix at cmrelay's tree, refusing to disturb a real store."""
-    if root.is_symlink():
-        if root.readlink() != target and root.resolve() != target:
-            raise StoreError(f"{root} already points at {root.resolve()}")
-        return
-    if root.exists():
-        raise StoreError(
-            f"{root} exists as a real directory: this host already runs Nix."
-            " cmrelay will not mingle closures."
-        )
-    root.symlink_to(target)
-
-
 def unlink_nix(root: Path = paths.NIX_ROOT, target: Path = paths.NIX) -> bool:
-    """Remove the symlink, and only if it is ours."""
+    """Remove the /nix symlink an older cmrelay made, and only if it is ours."""
     if root.is_symlink() and (root.readlink() == target or root.resolve() == target):
         root.unlink()
         return True

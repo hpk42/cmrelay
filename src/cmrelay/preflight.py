@@ -267,30 +267,6 @@ def check_mtail(address, artifact, binary=paths.MTAIL) -> Report:
     return report
 
 
-def check_store(nix_root=Path("/nix")) -> Report:
-    """A real /nix directory means the host runs Nix already.
-
-    Uninstall removes the whole tree, so cmrelay will not mingle closures.
-    """
-    report = Report()
-    if nix_root.is_symlink():
-        target = nix_root.resolve()
-        expected = Path("/opt/cmrelay/nix")
-        if target != expected:
-            report.add(
-                "/nix",
-                f"is a symlink to {target}, not {expected}",
-                remedy="remove or repoint /nix",
-            )
-    elif nix_root.exists():
-        report.add(
-            "/nix",
-            "exists as a real directory: this host already runs Nix",
-            remedy="cmrelay will not mingle closures; install on a host without Nix",
-        )
-    return report
-
-
 def check_external_tls(config) -> Report:
     """Both halves of an external certificate, before anything is written."""
     report = Report()
@@ -329,7 +305,6 @@ def check_free_space(needed_mib: int, path=Path("/opt")) -> Report:
 def run(
     port_table,
     ss_argv=("ss",),
-    nix_root=Path("/nix"),
     ours=None,
     config=None,
     needed_mib=0,
@@ -337,7 +312,6 @@ def run(
     """The whole preflight, in three reads. Modifies nothing."""
     report = Report()
     parts = [
-        check_store(nix_root),
         check_units(ours=ours),
         check_ports(port_table, ss_argv),
     ]

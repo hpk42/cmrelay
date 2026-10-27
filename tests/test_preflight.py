@@ -80,29 +80,6 @@ def test_a_squatter_is_named_in_the_finding(tmp_path):
     assert finding.remedy
 
 
-def test_store_check_flags_a_symlink_resolving_elsewhere(tmp_path):
-    root = tmp_path / "nix"
-    target = tmp_path / "opt/cmrelay/nix"
-    target.mkdir(parents=True)
-    root.symlink_to(target)
-    # resolve() is what the check compares, so point it at the real location
-    report = preflight.check_store(root)
-    assert not report.ok
-    assert "symlink" in report.findings[0].detail
-
-
-def test_store_check_refuses_an_existing_nix_directory(tmp_path):
-    root = tmp_path / "nix"
-    (root / "store").mkdir(parents=True)
-    report = preflight.check_store(root)
-    assert not report.ok
-    assert "already runs Nix" in report.findings[0].detail
-
-
-def test_store_check_passes_on_a_bare_host(tmp_path):
-    assert preflight.check_store(tmp_path / "nowhere").ok
-
-
 def test_unit_check_is_quiet_without_systemd(monkeypatch):
     monkeypatch.setattr(systemd, "available", lambda: False)
     assert preflight.check_units().ok

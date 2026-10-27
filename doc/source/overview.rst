@@ -68,9 +68,10 @@ everything holding live *state* stays where a ``cmdeploy`` relay keeps it::
 Unit files are written into ``/etc/systemd/system`` under exactly
 the names Debian uses (``dovecot.service``, ``postfix.service``
 and so on) and indexed by symlink from ``/opt/cmrelay/systemd``.
-``/nix`` is a symlink to ``/opt/cmrelay/nix``:
-the software is a Nix closure whose binaries name ``/nix/store`` paths,
-so the paths stay and the bytes live under ``/opt/cmrelay``.
+The software is a Nix closure built for ``/nix/store``.
+Building the installer rewrites every store path in it, in place and
+at the same length, to name ``/opt/cmrelay/nix/store`` instead,
+so nothing is installed under ``/nix`` and a host's own Nix is never touched.
 
 
 What deploy owns, and what it does not

@@ -4,13 +4,14 @@ The split is by kind, not by depth: everything cmrelay defines lives under
 /opt/cmrelay, everything holding live state stays where it already is, which
 is what makes a host convertible back to cmdeploy.
 
-The store is the exception. Store paths are baked into every binary as its
-ELF interpreter and RPATH and hash into every derivation, so the paths stay
-and the bytes move: /nix is a symlink to /opt/cmrelay/nix.
+The store is no exception: nix/relocate.py moves it from /nix/store to
+/opt/cmrelay/nix/store when the payload is built, so the closure names no
+path outside /opt/cmrelay.
 """
 
 from pathlib import Path
 
+# Older builds ran their store through a /nix symlink; uninstall removes it.
 NIX_ROOT = Path("/nix")
 
 ROOT = Path("/opt/cmrelay")

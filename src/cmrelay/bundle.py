@@ -2,8 +2,9 @@
 
 The installer runs out of the stub's staging directory, the CLI out of the
 installed store, and both need the same manifest, vendored configuration,
-units and vendor.lock. `prefix` separates them: in staging every store path
-has the staging root in front of it, and once installed it is empty.
+units and vendor.lock. `prefix` separates them: in staging the store sits
+under the staging root as nix/store, as it will under /opt/cmrelay, and once
+installed there is no prefix.
 """
 
 import json
@@ -54,7 +55,7 @@ class Bundle:
         """Map a store path to where it actually is right now."""
         if self.prefix is None:
             return Path(store_path)
-        return self.prefix / str(store_path).lstrip("/")
+        return self.prefix / "nix/store" / str(store_path).partition("/nix/store/")[2]
 
     @property
     def root(self) -> Path:

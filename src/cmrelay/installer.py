@@ -62,7 +62,6 @@ def confirm(bundle, out) -> bool:
     out.print(
         f"  {str(paths.ROOT) + '/':<36} the relay stack, {staged_size(bundle.prefix)}"
     )
-    out.print(f"  {'/nix':<36} a symlink to {paths.NIX}")
     out.print(f"  {str(paths.LOCAL_BIN / 'cmrelay'):<36} the CLI")
     out.print(f"  {str(paths.PROFILE_SCRIPT):<36} puts {paths.BIN} on PATH")
     out.print("\nNothing else is touched until `cmrelay deploy` runs.")
@@ -79,11 +78,10 @@ def publish(bundle, journal, out) -> None:
     journal.remove_file("cmrelay", bundle.prefix / READY_MARKER)
 
     moved = store.install(stage_store)
-    store.link_nix()
     note = store.label_for_selinux()
     if note:
         out.print(f"  {note}")
-    out.print(f"  {moved} store paths under {paths.STORE}, /nix -> {paths.NIX}")
+    out.print(f"  {moved} store paths under {paths.STORE}")
 
     number = generations.next_number()
     generations.create(journal, number, Path(bundle.closure), names)

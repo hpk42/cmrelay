@@ -16,6 +16,10 @@
 # And a store binary names an ELF interpreter that does not exist yet, so it
 # cannot be executed directly. Invoking ld.so with the target as an argument
 # bypasses PT_INTERP, and --library-path outranks the DT_RUNPATH nix writes.
+#
+# Staging stands in for /opt/cmrelay: the store path
+# /opt/cmrelay/nix/store/x is staged as $stage/nix/store/x, and publishing
+# it is a rename.
 
 set -eu
 
@@ -162,7 +166,7 @@ fi
 # The marker alone is not enough: publishing moves the store out, and a tree
 # whose closure has gone would fail much later on a missing bootstrap.env.
 if [ -n "$shared" ] && [ -f "$shared/$hash/$ready" ] \
-    && [ -f "$shared/$hash$CMRELAY_CLOSURE/bootstrap.env" ]; then
+    && [ -f "$shared/$hash${CMRELAY_CLOSURE#/opt/cmrelay}/bootstrap.env" ]; then
     stage=$shared/$hash
     canonical=1
     echo "cmrelay: reusing the closure already unpacked in $stage"
@@ -224,7 +228,7 @@ else
 
     [ -d "$scratch/nix/store" ] \
         || fail "the closure did not unpack to $scratch/nix/store"
-    [ -f "$scratch$CMRELAY_CLOSURE/bootstrap.env" ] \
+    [ -f "$scratch${CMRELAY_CLOSURE#/opt/cmrelay}/bootstrap.env" ] \
         || fail "the unpacked closure has no bootstrap.env"
 
     : >"$scratch/$ready"
@@ -250,10 +254,10 @@ tools=
 # withPackages' bin/python3 is a wrapper execing an absolute store path, and
 # its site-packages is a symlink farm into paths that do not exist yet, so
 # CMRELAY_SITE names each module's own store path.
-. "$stage$CMRELAY_CLOSURE/bootstrap.env"
+. "$stage${CMRELAY_CLOSURE#/opt/cmrelay}/bootstrap.env"
 
-ld="$stage$CMRELAY_LD"
-python="$stage$CMRELAY_PYTHON"
+ld="$stage${CMRELAY_LD#/opt/cmrelay}"
+python="$stage${CMRELAY_PYTHON#/opt/cmrelay}"
 [ -f "$ld" ] || fail "no dynamic loader at $ld"
 [ -f "$python" ] || fail "no interpreter at $python"
 
@@ -261,8 +265,8 @@ libs=$(ls -d "$stage"/nix/store/*/lib 2>/dev/null | tr '\n' ':')
 
 CMRELAY_STAGE="$stage"
 export CMRELAY_STAGE CMRELAY_CLOSURE
-staged_site=$(printf '%s' "$CMRELAY_SITE" | sed "s|:|:$stage|g")
-PYTHONPATH="$stage$CMRELAY_CLOSURE:$stage$staged_site"
+PYTHONPATH=$(printf '%s:%s' "$CMRELAY_CLOSURE" "$CMRELAY_SITE" \
+    | sed "s|/opt/cmrelay/|$stage/|g")
 export PYTHONPATH
 PYTHONNOUSERSITE=1
 export PYTHONNOUSERSITE
