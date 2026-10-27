@@ -22,6 +22,14 @@ def build_parser():
     def verb(name, **kwargs):
         return sub.add_parser(name, parents=[common], **kwargs)
 
+    def domain(value):
+        if "." in value:
+            return value
+        hint = f"; did you mean `cmrelay {value}`?" if value in sub.choices else ""
+        raise argparse.ArgumentTypeError(f"'{value}' is not a domain{hint}")
+
+    domain_arg = dict(nargs="?", metavar="DOMAIN", type=domain)
+
     deploy = verb(
         "deploy",
         help="make this host match its configuration",
@@ -31,9 +39,7 @@ def build_parser():
             " on a host that has no chatmail.ini yet."
         ),
     )
-    deploy.add_argument(
-        "domain", nargs="?", metavar="DOMAIN", help="the chatmail domain, or an IPv4"
-    )
+    deploy.add_argument("domain", **domain_arg, help="the chatmail domain, or an IPv4")
     deploy.add_argument(
         "--config",
         metavar="PATH",
@@ -119,9 +125,7 @@ def build_parser():
             " take-over masked. Name the domain to confirm."
         ),
     )
-    uninstall.add_argument(
-        "domain", nargs="?", metavar="DOMAIN", help="the domain this relay serves"
-    )
+    uninstall.add_argument("domain", **domain_arg, help="the domain this relay serves")
     uninstall.add_argument(
         "--yes", "-y", action="store_true", help="skip the confirmation"
     )

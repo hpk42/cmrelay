@@ -34,6 +34,20 @@ def test_deploy_takes_an_optional_domain():
     assert parse(["deploy", "relay.example.org"]).domain == "relay.example.org"
 
 
+@pytest.mark.parametrize("verb", ["deploy", "uninstall"])
+@pytest.mark.parametrize(
+    "word, message",
+    [
+        ("dns", "'dns' is not a domain; did you mean `cmrelay dns`?"),
+        ("relay", "'relay' is not a domain"),
+    ],
+)
+def test_a_dotless_word_is_not_a_domain(verb, word, message, capsys):
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args([verb, word])
+    assert capsys.readouterr().err.endswith(f"argument DOMAIN: {message}\n")
+
+
 def test_disable_and_enable_mail_are_the_same_switch():
     parse = cli.build_parser().parse_args
     assert parse(["deploy"]).enable_mail is None
