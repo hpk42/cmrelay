@@ -1,0 +1,50 @@
+#!/bin/sh
+# Usage: 2_test-distros [IMAGE...]
+# On a fresh container of each image: refuse a too small /opt, install,
+# deploy twice, status, uninstall. Needs no cmlxc and no DNS.
+set -eu
+cd "$(dirname "$0")/../.."
+[ $# -gt 0 ] || set -- images:debian/12 images:debian/13 images:ubuntu/24.04 images:ubuntu/26.04
+installer=$(readlink -f build/installer/bin/cmrelay.run)
+
+fail() {
+    echo "test-distros: $*" >&2
+    exit 1
+}
+
+for image in "$@"; do
+    ct=cmrelay-distro-test
+    on() { incus exec "$ct" -- "$@"; }
+    echo "test-distros: $image"
+    incus delete -f "$ct" >/dev/null 2>&1 || true
+    incus launch -q "$image" "$ct"
+    # right after launch systemctl has no bus yet and returns at once
+    on timeout 120 sh -c 'until systemctl is-system-running --wait >/dev/null 2>&1; do
+        [ "$(systemctl is-system-running 2>/dev/null)" = degraded ] && break; sleep 1; done' || true
+    incus file push -q "$installer" "$ct/root/cmrelay.run" --mode 755
+    on sh -c 'mkdir -p /opt/cmrelay && mount -t tmpfs -o size=100m tmpfs /opt/cmrelay'
+    if on /root/cmrelay.run >/dev/null 2>&1; then fail "$image: a full /opt was not refused"; fi
+    on sh -c 'umount /opt/cmrelay && rmdir /opt/cmrelay'
+    on /root/cmrelay.run
+    on cmrelay init _chat.example.org
+    on cmrelay deploy --skip-dns-check
+    on cmrelay deploy --skip-dns-check | grep -q "nothing to do" \
+        || fail "$image: a second deploy changed something"
+    on cmrelay status
+    # dovecot converts charsets through the closure's glibc, which keeps only a few
+    python=$(on sed -n '1s/^#!//p' /opt/cmrelay/lib/bin/cmrelay)
+    on "$python" -c 'import ctypes; c = ctypes.CDLL("libc.so.6"); c.iconv_open.restype = ctypes.c_void_p
+for charset in (b"ISO-8859-1", b"ISO-8859-15", b"WINDOWS-1252", b"UTF-16", b"UTF-7"):
+    assert c.iconv_open(b"UTF-8", charset) != 2**64 - 1, charset' || fail "$image: a charset does not convert"
+    on cmrelay uninstall --yes
+    if on test -e /opt/cmrelay; then fail "$image: uninstall left /opt/cmrelay"; fi
+    if on grep -rlq "^# written by cmrelay" /etc/systemd/system; then
+        fail "$image: uninstall left a unit or drop-in cmrelay wrote"
+    fi
+    # deploy points resolv.conf at unbound, and uninstall removes unbound
+    if on grep -q "^nameserver 127.0.0.1" /etc/resolv.conf; then
+        fail "$image: uninstall left resolv.conf on the removed unbound"
+    fi
+    incus delete -f "$ct"
+done
+echo "test-distros: all passed"

@@ -1,0 +1,95 @@
+#!/bin/sh
+# Usage: 2_test-cmlxc [--full] [NAME...]
+# Deploys the built installer into local incus containers with cmlxc
+# and runs cmlxc's mini test suite against them.
+# --full also takes the last container through upgrade, a failing upgrade and uninstall,
+# and the container $TAKEOVER (default cmt1) through take-over and hand-back.
+set -eu
+cd "$(dirname "$0")/../.."
+full=
+[ "${1:-}" != --full ] || { full=1; shift; }
+[ $# -gt 0 ] || set -- cmrelay1 cmrelay2
+
+fail() {
+    echo "test-cmlxc: $*" >&2
+    exit 1
+}
+
+install="uv tool install git+https://github.com/chatmail/cmlxc@hpk/deploy-cmrelay-init"
+cmlxc deploy-cmrelay --help >/dev/null 2>&1 \
+    || fail "no cmlxc with a deploy-cmrelay command: $install"
+installer=build/installer/bin/cmrelay.run
+[ -f "$installer" ] || fail "no $installer; run installer/scripts/1_build-installer first"
+installer=$(readlink -f "$installer")
+commit=$(sed -n 's/.*"RELAY_COMMIT": *"\([0-9a-f]*\)".*/\1/p' host/cmrelay/stack/pins.json)
+deploy() { cmlxc deploy-cmrelay "$1" --source . --payload "$installer"; }
+
+for name in "$@"; do
+    deploy "$name"
+done
+cmlxc test-mini "$@"
+[ -n "$full" ] || exit 0
+
+for name in "$@"; do :; done
+ct=$name-localchat
+on() { incus exec "$ct" -- "$@"; }
+quiet() { "$@" >/dev/null 2>&1 || fail "failed on $ct: $*"; }
+refused() { if "$@" >/dev/null 2>&1; then fail "not refused on $ct: $*"; fi; }
+
+echo "test-cmlxc: the full round on $ct"
+incus file push -q "$installer" "$ct/root/candidate.run" --mode 755
+on cmrelay deploy --skip-dns-check | grep -q "nothing to do" \
+    || fail "a second deploy on $ct changed something"
+quiet on cmrelay status
+quiet on cmrelay deploy --disable-mail --skip-dns-check
+refused on systemctl -q is-active postfix
+quiet on cmrelay deploy --skip-dns-check
+quiet on systemctl -q is-active postfix dovecot
+refused on cmrelay upgrade
+refused on cmrelay upgrade /root/candidate.run --force --yes
+refused on cmrelay upgrade /root/candidate.run --no-verify --yes
+quiet on cmrelay upgrade /root/candidate.run --no-verify --force --skip-dns-check --yes
+# the deploy after it kept exactly the store paths the release lists
+[ "$(on ls /opt/cmrelay/lib/store | sort)" = "$(on sort /opt/cmrelay/lib/state/store-paths)" ] \
+    || fail "the store on $ct holds other paths than the release lists"
+quiet on cmrelay status
+# a newer release whose deploy fails: the upgrade deploys the installed one again
+failing=${FAILING_INSTALLER:-}
+if [ -z "$failing" ] && command -v nix >/dev/null; then
+    failing=$(installer/scripts/failing-release)
+fi
+if [ -n "$failing" ]; then
+    incus file push -q "$failing" "$ct/root/failing.run" --mode 755
+    refused on cmrelay upgrade /root/failing.run --no-verify --skip-dns-check --yes
+    quiet on cmrelay status
+    [ "$(on ls /opt/cmrelay/lib/store | sort)" = "$(on sort /opt/cmrelay/lib/state/store-paths)" ] \
+        || fail "a failed upgrade on $ct left other store paths than the installed release lists"
+    on cmrelay deploy --skip-dns-check | grep -q "nothing to do" \
+        || fail "a failed upgrade on $ct left something for the next deploy to do"
+else
+    echo "test-cmlxc: neither FAILING_INSTALLER nor nix, so no failing upgrade on $ct"
+fi
+quiet on cmrelay uninstall --yes
+refused on test -e /opt/cmrelay
+refused on test -e /usr/local/bin/cmrelay
+deploy "$name"
+cmlxc test-mini "$@"
+
+# a cmdeploy relay of the same chatmail/relay commit, taken over and handed back
+name=${TAKEOVER:-cmt1}
+ct=$name-localchat
+echo "test-cmlxc: take-over and hand-back on $ct"
+cmlxc deploy-cmdeploy "$name" --source "@$commit"
+incus file push -q "$installer" "$ct/root/cmrelay.run" --mode 755
+quiet on /root/cmrelay.run
+quiet on cmrelay init
+# not piped into grep -q: its early exit would kill the deploy half-way
+takeover=$(on cmrelay deploy --yes --skip-dns-check) || fail "the take-over on $ct failed"
+case $takeover in
+*"Units a take-over stops and disables"*) ;;
+*) fail "the take-over on $ct names no units in the way" ;;
+esac
+cmlxc test-mini "$name"
+quiet on cmrelay uninstall --yes
+cmlxc deploy-cmdeploy "$name" --source "@$commit"
+cmlxc test-mini "$name"

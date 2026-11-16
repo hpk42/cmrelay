@@ -1,0 +1,15 @@
+{
+  "clients": [
+    {
+      "clientId": "deltachat",
+      "sources": [
+        {
+          "sourceId": "gplay",
+          "versionInteger": 761,
+          "versionString": "2.69.0",
+          "downloadUrl": "https://github.com/deltachat/deltachat-android/releases/download/v2.69.0/deltachat-gplay-release-2.69.0.apk"
+        }
+      ]
+    }
+  ]
+}

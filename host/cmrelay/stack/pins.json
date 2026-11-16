@@ -1,0 +1,52 @@
+{
+  "DOVECOT_VERSION": "2.3.21+dfsg1-3",
+  "FILTERMAIL_ARTIFACTS": {
+    "aarch64": [
+      "https://github.com/chatmail/filtermail/releases/download/v0.7.8/filtermail-aarch64",
+      "a15a476ab92072ad22f1bc9d81e5c545bc3d81fc9d446d53f8cc1de810867837"
+    ],
+    "mtail": [
+      "https://raw.githubusercontent.com/chatmail/filtermail/v0.7.8/contrib/filtermail.mtail",
+      "948f688bb89ad47e6eb0fc8fa107e201a689f5adc264ff926be487a2a8562b51"
+    ],
+    "x86_64": [
+      "https://github.com/chatmail/filtermail/releases/download/v0.7.8/filtermail-x86_64",
+      "f470431f98468b9f4d2452470bffc00c0010b3f92655005d59b997f599fd7d4a"
+    ]
+  },
+  "FILTERMAIL_VERSION": "v0.7.8",
+  "IROH_ARTIFACTS": {
+    "aarch64": [
+      "https://github.com/n0-computer/iroh/releases/download/v0.35.0/iroh-relay-v0.35.0-aarch64-unknown-linux-musl.tar.gz",
+      "f8ef27631fac213b3ef668d02acd5b3e215292746a3fc71d90c63115446008b1"
+    ],
+    "x86_64": [
+      "https://github.com/n0-computer/iroh/releases/download/v0.35.0/iroh-relay-v0.35.0-x86_64-unknown-linux-musl.tar.gz",
+      "45c81199dbd70f8c4c30fef7f3b9727ca6e3cea8f2831333eeaf8aa71bf0fac1"
+    ]
+  },
+  "IROH_VERSION": "v0.35.0",
+  "MTAIL_ARTIFACTS": {
+    "aarch64": [
+      "https://github.com/jaqx0r/mtail/releases/download/v3.4.9/mtail_3.4.9_linux_arm64.tar.gz",
+      "e0a2b66b372ca257d7daeb7ba10f9233a2192a1f9057618fccc6be5c854a2a3c"
+    ],
+    "x86_64": [
+      "https://github.com/jaqx0r/mtail/releases/download/v3.4.9/mtail_3.4.9_linux_amd64.tar.gz",
+      "55f64a87f71955bb871c724b4aadf19fe9d854e6327196919c7fe44943427eab"
+    ]
+  },
+  "MTAIL_VERSION": "3.4.9",
+  "RELAY_COMMIT": "7a0bd2d4f8d078681eaab6edde387e9ce09d22fc",
+  "TURN_ARTIFACTS": {
+    "aarch64": [
+      "https://github.com/chatmail/chatmail-turn/releases/download/v0.4/chatmail-turn-aarch64-linux",
+      "0fb3e792419494e21ecad536464929dba706bb2c88884ed8f1788141d26fc756"
+    ],
+    "x86_64": [
+      "https://github.com/chatmail/chatmail-turn/releases/download/v0.4/chatmail-turn-x86_64-linux",
+      "1ec1f5c50122165e858a5a91bcba9037a28aa8cb8b64b8db570aa457c6141a8a"
+    ]
+  },
+  "TURN_VERSION": "v0.4"
+}

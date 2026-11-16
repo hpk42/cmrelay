@@ -1,0 +1,14 @@
+[Unit]
+Description=FastCGI wrapper for the chatmail account-creation CGI
+After=nss-user-lookup.target
+Requires=fcgiwrap.socket
+
+[Service]
+Type=simple
+ExecStart={fcgiwrap_bin} -f
+User=www-data
+Group=www-data
+
+[Install]
+Also=fcgiwrap.socket
+WantedBy=multi-user.target

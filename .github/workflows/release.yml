@@ -1,0 +1,99 @@
+# A v* tag runs all of CI, then signs and publishes the installer it built
+# for both architectures.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  # VERSION is what an installed host reports and what `upgrade` compares.
+  version:
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: VERSION matches the tag
+        run: |
+          version=$(cat host/VERSION)
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::VERSION says $version but the tag says $tag"
+            exit 1
+          fi
+          echo "releasing $version"
+
+  ci:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      # the build job's cache-nix-action drops superseded caches
+      actions: write
+
+  # native runners with sudo: the signed file is run before it is published
+  payload:
+    name: payload (${{ matrix.arch }})
+    needs: ci
+    runs-on: ${{ matrix.arch == 'aarch64' && (vars.LINUX_RUNNER_ARM || 'ubuntu-24.04-arm') || vars.LINUX_RUNNER || 'ubuntu-24.04' }}
+    # The release key is a secret of this environment, which has required
+    # reviewers; see installer/README.md.
+    environment: release-signing
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: cmrelay-payload-${{ matrix.arch }}
+          path: artifact
+
+      # The private key is written under umask 077, used once, and removed.
+      - name: Sign the installer CI built and tested
+        env:
+          RELEASE_KEY: ${{ secrets.CMRELAY_RELEASE_KEY }}
+        run: |
+          if [ -z "$RELEASE_KEY" ]; then
+            echo "::error::CMRELAY_RELEASE_KEY is not set, so this release" \
+                 "could only be installed with --no-verify"
+            exit 1
+          fi
+          run="cmrelay-installer-${GITHUB_REF_NAME#v}-${{ matrix.arch }}-linux.run"
+          cp artifact/cmrelay-*.run "$run"
+          chmod 644 "$run"
+          umask 077
+          printf '%s' "$RELEASE_KEY" > release.key
+          trap 'rm -f release.key' EXIT
+          python3 installer/scripts/3_sign-installer --key release.key "$run"
+          ls -lh "$run"
+          sha256sum "$run" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # unpacks the closure through the header, with the signature line appended
+      - name: Run the signed installer and verify its signature
+        run: |
+          run=$(ls cmrelay-installer-*.run)
+          chmod 755 "$run"
+          sudo "./$run" --stage-only
+          sudo rm -rf /opt/cmrelay
+          # the signature line: "cmrelay-sig ", 88 bytes of base64, a newline
+          head -c -101 "$run" > unsigned
+          tail -c 101 "$run" | sed 's/^cmrelay-sig //' | base64 -d > sig
+          openssl pkeyutl -verify -rawin -pubin -inkey release-key.pem -in unsigned -sigfile sig
+
+      - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          files: cmrelay-installer-*.run
+          fail_on_unmatched_files: true

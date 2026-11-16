@@ -1,0 +1,20 @@
+LICENSES
+
+The cmrelay source code is offered under MIT or GPL-3.0-or-later.
+
+host/chatmaild/, and the files under host/cmrelay/ that installer/vendor/files.txt
+names, are copied from chatmail/relay (MIT).
+
+Patches in installer/vendor/patches/ may also be used
+under the licence of the component they patch.
+
+cmrelay-installer, the file a release builds, is GPL-3.0-or-later as a whole.
+It bundles other software, each under its own licence. The main components:
+
+  GPL          filtermail (as shipped), coreutils
+  LGPL         glibc, parts of dovecot
+  IPL or EPL   postfix
+  Apache-2.0   OpenSSL, iroh-relay
+  Python-2.0   CPython, crypt-r
+  MIT/BSD/ISC  dovecot, nginx, unbound, OpenDKIM, ldns, fcgiwrap, acmetool,
+               chatmail-turn, jinja2, markdown, qrcode, packaging, bsdtar, zstd

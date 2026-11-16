@@ -1,0 +1,17 @@
+[Unit]
+Description=nginx web server
+After=network-online.target remote-fs.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+PIDFile=/run/nginx.pid
+ExecStartPre={nginx_bin} -t -q -p {nginx_prefix} -c {nginx_config}
+ExecStart={nginx_bin} -p {nginx_prefix} -c {nginx_config}
+ExecReload={nginx_bin} -p {nginx_prefix} -c {nginx_config} -s reload
+Restart=always
+RestartSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

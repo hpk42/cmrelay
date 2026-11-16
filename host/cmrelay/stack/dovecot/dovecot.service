@@ -1,0 +1,18 @@
+[Unit]
+Description=Dovecot IMAP/LMTP email server
+After=local-fs.target network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=notify: dovecot's version is readable from StatusText.
+Type=notify
+ExecStart={dovecot_bin} -F -c {dovecot_config}
+ExecReload={doveadm_bin} -c {dovecot_config} reload
+ExecStop={doveadm_bin} -c {dovecot_config} stop
+# dovecot's own recommendation for a busy chatmail relay
+LimitNOFILE=65535
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

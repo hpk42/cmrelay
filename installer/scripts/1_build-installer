@@ -1,0 +1,9 @@
+#!/bin/sh
+# Usage: 1_build-installer [NIX-BUILD-OPTION...]
+# Runs test_installer.py, then builds the installer file into build/installer/bin/.
+set -eu
+cd "$(dirname "$0")/../.."
+uv run pytest -q -p no:cacheprovider installer/test_installer.py
+nix build -o build/installer "$@" ./installer#payload
+bin=$PWD/build/installer/bin
+echo "successfully created installer $bin/$(readlink "$bin/cmrelay.run")"

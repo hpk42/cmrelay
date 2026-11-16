@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Sign an installer with the release key, generating the key if there is none.
+
+    3_sign-installer INSTALLER.run [--key release.key]
+
+A new key's public half goes to `release-key.pem` in the repository; the
+private key becomes the CMRELAY_RELEASE_KEY secret of the release workflow.
+"""
+
+import argparse
+import base64
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "host"))
+
+from cmrelay.release import signature  # noqa: E402
+
+
+def keygen(private: Path) -> None:
+    public = REPO / signature.KEY
+    if public.exists():
+        raise SystemExit(f"sign-installer: {public} exists without its key")
+    private.parent.mkdir(parents=True, exist_ok=True)
+    previous = os.umask(0o077)
+    try:
+        command = ["openssl", "genpkey", "-algorithm", "ed25519", "-out", private]
+        subprocess.run(list(map(str, command)), check=True)
+    finally:
+        os.umask(previous)
+    command = ["openssl", "pkey", "-in", private, "-pubout", "-out", public]
+    subprocess.run(list(map(str, command)), check=True)
+    print(f"{private}  store it as the CMRELAY_RELEASE_KEY secret, then delete it")
+    print(f"{public}  {signature.fingerprint(public.read_bytes())}")
+
+
+def sign(private_pem: Path, installer: Path) -> None:
+    """Sign *installer* in place, replacing a signature it already carries."""
+    with tempfile.TemporaryDirectory() as tmp:
+        signed, sig = Path(tmp) / "signed", Path(tmp) / "sig"
+        signature.detach(installer, signed)
+        command = ["openssl", "pkeyutl", "-rawin", "-in", signed, "-sign"]
+        command += ["-inkey", private_pem, "-out", sig]
+        result = subprocess.run(
+            list(map(str, command)), capture_output=True, text=True, check=False
+        )
+        if result.returncode:
+            raise SystemExit(
+                f"sign-installer: openssl could not sign: {result.stderr.strip()}"
+            )
+        line = signature.MARK + base64.b64encode(sig.read_bytes()) + b"\n"
+        os.truncate(installer, signed.stat().st_size)
+    with installer.open("ab") as out:
+        out.write(line)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("installer", type=Path)
+    default = REPO / "build/release.key"
+    parser.add_argument("--key", type=Path, default=default, help="the private half")
+    args = parser.parse_args(argv)
+    if not args.installer.is_file():
+        raise SystemExit(f"sign-installer: no file at {args.installer}")
+    if not args.key.exists():
+        if input(f"no key at {args.key}; generate a release key there? [y/N] ") != "y":
+            raise SystemExit("sign-installer: nothing signed")
+        keygen(args.key)
+    sign(args.key, args.installer)
+    print(f"{args.installer}  signed with {args.key}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

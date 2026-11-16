@@ -1,0 +1,13 @@
+#!/bin/sh
+# Usage: failing-release
+# Builds an installer of version 99.0.0 from this tree, with a dovecot setting
+# that makes its deploy fail, and prints its path. 2_test-cmlxc --full upgrades to it.
+set -eu
+cd "$(dirname "$0")/../.."
+scratch=$(mktemp -d)
+trap 'git worktree remove --force "$scratch"' EXIT
+git worktree add -q --detach "$scratch" HEAD
+git diff HEAD | git -C "$scratch" apply --allow-empty
+echo 99.0.0 >"$scratch/host/VERSION"
+echo "unknown_setting = 1" >>"$scratch/host/cmrelay/stack/dovecot/dovecot.conf.j2"
+echo "$(nix build --no-link --print-out-paths "$scratch/installer#payload")/bin/cmrelay.run"

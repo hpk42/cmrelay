@@ -1,0 +1,19 @@
+src = ["host", "host/chatmaild/src"]
+extend-exclude = ["host/chatmaild", "host/cmrelay/cli/dns/zone.py",
+  "host/cmrelay/cli/dns/rdns.py", "host/cmrelay/cli/dns/rshell.py"]
+extend-include = ["installer/scripts/3_sign-installer", "installer/scripts/chore-sync-from-relay"]
+target-version = "py312"
+
+[lint]
+select = [
+  "F", # Pyflakes
+  "I", # isort
+
+  "PLC", # Pylint Convention
+  "PLE", # Pylint Error
+  "PLW", # Pylint Warning
+]
+
+[lint.per-file-ignores]
+# Tests import inside a test when the import itself is what is under test.
+"**/tests/*" = ["PLC0415"]

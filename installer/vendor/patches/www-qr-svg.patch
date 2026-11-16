@@ -1,0 +1,11 @@
+--- a/stack/website/index.md
++++ b/stack/website/index.md
+@@ -30,7 +30,7 @@
+ you can also **scan this QR code** with Delta Chat:
+ 
+ <a href="DCACCOUNT:https://{{ config.mail_domain }}/new">
+-    <img width=300 style="float: none;" src="qr-chatmail-invite-{{config.mail_domain}}.png" /></a>
++    <img width=300 style="float: none;" src="qr-chatmail-invite-{{config.mail_domain}}.svg" /></a>
+ {% endif %}
+ 
+ 🐣 **Choose** your Avatar and Name

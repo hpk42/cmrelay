@@ -1,0 +1,11 @@
+# Pages of this manual taken from doc/source/ of the chatmail relay repository,
+# with the sha256 of the upstream file when the page was last brought up to date.
+# installer/scripts/chore-sync-from-relay names the pages whose upstream file changed:
+# revisit the page, then update the hash here.
+
+internals.rst   overview.rst          7bde276ae35ab6d32b4f8e2bc74f8eb8b2d0fcc89a08b1498d74dacc2da47fb8
+limits.rst      getting_started.rst   fb33380e453ac63e3ae415fcdeda2283fd235ad14c36c276795f8033ec644303
+proxy.rst       proxy.rst             7bfc7393062940dfb966b3059ec1127ff0e02f0c15689fdf5c17cd26dd91be62
+reverse_dns.rst reverse_dns.rst       628ba478be20cc363d24bef749732d18d259708381022b603332a04c0ac37878
+iponly.rst      iponly.rst            5f58274b81d710e3d52cff9ca46ac1e8c08ff55619b7b81958aad40459f1175d
+faq.rst         faq.rst               e9a42e064c9ba640c3115547bb59b650407e0e9bc31050e3cabb4e63fce1c96b

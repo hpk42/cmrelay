@@ -1,0 +1,134 @@
+--- a/cli/dns/zone.py
++++ b/cli/dns/zone.py
+@@ -1,7 +1,5 @@
+ import datetime
+ 
+-from . import remote
+-
+ 
+ def parse_zone_records(text):
+     """Yield ``(name, ttl, rtype, rdata)`` from standard BIND-format text."""
+@@ -17,12 +15,6 @@
+         yield name, ttl, rtype.upper(), rdata
+ 
+ 
+-def get_initial_remote_data(sshexec, mail_domain):
+-    return sshexec.logged(
+-        call=remote.rdns.perform_initial_checks, kwargs=dict(mail_domain=mail_domain)
+-    )
+-
+-
+ def check_initial_remote_data(remote_data, *, strict_tls=True, print=print):
+     mail_domain = remote_data["mail_domain"]
+     if not remote_data["A"] and not remote_data["AAAA"]:
+@@ -75,35 +67,3 @@
+     append_record(f"_imaps._tcp.{d}.", "SRV", f"0 1 993 {d}.")
+     lines.append("")
+     return "\n".join(lines)
+-
+-
+-def check_full_zone(sshexec, remote_data, out, zonefile) -> int:
+-    """Check existing DNS records, optionally write them to zone file
+-    and return (exitcode, remote_data) tuple."""
+-
+-    required_diff, recommended_diff = sshexec.logged(
+-        remote.rdns.check_zonefile,
+-        kwargs=dict(zonefile=zonefile, verbose=False),
+-    )
+-
+-    returncode = 0
+-    if required_diff:
+-        out.red("Please set required DNS entries at your DNS provider:\n")
+-        for line in required_diff:
+-            out(line)
+-        out("")
+-        returncode = 1
+-    if remote_data.get("dkim_entry") in required_diff:
+-        out(
+-            "If the DKIM entry above does not work with your DNS provider,"
+-            " you can try this one:\n"
+-        )
+-        out(remote_data.get("web_dkim_entry") + "\n")
+-    if recommended_diff:
+-        out("WARNING: these recommended DNS entries are not set:\n")
+-        for line in recommended_diff:
+-            out(line)
+-
+-    if not (recommended_diff or required_diff):
+-        out.green("Great! All your DNS entries are verified and correct.")
+-    return returncode
+--- a/cli/dns/rdns.py
++++ b/cli/dns/rdns.py
+@@ -12,14 +12,13 @@
+ 
+ import re
+ 
+-from .rshell import CalledProcessError, log_progress, shell
++from rshell import CalledProcessError, log_progress, shell
+ 
+ 
+ def perform_initial_checks(mail_domain, pre_command=""):
+     """Collecting initial DNS settings."""
+     assert mail_domain
+-    if not shell("dig", fail_ok=True, print=log_progress):
+-        shell("apt-get update && apt-get install -y dnsutils", print=log_progress)
++    set_zone(mail_domain)
+     A = query_dns("A", mail_domain)
+     AAAA = query_dns("AAAA", mail_domain)
+     MTA_STS = query_dns("CNAME", f"mta-sts.{mail_domain}")
+@@ -64,25 +63,40 @@
+     )
+ 
+ 
+-def get_authoritative_ns(domain):
+-    ns_replies = [
+-        x.split()
+-        for x in shell(
+-            f"dig -r -q {domain} -t NS +noall +authority +answer", print=log_progress
+-        ).split("\n")
+-    ]
+-    filtered_replies = [a for a in ns_replies if len(a) >= 5 and a[3] == "NS"]
+-    if not filtered_replies:
+-        return
+-    return filtered_replies[0][4]
++# The zone under test has one set of authoritative nameservers, resolved
++# once from the mail domain. Asking per record would follow a CNAME and take
++# its target for a nameserver: `drill -Q` prints the whole answer section.
++NAMESERVER = []
+ 
+ 
+-def query_dns(typ, domain):
+-    ns = get_authoritative_ns(domain)
++def get_authoritative_ns(domain):
++    """Walk up the labels until a name server answers, stopping at two."""
++    labels = domain.rstrip(".").split(".")
++    while len(labels) >= 2:
++        name = ".".join(labels)
++        answer = shell(f"drill -Q {name} NS", fail_ok=True, print=log_progress)
++        for line in answer.split("\n"):
++            line = line.strip().rstrip(".")
++            if line and not line.startswith(";"):
++                return line
++        labels = labels[1:]
++    return None
++
++
++def set_zone(mail_domain):
++    NAMESERVER[:] = [ns for ns in [get_authoritative_ns(mail_domain)] if ns]
++    return NAMESERVER[0] if NAMESERVER else None
++
++
++def query_dns(typ, domain, ns=None):
++    if ns is None:
++        ns = NAMESERVER[0] if NAMESERVER else get_authoritative_ns(domain)
+ 
+-    # Query authoritative nameserver directly to bypass DNS cache.
++    # Query the authoritative nameserver directly to bypass DNS cache.
+     direct_ns = f"@{ns}" if ns else ""
+-    res = shell(f"dig {direct_ns} -r -q {domain} -t {typ} +short", print=log_progress)
++    res = shell(
++        f"drill -Q {direct_ns} {domain} {typ}", fail_ok=True, print=log_progress
++    )
+     return next((line for line in res.split("\n") if not line.startswith(";")), "")
+ 
+ 

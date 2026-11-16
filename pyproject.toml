@@ -1,0 +1,28 @@
+# `uv run pytest` here runs the cmrelay, chatmaild and installer tests.
+[tool.uv]
+python-preference = "only-managed"
+
+[tool.uv.workspace]
+members = ["host"]
+
+[tool.uv.sources]
+cmrelay = { workspace = true }
+# the copy in this repository, as in the closure
+chatmaild = { path = "host/chatmaild" }
+
+[dependency-groups]
+dev = [
+    "cmrelay",
+    "chatmaild",
+    "jinja2",
+    "markdown",
+    "packaging",
+    "pytest",
+    "qrcode",
+    "pytest-xdist>=3.8.0",
+]
+doc = ["sphinx", "sphinx-autobuild", "furo"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["host/cmrelay", "host/chatmaild/src", "installer"]

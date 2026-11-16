@@ -1,0 +1,7 @@
+# Applied by scripts/chore-sync-from-relay to host/cmrelay/.
+
+# cmdeploy's DNS helpers call dig over ssh; here they run locally with drill.
+local-dns.patch
+
+# The invite QR code as SVG; cmdeploy's PNG needs Pillow (74 MiB).
+www-qr-svg.patch

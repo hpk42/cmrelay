@@ -1,0 +1,16 @@
+# Unlike Debian's unit, cmrelay seeds the trust anchor itself and does not chroot.
+[Unit]
+Description=Unbound DNS resolver
+After=network.target
+Before=nss-lookup.target
+Wants=nss-lookup.target
+
+[Service]
+Type=simple
+ExecStartPre=-{unbound_anchor_seed}
+ExecStart={unbound_bin} -d -c {unbound_config}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

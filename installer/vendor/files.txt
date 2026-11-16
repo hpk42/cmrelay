@@ -1,0 +1,55 @@
+# Which files of the chatmail/relay repository host/cmrelay/ holds:
+# a glob relative to that repository, then a destination relative to host/cmrelay/.
+# A trailing / keeps the file name, `-` leaves the file out. Every file must be
+# named, and the first line naming it decides.
+# scripts/chore-sync-from-relay applies this list.
+
+# cmdeploy's DNS helpers, run locally by `cmrelay dns`
+cmdeploy/src/cmdeploy/dns.py                        cli/dns/zone.py
+cmdeploy/src/cmdeploy/remote/rdns.py                cli/dns/
+cmdeploy/src/cmdeploy/remote/rshell.py              cli/dns/
+
+# The pyinfra deployer modules, cmdeploy's test suite, and pins.py, which
+# the sync turns into pins.json.
+cmdeploy/src/cmdeploy/*.py                          -
+cmdeploy/src/cmdeploy/*/*.py                        -
+cmdeploy/src/cmdeploy/tests/**/*                    -
+
+# Only ever removed from a host by cmdeploy, never installed.
+cmdeploy/src/cmdeploy/postfix/mta-sts-daemon.*      -
+
+# A dpkg mechanism; cmrelay installs no packages.
+cmdeploy/src/cmdeploy/policy-rc.d                   -
+
+# Inputs to cmdeploy's PNG QR code; see patches/www-qr-svg.patch.
+cmdeploy/src/cmdeploy/data/*                        -
+
+# per component: its units and drop-ins, then its configuration
+cmdeploy/src/cmdeploy/service/turnserver.service.f  stack/turn/
+cmdeploy/src/cmdeploy/service/*.f                   stack/chatmaild/
+# cmdeploy's Restart=always drop-in; cmrelay's own units say so themselves
+cmdeploy/src/cmdeploy/service/10_restart_on_failure.conf -
+cmdeploy/src/cmdeploy/acmetool/*.service.j2         stack/tls/
+cmdeploy/src/cmdeploy/acmetool/*.timer              stack/tls/
+cmdeploy/src/cmdeploy/acmetool/*.yaml.j2            stack/tls/
+cmdeploy/src/cmdeploy/acmetool/acmetool.hook        stack/tls/
+cmdeploy/src/cmdeploy/external/tls-cert-reload.*    stack/tls/
+cmdeploy/src/cmdeploy/filtermail/*.service.j2       stack/filtermail/
+cmdeploy/src/cmdeploy/mtail/*.service.j2            stack/mtail/
+cmdeploy/src/cmdeploy/mtail/*.mtail                 stack/mtail/
+cmdeploy/src/cmdeploy/iroh-relay.service.j2         stack/iroh/
+cmdeploy/src/cmdeploy/iroh-relay.toml               stack/iroh/
+# landed as /etc/systemd/system/opendkim.service.d/10-prevent-memory-leak.conf
+cmdeploy/src/cmdeploy/opendkim/systemd.conf         stack/opendkim/10-prevent-memory-leak.conf
+cmdeploy/src/cmdeploy/opendkim/*Table               stack/opendkim/
+cmdeploy/src/cmdeploy/opendkim/opendkim.conf        stack/opendkim/
+cmdeploy/src/cmdeploy/postfix/*.j2                  stack/postfix/
+cmdeploy/src/cmdeploy/postfix/*_*                   stack/postfix/
+cmdeploy/src/cmdeploy/dovecot/*.j2                  stack/dovecot/
+cmdeploy/src/cmdeploy/dovecot/*.lua                 stack/dovecot/
+cmdeploy/src/cmdeploy/nginx/*.j2                    stack/nginx/
+cmdeploy/src/cmdeploy/unbound/*.j2                  stack/unbound/
+cmdeploy/src/cmdeploy/90-volatile-logging.conf      stack/journald/
+
+# the web pages
+www/src/*                                           stack/website/

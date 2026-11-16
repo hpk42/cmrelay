@@ -1,0 +1,9 @@
+#!/bin/sh
+# Usage: chore-bump-nixpkgs
+# Moves flake.lock to the newest state of its nixpkgs branch and builds the installer.
+set -eu
+cd "$(dirname "$0")/.."
+nix flake update
+git diff --stat flake.lock
+scripts/1_build-installer
+echo "next: scripts/2_test-cmlxc --full and scripts/2_test-distros"

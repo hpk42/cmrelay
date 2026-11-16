@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenDKIM milter
+# After unbound, whose start seeds the trust anchor opendkim.conf names.
+After=network-online.target nss-lookup.target unbound.service
+Wants=network-online.target
+
+[Service]
+Type=forking
+# opendkim.conf sets PidFile here and UserID to opendkim.
+RuntimeDirectory=opendkim
+PIDFile=/run/opendkim/opendkim.pid
+ExecStart={opendkim_bin} -x {opendkim_config}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chatmaild"
+version = "0.3"
+dependencies = [
+  "iniconfig",
+  "filelock",
+  "psutil",
+  "requests",
+  "crypt-r >= 3.13.1 ; python_version >= '3.13'",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ['src']
+
+[project.scripts]
+doveauth = "chatmaild.doveauth:main"
+chatmail-metadata = "chatmaild.metadata:main"
+chatmail-expire = "chatmaild.expire:daily_expire_main"
+chatmail-quota-expire = "chatmaild.expire:quota_expire_main"
+chatmail-fsreport = "chatmaild.fsreport:main"
+lastlogin = "chatmaild.lastlogin:main"
+
+[tool.pytest.ini_options]
+addopts = "-v -ra --strict-markers"
+log_format = "%(asctime)s %(levelname)s %(message)s"
+log_date_format = "%Y-%m-%d %H:%M:%S"
+log_level = "INFO"
+
+[tool.ruff]
+lint.select = [
+  "F", # Pyflakes
+  "I", # isort
+
+  "PLC", # Pylint Convention
+  "PLE", # Pylint Error
+  "PLW", # Pylint Warning
+]
+lint.ignore = [
+  "PLC0415" # import-outside-top-level
+]
+
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+isolated_build = true
+envlist = lint,py
+
+[testenv:lint]
+skipdist = True
+skip_install = True
+deps =
+  ruff
+commands =
+  ruff format --quiet --diff src/
+  ruff check src/
+
+[testenv]
+deps = pytest 
+       pdbpp 
+       pytest-localserver
+       aiosmtpd
+       execnet
+commands = pytest -v -rsXx {posargs}
+"""

@@ -1,0 +1,103 @@
+/* The sidebar is dark in both colour schemes; the logo is centred above the title. */
+.sidebar-logo {
+  margin: 0 auto;
+  width: 62%;
+}
+/* Firefox sizes a percentage width against a shrunk flex item: zero. */
+.sidebar-logo-container {
+  align-self: stretch;
+}
+.sidebar-brand {
+  align-items: center;
+  padding: 1rem var(--sidebar-item-spacing-horizontal) 0;
+  text-align: center;
+}
+.sidebar-brand-text {
+  color: #fff;
+  font-size: 1.25rem;
+  margin: 0.5rem 0 0;
+}
+
+/* The search box on the dark sidebar, in both colour schemes. */
+.sidebar-search-container,
+.sidebar-search-container:hover,
+.sidebar-search-container:focus-within {
+  background: #27394b;
+}
+.sidebar-search-container::before {
+  background-color: #c9d5df;
+}
+.sidebar-search {
+  color: #fff;
+}
+.sidebar-search::placeholder {
+  color: #c9d5df;
+  opacity: 1;
+}
+
+/* Two columns: no right-hand column for the page's sections. */
+.toc-drawer,
+.toc-overlay-icon,
+.toc-overlay {
+  display: none;
+}
+
+/* Where the sidebar is not a drawer: a fixed width with its content at the
+   left edge, and a text column that starts near it. */
+@media (min-width: 63em) {
+  .sidebar-drawer {
+    justify-content: flex-start;
+    max-width: 17em;
+    min-width: 17em;
+    width: 17em;
+  }
+  .sidebar-container {
+    padding-left: 0.75rem;
+    width: 100%;
+  }
+  .main {
+    justify-content: flex-start;
+  }
+  .content {
+    flex: 1 1 auto;
+    margin-left: clamp(2rem, 4vw, 4.5rem);
+    margin-right: 2rem;
+    max-width: 58em;
+    padding: 0 1rem;
+    width: auto;
+  }
+}
+
+/* Every page and its sections. */
+.sidebar-fullnav {
+  padding: 1rem var(--sidebar-item-spacing-horizontal) 2rem;
+}
+.sidebar-fullnav ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+.sidebar-fullnav ul ul {
+  margin-bottom: 0.4rem;
+  padding-left: 1rem;
+}
+.sidebar-fullnav li {
+  margin: 0;
+}
+.sidebar-fullnav a {
+  color: #c9d5df;
+  display: block;
+  font-size: var(--sidebar-item-font-size);
+  line-height: 1.25;
+  padding: 0.2rem 0;
+  text-decoration: none;
+}
+.sidebar-fullnav > ul > li > a {
+  color: #fff;
+  font-weight: 600;
+  padding-top: 0.45rem;
+}
+.sidebar-fullnav a:hover,
+.sidebar-fullnav li.current > a {
+  color: #7fc4e8;
+}

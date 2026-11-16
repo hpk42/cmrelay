@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Refresh what cmrelay copies from the chatmail/relay repository.
+
+    chore-sync-from-relay COMMIT [--from URL-OR-PATH]
+
+Rewrites host/chatmaild/, writes the files installer/vendor/files.txt names into
+host/cmrelay/ (with installer/vendor/patches applied) and host/cmrelay/stack/pins.json,
+and names the pages of doc/COPIED whose source changed. Review with git diff.
+Everything is built aside and written only once all of it succeeded,
+and only when git has no uncommitted changes where it writes.
+A file upstream drops stays behind in host/cmrelay/ until removed by hand.
+"""
+
+import argparse
+import ast
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+INPUT = REPO / "installer/vendor"
+CMRELAY = REPO / "host/cmrelay"
+CHATMAILD = REPO / "host/chatmaild"
+UPSTREAM = "https://github.com/chatmail/relay"
+PINNED = ["FILTERMAIL_ARTIFACTS", "MTAIL_ARTIFACTS", "TURN_ARTIFACTS", "IROH_ARTIFACTS"]
+
+
+def git(*args, cwd=None) -> str:
+    command, capture = ["git", *args], dict(capture_output=True, text=True)
+    result = subprocess.run(command, cwd=cwd, check=False, **capture)
+    if result.returncode:
+        sys.exit(f"git {' '.join(args)}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def rules() -> list:
+    lines = (INPUT / "files.txt").read_text().splitlines()
+    return [ln.split() for ln in lines if ln.strip() and not ln.startswith("#")]
+
+
+def copy_vendor(relay: Path, out: Path) -> None:
+    """Every file under the two source trees is named by a rule, copied or left out."""
+    named, copied = set(), 0
+    for pattern, dest in rules():
+        for src in sorted(p for p in relay.glob(pattern) if p.is_file()):
+            if (rel := str(src.relative_to(relay))) in named:
+                continue
+            named.add(rel)
+            if dest == "-":
+                continue
+            target = out / dest / src.name if dest.endswith("/") else out / dest
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, target)
+            copied += 1
+    listed = git("ls-files", "cmdeploy/src/cmdeploy", "www/src", cwd=relay).split()
+    unnamed = sorted(set(listed) - named)
+    if unnamed:
+        sys.exit("no line of files.txt names:\n  " + "\n  ".join(unnamed))
+    if copied != sum(1 for p in out.rglob("*") if p.is_file()):
+        sys.exit("two relay files land on one name; see files.txt")
+    series = (INPUT / "patches/series").read_text().splitlines()
+    for name in filter(None, (ln.split("#")[0].strip() for ln in series)):
+        patch = (INPUT / "patches" / name).read_bytes()
+        command = ["patch", "-p1", "-sN", "--no-backup-if-mismatch", "-d", out]
+        if subprocess.run(command, input=patch, check=False).returncode:
+            sys.exit(f"{name} does not apply; nothing was changed")
+
+
+def jsonable(value) -> bool:
+    if isinstance(value, str):
+        return True
+    if isinstance(value, dict):
+        return all(isinstance(k, str) and jsonable(v) for k, v in value.items())
+    return isinstance(value, (list, tuple)) and all(jsonable(v) for v in value)
+
+
+def literal(node, names: dict):
+    """The value of a literal, or of an f-string over names assigned before it."""
+    match node:
+        case ast.Constant():
+            return node.value
+        case ast.Name() if node.id in names:
+            return names[node.id]
+        case ast.Tuple():
+            return tuple(literal(e, names) for e in node.elts)
+        case ast.List():
+            return [literal(e, names) for e in node.elts]
+        case ast.Dict(keys=keys, values=values) if None not in keys:
+            return {literal(k, names): literal(v, names) for k, v in zip(keys, values)}
+        case ast.JoinedStr():
+            return "".join(literal(v, names) for v in node.values)
+        case ast.FormattedValue(conversion=-1, format_spec=None):
+            return str(literal(node.value, names))
+    raise ValueError(f"line {node.lineno}: {ast.unparse(node)}")
+
+
+def write_pins(relay: Path, commit: str, out: Path) -> None:
+    """pins.py is read, not run: only plain assignments of literals are accepted."""
+    source = relay / "cmdeploy/src/cmdeploy/pins.py"
+    namespace = {}
+    for stmt in ast.parse(source.read_text()).body:
+        match stmt:
+            case ast.Expr(value=ast.Constant(value=str())):
+                continue
+            case ast.Assign(targets=[ast.Name(id=name)]):
+                try:
+                    namespace[name] = literal(stmt.value, namespace)
+                except ValueError as e:
+                    sys.exit(f"{source}: not a literal at {e}")
+            case _:
+                sys.exit(f"{source}:{stmt.lineno}: not a plain assignment")
+    pins = {k: v for k, v in namespace.items() if jsonable(v)}
+    missing = [name for name in PINNED if name not in pins]
+    if missing:
+        sys.exit(f"{source} does not define {', '.join(missing)}")
+    pins["RELAY_COMMIT"] = commit
+    text = json.dumps(pins, indent=2, sort_keys=True) + "\n"
+    (out / "stack/pins.json").write_text(text)
+
+
+def stale_docs(relay: Path) -> list:
+    stale = []
+    for line in (REPO / "doc/COPIED").read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            page, source, recorded = line.split()
+            upstream = (relay / "doc/source" / source).read_bytes()
+            if hashlib.sha256(upstream).hexdigest() != recorded:
+                stale.append(f"doc/{page} (from {source})")
+    return stale
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("commit")
+    parser.add_argument("--from", dest="source", default=UPSTREAM)
+    args = parser.parse_args()
+    trees = ["host/chatmaild", "host/cmrelay/stack", "host/cmrelay/cli/dns"]
+    if dirty := git("status", "--porcelain", "--", *trees, cwd=REPO):
+        sys.exit(f"uncommitted changes; commit or stash them first:\n{dirty}")
+    with tempfile.TemporaryDirectory() as name:
+        tmp = Path(name)
+        relay, out, chatmaild = tmp / "relay", tmp / "cmrelay", tmp / "chatmaild"
+        git("clone", "--quiet", "--no-checkout", args.source, str(relay))
+        git("checkout", "--quiet", args.commit, cwd=relay)
+        commit = git("rev-parse", "HEAD", cwd=relay).strip()
+        copy_vendor(relay, out)
+        shutil.copytree(relay / "chatmaild", chatmaild)
+        write_pins(relay, commit, out)
+        stale = stale_docs(relay)
+        shutil.rmtree(CHATMAILD, ignore_errors=True)
+        shutil.copytree(chatmaild, CHATMAILD)
+        shutil.copytree(out, CMRELAY, dirs_exist_ok=True)
+    print(f"synced to chatmail/relay {commit[:12]}; review with git diff")
+    if stale:
+        print("upstream changed these copied pages; revisit, then update doc/COPIED:")
+        print("  " + "\n  ".join(stale))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

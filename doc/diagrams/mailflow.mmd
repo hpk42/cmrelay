@@ -1,0 +1,36 @@
+flowchart LR
+    subgraph chatmail relay
+        subgraph postfix
+            qmgr .-> lmtp-filtermail["lmtp/lmtp-filtermail (default_transport)"]
+            qmgr .-> lmtp["lmtp (local_transport)"]
+            lmtp --> cleanup["cleanup (lmtp_header_cleanup)"]
+            bounce
+            smtpd-submission["smtpd/submission"]
+            smtpd-smtps["smtpd/smtps"]
+            smtpd-reinject-outgoing["smtpd/reinject-outgoing"] --> authclean["cleanup/authclean (submission_header_cleanup)"]
+            authclean --> qmgr
+            smtpd-smtp["smtpd/smtp"]
+            smtpd-reinject-incoming["smtpd/reinject-incoming"] --> qmgr
+        end
+        lmtp-filtermail --LMTP inet:10083--> filtermail-transport
+        cleanup --LMTP unix:private/dovecot-lmtp --> dovecot
+        dovecot --> maildir
+        smtpd-submission --SMTP inet:10080--> filtermail-outgoing
+        smtpd-smtps --SMTP inet:10080--> filtermail-outgoing
+        filtermail-outgoing --SMTP inet:10025--> smtpd-reinject-outgoing
+        open-dkim["OpenDKIM (signing only)"] <--milter unix:opendkim/opendkim.sock--> smtpd-reinject-outgoing
+        bounce <--milter unix:opendkim/opendkim.sock--> open-dkim
+        bounce --> qmgr
+        nginx
+        smtpd-smtp -.SMTP inet:10081.-> filtermail-incoming
+        nginx -.HTTP inet:10082.-> filtermail-incoming
+        filtermail-incoming --SMTP inet:10026--> smtpd-reinject-incoming
+    end
+    filtermail-transport -.SMTP inet:25.-> mta1[Remote relay]
+    filtermail-transport -.HTTPS /mxdeliv.-> mta1
+    client[Client] -.SMTP inet:587.-> smtpd-submission
+    client -.SMTP inet:465.-> smtpd-smtps
+    client -.SMTP inet:443.-> nginx
+    nginx -.SMTP inet:465.-> smtpd-smtps
+    mta2[Remote relay] -.SMTP inet:25.-> smtpd-smtp
+    mta2 -.HTTPS /mxdeliv.-> nginx

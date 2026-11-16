@@ -1,0 +1,20 @@
+# One instance named postfix.service, not Debian's postfix@-.
+[Unit]
+Description=Postfix Mail Transport Agent
+# dovecot first: it creates the SASL and LMTP sockets in postfix's queue directory.
+After=network-online.target nss-lookup.target dovecot.service
+Wants=network-online.target dovecot.service
+
+[Service]
+Type=forking
+# creates missing queue subdirectories and checks ownership
+ExecStartPre={postfix_bin} -c {postfix_config_dir} set-permissions
+ExecStart={postfix_bin} -c {postfix_config_dir} start
+ExecStop={postfix_bin} -c {postfix_config_dir} stop
+ExecReload={postfix_bin} -c {postfix_config_dir} reload
+PIDFile=/var/spool/postfix/pid/master.pid
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

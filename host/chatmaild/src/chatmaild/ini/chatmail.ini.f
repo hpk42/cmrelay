@@ -1,0 +1,146 @@
+[params]
+
+# mail domain (MUST be set to fully qualified chat mail domain)
+mail_domain = {mail_domain}
+
+#
+# If you only do private test deploys, you don't need to modify any settings below
+#
+
+#
+# Restrictions on user addresses
+#
+
+# email sending rate per user and minute
+#max_user_send_per_minute = 60
+
+# per-user max burst size for sending rate limiting (GCRA bucket capacity)
+#max_user_send_burst_size = 10
+
+# maximum mailbox size of a chatmail address
+# (Oldest messages will be removed automatically, so mailboxes never run full)
+#max_mailbox_size = 500M
+
+# maximum message size for an e-mail in bytes
+#max_message_size = 31457280
+
+# days after which mails are unconditionally deleted
+#delete_mails_after = 20
+
+# days after which large messages (>200k) are unconditionally deleted
+#delete_large_after = 7
+
+# days after which users without a successful login are deleted (database and mails)
+#delete_inactive_users_after = 90
+
+# minimum length a username must have
+#username_min_length = 9
+
+# maximum length a username can have
+#username_max_length = 9
+
+# minimum length a password must have
+#password_min_length = 9
+
+#
+# System resource limits
+#
+
+# The following three limits refuse creation of new addresses
+# while existing addresses keep working.
+# Rejections are logged by the doveauth service.
+
+# Maximum 1-minute load average, as reported by "uptime";
+# it counts processes waiting for disk I/O as well as for CPU.
+#max_load_1m = 5
+
+# Minimum memory available without swapping.
+#min_available_memory = 200M
+
+# Minimum free disk space on the file system holding the mailboxes.
+#min_free_disk_space = 1G
+
+# Maximum number of concurrent IMAP connections
+# (the Dovecot imap process limit).
+#max_imap_connections = 10000
+
+# Maximum number of concurrent SMTP connections
+# on each of the submission and smtps ports (the Postfix process limit).
+# A single client IP may use up to a fifth of this.
+#max_smtp_connections = 1000
+
+# Use externally managed TLS certificates instead of built-in acmetool.
+# Paths refer to files on the deployment server (not the build machine).
+# Both files must already exist before running cmdeploy.
+# Certificate renewal is your responsibility; changed files are
+# picked up automatically by all relay services.
+# tls_external_cert_and_key = /path/to/fullchain.pem /path/to/privkey.pem
+
+# path to www directory - documented here: https://chatmail.at/doc/relay/getting_started.html#custom-web-pages
+#www_folder = www
+
+#
+# Deployment Details
+#
+
+# if set to "True" IPv6 is disabled
+#disable_ipv6 = False
+
+# Your email adress, which will be used in acmetool to manage Let's Encrypt SSL certificates
+#acme_email =
+
+# Defaults to https://iroh.{{mail_domain}} and running `iroh-relay` on the chatmail
+# service.
+# If you set it to anything else, the service will be disabled
+# and users will be directed to use the given iroh relay URL.
+# Set it to empty string if you want users to use their default iroh relay.
+# iroh_relay =
+
+# Address on which `mtail` listens,
+# e.g. 127.0.0.1 or some private network
+# address like 192.168.10.1.
+# You can point Prometheus
+# or some other OpenMetrics-compatible
+# collector to
+# http://{{mtail_address}}:3903/metrics
+# and display collected metrics with Grafana.
+#
+# WARNING: do not expose this service
+# to the public IP address.
+#
+# `mtail is not running if the setting is not set.
+
+# mtail_address = 127.0.0.1
+
+#
+# Debugging options 
+#
+
+# set to True if you want to track imap protocol execution
+# in per-maildir ".in/.out" files. 
+# Note that you need to manually cleanup these files
+# so use this option with caution on production servers. 
+#imap_rawlog = false
+
+# set to true if you want to enable the IMAP COMPRESS Extension,
+# which allows IMAP connections to be efficiently compressed.
+# WARNING: Enabling this makes it impossible to hibernate IMAP
+# processes which will result in much higher memory/RAM usage.
+#imap_compress = false
+
+
+#
+# Privacy Policy
+#
+
+# postal address of privacy contact
+privacy_postal =
+
+# email address of privacy contact
+privacy_mail =
+
+# postal address of the privacy data officer
+privacy_pdo =
+
+# postal address of the privacy supervisor
+privacy_supervisor =
