@@ -73,6 +73,11 @@ quiet on cmrelay uninstall --yes
 refused on test -e /opt/cmrelay
 refused on test -e /usr/local/bin/cmrelay
 deploy "$name"
+# the filtermail restarts can be dropped after
+# https://github.com/chatmail/filtermail/pull/289 is released (>0.7.8)
+for other in "$@"; do
+    [ "$other" = "$name" ] || incus exec "$other-localchat" -- systemctl restart filtermail-transport
+done
 cmlxc test-mini "$@"
 
 # a cmdeploy relay of the same chatmail/relay commit, taken over and handed back
