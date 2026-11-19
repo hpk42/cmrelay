@@ -21,13 +21,14 @@ The numbered ones in the order of a release; each runs from any directory.
 | `scripts/1_build-installer`                 | runs `test_installer.py`, builds the installer into `build/installer/bin/` |
 | `scripts/2_test-cmlxc [--full] [NAME...]`   | deploys the build into local incus containers and runs `cmlxc test-mini` |
 | `scripts/2_test-distros [IMAGE...]`         | installs, deploys and uninstalls on fresh Debian 12, 13, Ubuntu 24.04, 26.04 |
+| `scripts/2_test-takeover [NAME]`            | takes a cmdeploy relay over with the build and hands it back             |
 | `scripts/3_sign-installer FILE [--key KEY]` | signs an installer, offering to generate a release key if there is none  |
 | `scripts/chore-sync-from-relay COMMIT`      | refreshes the files copied from chatmail/relay to that commit            |
 | `scripts/chore-bump-nixpkgs`                | moves `flake.lock` forward and builds the installer                      |
 | `scripts/failing-release`                   | builds an installer of version 99.0.0 whose deploy fails, for the test   |
 
 The `2_test-` scripts need [Incus](https://linuxcontainers.org/incus/),
-and `2_test-cmlxc` a cmlxc with the `deploy-cmrelay` command, which is on a branch until it is released:
+and `2_test-cmlxc` and `2_test-takeover` a cmlxc with the `deploy-cmrelay` command, which is on a branch until it is released:
 
     uv tool install git+https://github.com/chatmail/cmlxc@hpk/deploy-cmrelay-init
 

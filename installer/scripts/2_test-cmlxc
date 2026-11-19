@@ -2,8 +2,8 @@
 # Usage: 2_test-cmlxc [--full] [NAME...]
 # Deploys the built installer into local incus containers with cmlxc
 # and runs cmlxc's mini test suite against them.
-# --full also takes the last container through upgrade, a failing upgrade and uninstall,
-# and the container $TAKEOVER (default cmt1) through take-over and hand-back.
+# --full also takes the last container through upgrade, a failing upgrade and uninstall;
+# 2_test-takeover does the take-over and hand-back of a cmdeploy relay.
 set -eu
 cd "$(dirname "$0")/../.."
 full=
@@ -21,7 +21,6 @@ cmlxc deploy-cmrelay --help >/dev/null 2>&1 \
 installer=build/installer/bin/cmrelay.run
 [ -f "$installer" ] || fail "no $installer; run installer/scripts/1_build-installer first"
 installer=$(readlink -f "$installer")
-commit=$(sed -n 's/.*"RELAY_COMMIT": *"\([0-9a-f]*\)".*/\1/p' host/cmrelay/stack/pins.json)
 deploy() { cmlxc deploy-cmrelay "$1" --source . --payload "$installer"; }
 
 for name in "$@"; do
@@ -79,22 +78,3 @@ for other in "$@"; do
     [ "$other" = "$name" ] || incus exec "$other-localchat" -- systemctl restart filtermail-transport
 done
 cmlxc test-mini "$@"
-
-# a cmdeploy relay of the same chatmail/relay commit, taken over and handed back
-name=${TAKEOVER:-cmt1}
-ct=$name-localchat
-echo "test-cmlxc: take-over and hand-back on $ct"
-cmlxc deploy-cmdeploy "$name" --source "@$commit"
-incus file push -q "$installer" "$ct/root/cmrelay.run" --mode 755
-quiet on /root/cmrelay.run
-quiet on cmrelay init
-# not piped into grep -q: its early exit would kill the deploy half-way
-takeover=$(on cmrelay deploy --yes --skip-dns-check) || fail "the take-over on $ct failed"
-case $takeover in
-*"Units a take-over stops and disables"*) ;;
-*) fail "the take-over on $ct names no units in the way" ;;
-esac
-cmlxc test-mini "$name"
-quiet on cmrelay uninstall --yes
-cmlxc deploy-cmdeploy "$name" --source "@$commit"
-cmlxc test-mini "$name"
