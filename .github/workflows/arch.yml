@@ -22,6 +22,9 @@ jobs:
       contents: read
       # cache-nix-action drops superseded caches through the Actions API.
       actions: write
+    outputs:
+      NIX_CACHE: ${{ steps.cache.outputs.NIX_CACHE }}
+      NIX_CACHE_KEYS: ${{ steps.cache.outputs.NIX_CACHE_KEYS }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -31,11 +34,12 @@ jobs:
       # from cache.nixos.org and source alone. aarch64 comes from studio96, so x86_64 jobs
       # trust only the key of what the cache built itself.
       - name: Pick bb33's nix cache
+        id: cache
         if: runner.environment == 'self-hosted' && github.ref_type != 'tag' && vars.NIX_CACHE
         env:
           CACHE: ${{ vars.NIX_CACHE }}
           KEYS: ${{ inputs.arch == 'aarch64' && format('{0} {1}', vars.NIX_CACHE_KEY_X86_64, vars.NIX_CACHE_KEY_AARCH64) || vars.NIX_CACHE_KEY_X86_64 }}
-        run: printf 'NIX_CACHE=%s\nNIX_CACHE_KEYS=%s\n' "$CACHE" "$KEYS" >> "$GITHUB_ENV"
+        run: printf 'NIX_CACHE=%s\nNIX_CACHE_KEYS=%s\n' "$CACHE" "$KEYS" | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_ENV"
 
       - uses: cachix/install-nix-action@v31
         with:
@@ -77,17 +81,22 @@ jobs:
       - name: Run the tests on the shipped Python
         run: nix flake check --print-build-logs ./installer
 
+      # The artifacts serve GitHub's own runners and releases; bb33's runners build the
+      # installer from bb33's nix cache instead, which is faster than the artifact store.
       # build/installer is a symlink into the store; the name carries the commit
       - name: Name the payload after the commit
+        if: ${{ !env.NIX_CACHE }}
         run: |
           cp build/installer/bin/cmrelay-*.run "cmrelay-${GITHUB_SHA:0:7}-${{ inputs.arch }}-linux.run"
           ls -lh cmrelay-*.run
 
       # version 99.0.0 with a deploy that fails, for the deploy job's failing upgrade
       - name: Build a failing release
+        if: ${{ !env.NIX_CACHE }}
         run: cp "$(installer/scripts/failing-release)" failing.run
 
       - uses: actions/upload-artifact@v7
+        if: ${{ !env.NIX_CACHE }}
         with:
           name: cmrelay-payload-${{ inputs.arch }}
           path: cmrelay-*.run
@@ -95,6 +104,7 @@ jobs:
           retention-days: 14
 
       - uses: actions/upload-artifact@v7
+        if: ${{ !env.NIX_CACHE }}
         with:
           name: cmrelay-failing-${{ inputs.arch }}
           path: failing.run
@@ -117,34 +127,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/download-artifact@v8
+      - uses: ./.github/actions/installer
         with:
-          name: cmrelay-payload-${{ inputs.arch }}
-          path: artifact
+          arch: ${{ inputs.arch }}
+          nix-cache: ${{ needs.build.outputs.NIX_CACHE }}
+          nix-cache-keys: ${{ needs.build.outputs.NIX_CACHE_KEYS }}
+          # only the relays test upgrades to the failing release
+          failing: ${{ matrix.test == 'relays' }}
 
-      # only the relays test upgrades to the failing release
-      - uses: actions/download-artifact@v8
-        if: matrix.test == 'relays'
-        with:
-          name: cmrelay-failing-${{ inputs.arch }}
-          path: failing
-
-      # as chatmail/cmlxc's own lxc-test.yml sets incus up
-      - name: Install Incus (Zabbly)
-        run: |
-          sudo mkdir -p /etc/apt/keyrings
-          sudo curl -fsSL https://pkgs.zabbly.com/key.asc -o /etc/apt/keyrings/zabbly.asc
-          echo "deb [signed-by=/etc/apt/keyrings/zabbly.asc] https://pkgs.zabbly.com/incus/stable $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/zabbly-incus.list
-          sudo apt-get update
-          sudo apt-get install -y incus incus-client incus-base
-
-      - name: Initialise Incus
-        run: |
-          sudo systemctl stop docker.socket docker || true
-          sudo iptables -P FORWARD ACCEPT
-          sudo incus admin init --auto
-          sudo chmod 666 /var/lib/incus/unix.socket
-          sudo chown -R "$USER:$USER" ~/.config/incus
+      - name: Set Incus up
+        run: installer/scripts/ci-incus
 
       - uses: astral-sh/setup-uv@v9.0.0
 
@@ -161,9 +153,6 @@ jobs:
         env:
           TEST: ${{ matrix.test }}
         run: |
-          mkdir -p build/installer/bin
-          cp artifact/cmrelay-*.run build/installer/bin/cmrelay.run
-          chmod 755 build/installer/bin/cmrelay.run
           cmlxc init
           if [ "$TEST" = takeover ]; then
             installer/scripts/2_test-takeover
@@ -182,27 +171,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/download-artifact@v8
+      - uses: ./.github/actions/installer
         with:
-          name: cmrelay-payload-${{ inputs.arch }}
-          path: artifact
+          arch: ${{ inputs.arch }}
+          nix-cache: ${{ needs.build.outputs.NIX_CACHE }}
+          nix-cache-keys: ${{ needs.build.outputs.NIX_CACHE_KEYS }}
 
-      - name: Install and initialise Incus (Zabbly)
-        run: |
-          sudo mkdir -p /etc/apt/keyrings
-          sudo curl -fsSL https://pkgs.zabbly.com/key.asc -o /etc/apt/keyrings/zabbly.asc
-          echo "deb [signed-by=/etc/apt/keyrings/zabbly.asc] https://pkgs.zabbly.com/incus/stable $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/zabbly-incus.list
-          sudo apt-get update
-          sudo apt-get install -y incus incus-client incus-base
-          sudo systemctl stop docker.socket docker || true
-          sudo iptables -P FORWARD ACCEPT
-          sudo incus admin init --auto
-          sudo chmod 666 /var/lib/incus/unix.socket
-          sudo chown -R "$USER:$USER" ~/.config/incus
+      - name: Set Incus up
+        run: installer/scripts/ci-incus
 
       - name: Install, deploy and uninstall on Debian 12, 13 and Ubuntu 24.04, 26.04
-        run: |
-          mkdir -p build/installer/bin
-          cp artifact/cmrelay-*.run build/installer/bin/cmrelay.run
-          chmod 755 build/installer/bin/cmrelay.run
-          installer/scripts/2_test-distros
+        run: installer/scripts/2_test-distros

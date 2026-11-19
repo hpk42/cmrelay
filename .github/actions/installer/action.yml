@@ -1,0 +1,41 @@
+name: The build job's installer
+description: build/installer/bin/cmrelay.run, and failing/failing.run on request
+inputs:
+  arch: {required: true}
+  nix-cache: {default: ""}
+  nix-cache-keys: {default: ""}
+  failing: {default: "false"}
+runs:
+  using: composite
+  steps:
+    # With bb33's nix cache the installer builds here faster than it downloads: GitHub's
+    # artifact store loses packets on the way to bb33 and studio96, 20 to 110s a download.
+    - uses: cachix/install-nix-action@v31
+      if: inputs.nix-cache
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          extra-substituters = ${{ inputs.nix-cache }}
+          extra-trusted-public-keys = ${{ inputs.nix-cache-keys }}
+          connect-timeout = 5
+    - name: Build the installer from bb33's nix cache
+      if: inputs.nix-cache
+      shell: bash
+      env:
+        FAILING: ${{ inputs.failing }}
+      run: |
+        nix build -o payload ./installer#payload
+        mkdir artifact failing && cp payload/bin/cmrelay-*.run artifact/
+        [ "$FAILING" != true ] || cp "$(installer/scripts/failing-release)" failing/failing.run
+    - uses: actions/download-artifact@v8
+      if: ${{ !inputs.nix-cache }}
+      with:
+        name: cmrelay-payload-${{ inputs.arch }}
+        path: artifact
+    - uses: actions/download-artifact@v8
+      if: ${{ !inputs.nix-cache && inputs.failing == 'true' }}
+      with:
+        name: cmrelay-failing-${{ inputs.arch }}
+        path: failing
+    - shell: bash
+      run: install -D -m 755 artifact/cmrelay-*.run build/installer/bin/cmrelay.run
