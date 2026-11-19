@@ -16,7 +16,8 @@ jobs:
   # native runners: no cross-building
   build:
     name: nix build
-    runs-on: ${{ inputs.arch == 'aarch64' && (vars.LINUX_RUNNER_ARM || 'ubuntu-24.04-arm') || vars.LINUX_RUNNER_LARGE || 'ubuntu-latest' }}
+    # with bb33's nix cache x86_64 builds next to nothing, so a regular slot does
+    runs-on: ${{ inputs.arch == 'aarch64' && (vars.LINUX_RUNNER_ARM || 'ubuntu-24.04-arm') || vars.LINUX_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
       # cache-nix-action drops superseded caches through the Actions API.
@@ -26,6 +27,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # bb33's nix cache on bb33's own runners only, and never for a release, which builds
+      # from cache.nixos.org and source alone. aarch64 comes from studio96, so x86_64 jobs
+      # trust only the key of what the cache built itself.
+      - name: Pick bb33's nix cache
+        if: runner.environment == 'self-hosted' && github.ref_type != 'tag' && vars.NIX_CACHE
+        env:
+          CACHE: ${{ vars.NIX_CACHE }}
+          KEYS: ${{ inputs.arch == 'aarch64' && format('{0} {1}', vars.NIX_CACHE_KEY_X86_64, vars.NIX_CACHE_KEY_AARCH64) || vars.NIX_CACHE_KEY_X86_64 }}
+        run: printf 'NIX_CACHE=%s\nNIX_CACHE_KEYS=%s\n' "$CACHE" "$KEYS" >> "$GITHUB_ENV"
+
       - uses: cachix/install-nix-action@v31
         with:
           # keep the build-time inputs through the pre-save garbage collection
@@ -33,13 +44,13 @@ jobs:
             experimental-features = nix-command flakes
             keep-env-derivations = true
             keep-outputs = true
-            ${{ vars.NIX_CACHE && format('extra-substituters = {0}', vars.NIX_CACHE) || '' }}
-            ${{ vars.NIX_CACHE && format('extra-trusted-public-keys = {0}', vars.NIX_CACHE_KEY) || '' }}
-            ${{ vars.NIX_CACHE && 'connect-timeout = 5' || '' }}
+            ${{ env.NIX_CACHE && format('extra-substituters = {0}', env.NIX_CACHE) || '' }}
+            ${{ env.NIX_CACHE && format('extra-trusted-public-keys = {0}', env.NIX_CACHE_KEYS) || '' }}
+            ${{ env.NIX_CACHE && 'connect-timeout = 5' || '' }}
 
       # The key covers the inputs of the expensive builds; with bb33's nix cache, unneeded.
       - uses: nix-community/cache-nix-action@v7
-        if: ${{ !vars.NIX_CACHE }}
+        if: ${{ !env.NIX_CACHE }}
         with:
           primary-key: nix-${{ runner.os }}-${{ inputs.arch }}-${{ hashFiles('installer/flake.lock', '**/*.nix', 'host/cmrelay/stack/pins.json') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-${{ inputs.arch }}-
@@ -111,7 +122,9 @@ jobs:
           name: cmrelay-payload-${{ inputs.arch }}
           path: artifact
 
+      # only the relays test upgrades to the failing release
       - uses: actions/download-artifact@v8
+        if: matrix.test == 'relays'
         with:
           name: cmrelay-failing-${{ inputs.arch }}
           path: failing
