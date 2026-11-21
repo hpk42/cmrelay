@@ -71,16 +71,18 @@ Nothing is configured or started until `cmrelay init` and `cmrelay deploy`.
 ## Releases and their signature
 
 On a `v*` tag, `.github/workflows/release.yml` runs all of CI,
-then signs the installers that CI built, runs and verifies them, and publishes them.
+then signs the installers that CI built on bb33, runs and verifies them, and publishes them.
+Its job `sign` runs on a bb33 runner labelled `bb33-sign`, which gets the private key
+only in a run of this workflow that a `v*` tag started (bb33's README, "Release signing").
 
 | Piece            | Where                                                                              |
 |------------------|------------------------------------------------------------------------------------|
 | signature        | the last line of the installer file, exactly 101 bytes                             |
 | its content      | `cmrelay-sig `, the base64 of a raw Ed25519 signature and a newline                |
-| signing key      | a secret of the `release-signing` environment, never in the repository             |
-| verification key | `release-key.pem` in the repository and in every installed cmrelay, once generated |
+| signing key      | a file on bb33, never on GitHub and never in the repository                        |
+| verification key | `release-key.pem` in the repository and in every installed cmrelay                 |
 
-Once a release key exists, an upgrade from a mirror or a USB stick is therefore as safe as one from GitHub;
+An upgrade from a mirror or a USB stick is therefore as safe as one from GitHub;
 the first install of a host checks no signature.
 
 | Command                | Does                                         |

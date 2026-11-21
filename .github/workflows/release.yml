@@ -1,5 +1,5 @@
-# A v* tag runs all of CI, then signs and publishes the installer it built
-# for both architectures.
+# A v* tag runs all of CI, signs on bb33 the installers it built for both architectures,
+# runs each signed one on its own architecture, and publishes them.
 
 name: Release
 
@@ -37,14 +37,50 @@ jobs:
       # the build job's cache-nix-action drops superseded caches
       actions: write
 
-  # native runners with sudo: the signed file is run before it is published
-  payload:
-    name: payload (${{ matrix.arch }})
+  # bb33 hands this job the private release key, which only bb33 holds, and only in a run of
+  # this workflow that a v* tag started (bb33's README, Release signing). It runs no action
+  # but GitHub's own, so that nothing else in the job sees the key.
+  sign:
     needs: ci
+    runs-on: bb33-sign
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cmrelay-payload-*
+          path: artifact
+
+      - name: Sign the installers CI built and tested
+        run: |
+          key=/run/bb33-sign/release.key
+          for _ in $(seq 60); do [ -s "$key" ] && break; sleep 1; done
+          if [ ! -s "$key" ]; then
+            echo "::error::bb33 handed over no release key"
+            exit 1
+          fi
+          mkdir signed
+          for arch in x86_64 aarch64; do
+            run="signed/cmrelay-installer-${GITHUB_REF_NAME#v}-$arch-linux.run"
+            cp artifact/cmrelay-payload-$arch/cmrelay-*.run "$run"
+            python3 installer/scripts/3_sign-installer --key "$key" "$run"
+          done
+          sha256sum signed/* | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cmrelay-signed
+          path: signed/
+          if-no-files-found: error
+          retention-days: 14
+
+  # native runners with sudo: the signed file is run before it is published
+  publish:
+    name: publish (${{ matrix.arch }})
+    needs: sign
     runs-on: ${{ matrix.arch == 'aarch64' && (vars.LINUX_RUNNER_ARM || 'ubuntu-24.04-arm') || vars.LINUX_RUNNER || 'ubuntu-24.04' }}
-    # The release key is a secret of this environment, which has required
-    # reviewers; see installer/README.md.
-    environment: release-signing
     permissions:
       contents: write
     strategy:
@@ -58,33 +94,13 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: cmrelay-payload-${{ matrix.arch }}
-          path: artifact
-
-      # The private key is written under umask 077, used once, and removed.
-      - name: Sign the installer CI built and tested
-        env:
-          RELEASE_KEY: ${{ secrets.CMRELAY_RELEASE_KEY }}
-        run: |
-          if [ -z "$RELEASE_KEY" ]; then
-            echo "::error::CMRELAY_RELEASE_KEY is not set, so this release" \
-                 "could only be installed with --no-verify"
-            exit 1
-          fi
-          run="cmrelay-installer-${GITHUB_REF_NAME#v}-${{ matrix.arch }}-linux.run"
-          cp artifact/cmrelay-*.run "$run"
-          chmod 644 "$run"
-          umask 077
-          printf '%s' "$RELEASE_KEY" > release.key
-          trap 'rm -f release.key' EXIT
-          python3 installer/scripts/3_sign-installer --key release.key "$run"
-          ls -lh "$run"
-          sha256sum "$run" | tee -a "$GITHUB_STEP_SUMMARY"
+          name: cmrelay-signed
+          path: signed
 
       # unpacks the closure through the header, with the signature line appended
       - name: Run the signed installer and verify its signature
         run: |
-          run=$(ls cmrelay-installer-*.run)
+          run=$(ls signed/cmrelay-installer-*-${{ matrix.arch }}-linux.run)
           chmod 755 "$run"
           sudo "./$run" --stage-only
           sudo rm -rf /opt/cmrelay
@@ -95,5 +111,5 @@ jobs:
 
       - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
-          files: cmrelay-installer-*.run
+          files: signed/cmrelay-installer-*-${{ matrix.arch }}-linux.run
           fail_on_unmatched_files: true

@@ -4,7 +4,7 @@
     3_sign-installer INSTALLER.run [--key release.key]
 
 A new key's public half goes to `release-key.pem` in the repository; the
-private key becomes the CMRELAY_RELEASE_KEY secret of the release workflow.
+private key goes to bb33, which signs every release (installer/README.md).
 """
 
 import argparse
@@ -34,7 +34,7 @@ def keygen(private: Path) -> None:
         os.umask(previous)
     command = ["openssl", "pkey", "-in", private, "-pubout", "-out", public]
     subprocess.run(list(map(str, command)), check=True)
-    print(f"{private}  store it as the CMRELAY_RELEASE_KEY secret, then delete it")
+    print(f"{private}  move it to bb33's /etc/bb33-runners/cmrelay-release.key")
     print(f"{public}  {signature.fingerprint(public.read_bytes())}")
 
 
