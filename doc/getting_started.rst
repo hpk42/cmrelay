@@ -39,13 +39,14 @@ The steps use ``chat.example.org``. Please substitute it with your own domain.
       A domain starting with ``_`` (e.g. ``_chat.example.org``)
       gets self-signed certificates and needs no ``mta-sts`` records.
 
-2. Download the latest ``cmrelay-installer-<version>-<arch>-linux.run``
-   from https://github.com/hpk42/cmrelay/releases
-   and copy it onto the host.
+2. Download the latest ``cmrelay-installer-<version>-<arch>-linux.run`` file
+   from https://github.com/hpk42/cmrelay/releases,
+   where ``<arch>`` is what ``uname -m`` prints on the host, ``x86_64`` or ``aarch64``,
+   and copy the file onto the host.
 
 3. Run the installer as root::
 
-       ./cmrelay-installer-<version>-x86_64-linux.run
+       ./cmrelay-installer-<version>-<arch>-linux.run
 
    It unpacks into ``/opt/cmrelay`` and links the ``cmrelay`` command
    into ``/usr/local/bin``.
@@ -176,8 +177,8 @@ You need to download the `newer installer file <https://github.com/hpk42/cmrelay
 
 The file is verified against the release key
 of the already installed cmrelay before it is unpacked.
-Until the first signed release carries that key, this needs ``--no-verify``.
-The first install verifies nothing: check its sha256 against the release page.
+The first install verifies no signature,
+but you can check its sha256 against the release page.
 
 
 Modifying the home page

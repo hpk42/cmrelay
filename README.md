@@ -6,10 +6,10 @@ Install and maintain a [chatmail](https://chatmail.at) relay from one file.
 a [cmdeploy relay](https://github.com/chatmail/relay) uses into `/opt/cmrelay`.
 Instead of relying on (Debian 12) system packages
 the software contained in a cmrelay installer is built with a "Nix closure" with its own libc and Python.
-Run the installer as root directly on the host:
+Run the installer as root directly on the host with `<arch>` substituted by what `uname -m` prints there, 
+`x86_64` or `aarch64`:
 
-    ./cmrelay-installer-<version>-x86_64-linux.run
-
+    ./cmrelay-installer-<version>-<arch>-linux.run
 
 which will unpack the software contained in the installer into `/opt/cmrelay`.
 To initialize and deploy your relay:
