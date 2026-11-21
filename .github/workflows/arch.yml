@@ -30,12 +30,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # bb33's nix cache on bb33's own runners only, and never for a release, which builds
-      # from cache.nixos.org and source alone. aarch64 comes from studio96, so x86_64 jobs
+      # bb33's nix cache on bb33's own runners only, releases included.
+      # aarch64 comes from studio96, so x86_64 jobs
       # trust only the key of what the cache built itself.
       - name: Pick bb33's nix cache
         id: cache
-        if: runner.environment == 'self-hosted' && github.ref_type != 'tag' && vars.NIX_CACHE
+        if: runner.environment == 'self-hosted' && vars.NIX_CACHE
         env:
           CACHE: ${{ vars.NIX_CACHE }}
           KEYS: ${{ inputs.arch == 'aarch64' && format('{0} {1}', vars.NIX_CACHE_KEY_X86_64, vars.NIX_CACHE_KEY_AARCH64) || vars.NIX_CACHE_KEY_X86_64 }}
@@ -85,7 +85,7 @@ jobs:
       # installer from bb33's nix cache instead, which is faster than the artifact store.
       # build/installer is a symlink into the store; the name carries the commit
       - name: Name the payload after the commit
-        if: ${{ !env.NIX_CACHE }}
+        if: ${{ !env.NIX_CACHE || github.ref_type == 'tag' }}
         run: |
           cp build/installer/bin/cmrelay-*.run "cmrelay-${GITHUB_SHA:0:7}-${{ inputs.arch }}-linux.run"
           ls -lh cmrelay-*.run
@@ -96,7 +96,7 @@ jobs:
         run: cp "$(installer/scripts/failing-release)" failing.run
 
       - uses: actions/upload-artifact@v7
-        if: ${{ !env.NIX_CACHE }}
+        if: ${{ !env.NIX_CACHE || github.ref_type == 'tag' }}
         with:
           name: cmrelay-payload-${{ inputs.arch }}
           path: cmrelay-*.run

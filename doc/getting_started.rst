@@ -275,3 +275,24 @@ and brings its own libc and ``tar``.
 Not tested: SELinux distributions (Fedora, RHEL).
 
 Not supported: musl or non-systemd distributions (Alpine), and NixOS.
+
+On both architectures CI also deploys two relays from the installer
+into Debian 12 containers and runs the relay tests of
+`cmlxc <https://github.com/chatmail/cmlxc>`_ against them with Delta Chat accounts:
+once after the first deploy, and again after the second relay went through
+an upgrade, a failing upgrade, an uninstall and a fresh deploy.
+
+Across the two relays, the tests check that
+
+- a message from one relay arrives on the other,
+  also with only SMTP (ports 80 and 443 blocked) or only HTTPS (port 25 blocked) between them,
+- two accounts become verified contacts through a QR code (securejoin),
+- a message to a relay with ports 25, 80 and 443 blocked is deferred by the sending relay.
+
+On each relay alone, the tests check that a message and a message of a single dot arrive,
+that the first login creates the account and a login checks its domain,
+that unencrypted messages are rejected,
+and that a delivered message carries no trace of the sender's IP address.
+
+The single-relay tests also run on a relay deployed with ``cmdeploy run``,
+once cmrelay has taken it over, and again once ``cmdeploy run`` has taken it back.

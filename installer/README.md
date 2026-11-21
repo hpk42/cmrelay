@@ -75,6 +75,10 @@ then signs the installers that CI built on bb33, runs and verifies them, and pub
 Its job `sign` runs on a bb33 runner labelled `bb33-sign`, which gets the private key
 only in a run of this workflow that a `v*` tag started (bb33's README, "Release signing").
 
+Between releases `host/VERSION` on main names the next version with `.dev0`, such as `0.5.1.dev0`,
+so that `cmrelay upgrade FILE` takes a build of main as newer than the release before it.
+chatmail/workflows' make_new_release.py writes the tag's version there in the release commit.
+
 | Piece            | Where                                                                              |
 |------------------|------------------------------------------------------------------------------------|
 | signature        | the last line of the installer file, exactly 101 bytes                             |
