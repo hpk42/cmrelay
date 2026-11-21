@@ -24,6 +24,8 @@ This page shows the help of each command as ``cmrelay COMMAND --help`` prints it
    options:
      -h, --help   show this help message and exit
 
+   The manual is at https://cmrelay.readthedocs.io/
+
 cmrelay init
 ------------
 

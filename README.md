@@ -32,8 +32,8 @@ except a relay deployed with `cmdeploy run`, which cmrelay takes over.
 
 ## Where to read on
 
-- [The manual](doc/getting_started.rst) covers setting up and operating a cmrelay host.
-  `make -C doc html` builds it into `build/doc/html` with [uv](https://docs.astral.sh/uv/),
+- [The manual](https://cmrelay.readthedocs.io/) covers setting up and operating a cmrelay host.
+  Its source is in [doc/](doc/), and `make -C doc html` builds it into `build/doc/html` with [uv](https://docs.astral.sh/uv/),
   `make -C doc auto` serves it at http://127.0.0.1:8000/ and rebuilds on changes.
 
 - [host/README.md](host/README.md) describes how the `cmrelay` tool is laid out and tested.

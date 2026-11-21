@@ -33,7 +33,9 @@ LOCKED = ("init", "deploy", "uninstall")
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="cmrelay", description="Install and maintain a chatmail relay."
+        prog="cmrelay",
+        description="Install and maintain a chatmail relay.",
+        epilog="The manual is at https://cmrelay.readthedocs.io/",
     )
     sub = parser.add_subparsers(dest="verb", metavar="COMMAND")
     verb = sub.add_parser
