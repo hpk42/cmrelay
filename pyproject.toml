@@ -1,4 +1,11 @@
 # `uv run pytest` here runs the cmrelay, chatmaild and installer tests.
+
+# chatmail/workflows' make_new_release.py releases cmrelay under this name,
+# setting host/VERSION to the new version in the release commit
+[tool.make-new-release]
+name = "cmrelay"
+version-file = "host/VERSION"
+
 [tool.uv]
 python-preference = "only-managed"
 
