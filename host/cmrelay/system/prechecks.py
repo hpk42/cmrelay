@@ -2,6 +2,9 @@
 
 import os
 import platform
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from .. import paths
@@ -79,9 +82,32 @@ def check_external_tls(config) -> list:
     ]
 
 
+def check_port_53() -> list:
+    """Another resolver where unbound has to listen, which would keep it from starting.
+
+    systemd-resolved's 127.0.0.53 is elsewhere, and an unbound is the one a deploy replaces.
+    """
+    if not shutil.which("ss"):
+        return []
+    query = ["ss", "-Hlnptu", "sport", "=", ":53"]
+    listed = subprocess.run(query, capture_output=True, text=True, check=False).stdout
+    holders = {}
+    for line in listed.splitlines():
+        local = line.split()[4]
+        address = local.rsplit(":", 1)[0].strip("[]").split("%")[0]
+        name = next(iter(re.findall(r'users:\(\("([^"]+)"', line)), "a process")
+        if address in ("127.0.0.1", "::1", "0.0.0.0", "::", "*") and name != "unbound":
+            holders.setdefault(name, local)
+    return [
+        (MISSING, "port 53", f"{name} listens on {local}", f"stop and disable {name}")
+        for name, local in holders.items()
+    ]
+
+
 def run_prechecks(bundle, config) -> list:
     """All findings for this host and config. Modifies nothing."""
-    return check_units() + check_external_tls(config) + check_mtail(bundle, config)
+    findings = check_units() + check_port_53() + check_external_tls(config)
+    return findings + check_mtail(bundle, config)
 
 
 def format_report(findings) -> str:

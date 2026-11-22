@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+from conftest import fake_tool
+
 from cmrelay.cli.deploy import check_dns_ready, check_prechecks
 from cmrelay.cli.dns import dns
 from cmrelay.system import prechecks
@@ -36,6 +38,22 @@ def test_a_foreign_mail_stack_is_refused_and_a_cmdeploy_one_taken_over(fake_root
     assert check_prechecks(Host(Host.INSTALLED), conflicts, out) == 1
     assert check_prechecks(cmdeploy, conflicts, out) is None
     assert check_prechecks(cmdeploy, conflicts + missing, out) == 1
+
+
+def test_another_resolver_on_unbounds_port_is_refused(tmp_path, out):
+    listed = [
+        'udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:* users:(("systemd-resolve",pid=1,fd=9))',
+        'udp UNCONN 0 0 127.0.0.1:53 0.0.0.0:* users:(("unbound",pid=2,fd=3))',
+        'udp UNCONN 0 0 0.0.0.0:53 0.0.0.0:* users:(("dnsmasq",pid=3,fd=4))',
+        'tcp LISTEN 0 32 [::]:53 [::]:* users:(("dnsmasq",pid=3,fd=6))',
+    ]
+    fake_tool(tmp_path, "ss", "cat <<'EOF'\n" + "\n".join(listed) + "\nEOF")
+    findings = prechecks.check_port_53()
+    assert [(kind, subject) for kind, subject, *_ in findings] == [
+        (prechecks.MISSING, "port 53")
+    ]
+    assert "dnsmasq" in findings[0][2]
+    assert check_prechecks(Host(Host.CMDEPLOY), findings, out) == 1
 
 
 def test_a_parked_domain_is_refused_with_records(fake_root, out, capsys, monkeypatch):
