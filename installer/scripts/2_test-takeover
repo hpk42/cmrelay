@@ -33,5 +33,7 @@ case $takeover in
 esac
 cmlxc test-mini "$name"
 quiet on cmrelay uninstall --yes
+# the relay's own unbound answers again before cmdeploy runs
+quiet on dig +time=2 +tries=1 @127.0.0.1 localhost
 cmlxc deploy-cmdeploy "$name" --source "@$commit"
 cmlxc test-mini "$name"

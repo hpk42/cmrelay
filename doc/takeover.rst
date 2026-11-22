@@ -64,9 +64,9 @@ Then::
    cmrelay uninstall
 
 This recursively removes ``/opt/cmrelay`` and the units cmrelay wrote,
-unmasks and re-enables what it masked or disabled, starts nothing
-apart from systemd-resolved where it was in use,
-and gives ``/etc/resolv.conf`` back what the deploy replaced.
+unmasks and re-enables what it masked or disabled,
+and starts nothing but the relay's unbound, which ``/etc/resolv.conf`` names,
+so that the host keeps resolving names until ``cmdeploy run``.
 Mailboxes, ``/etc/dkimkeys`` and ``/var/lib/acme`` stay as the deploy left them.
 Use ``cmdeploy run`` to restore the original configuration.
 

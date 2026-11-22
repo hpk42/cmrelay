@@ -1,6 +1,6 @@
 """`cmrelay uninstall`: hand the host back to `cmdeploy run`.
 
-Only systemd-resolved is started: anything else would race the teardown.
+Only a resolver is started: anything else would race the teardown.
 """
 
 import platform
@@ -46,6 +46,11 @@ def uninstall_verb(args, bundle, out) -> int:
     paths.VERSION_MARKER.unlink(missing_ok=True)
 
     systemd.daemon_reload()
+    # a taken-over relay's unbound, only now that cmrelay's own unit is gone
+    reenabled = ["enable", "unbound.service"] in undo
+    if reenabled and unbound.first_nameserver() == "127.0.0.1":
+        systemd.must("start", "unbound.service")
+        out.print("  started unbound.service")
     out.section("Done")
     out.print("You can now use `cmdeploy run` on the machine where you used to do it.")
     return 0
