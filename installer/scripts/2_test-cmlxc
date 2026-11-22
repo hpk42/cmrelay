@@ -28,6 +28,7 @@ for name in "$@"; do
 done
 cmlxc test-mini "$@"
 [ -n "$full" ] || exit 0
+cmlxc test-cmdeploy "$@"
 
 for name in "$@"; do :; done
 ct=$name-localchat

@@ -301,6 +301,8 @@ into Debian 12 containers and runs the relay tests of
 `cmlxc <https://github.com/chatmail/cmlxc>`_ against them with Delta Chat accounts:
 once after the first deploy, and again after the second relay went through
 an upgrade, a failing upgrade, an uninstall and a fresh deploy.
+After the first deploy, CI also runs chatmail/relay's own
+:relaydir:`tests <cmdeploy/src/cmdeploy/tests>` against the two relays.
 
 Across the two relays, the tests check that
 

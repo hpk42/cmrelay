@@ -33,8 +33,8 @@ and `2_test-cmlxc` and `2_test-takeover` a cmlxc with the `deploy-cmrelay` comma
 
     uv tool install git+https://github.com/chatmail/cmlxc@hpk/deploy-cmrelay-init
 
-The header of `2_test-cmlxc` says what `--full` adds.
-`cmlxc test-cmdeploy NAME` additionally runs cmdeploy's own test suite against a container.
+With `--full`, `2_test-cmlxc` also runs cmdeploy's own test suite through `cmlxc test-cmdeploy`
+and takes the last container through an upgrade, a failing upgrade and an uninstall.
 
 
 ## The Nix build
