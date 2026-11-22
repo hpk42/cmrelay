@@ -116,8 +116,7 @@ class Deployment:
         for path in (self.config.tls_cert_path, self.config.tls_key_path):
             if not Path(path).is_file():
                 problems.append(f"no TLS material at {path}")
-        # not "activating" either: that is also how a unit restarting in a loop looks
         for unit, state in systemd.unit_states(expected).items():
-            if state.active not in ("active", "reloading"):
+            if not state.is_up:
                 problems.append(f"{unit} is not running ({state.active})")
         return problems

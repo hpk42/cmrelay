@@ -23,6 +23,11 @@ class UnitState:
         return self.active in ("active", "activating", "reloading")
 
     @property
+    def is_up(self) -> bool:
+        """Running, and not "activating": that is also how a restart loop looks."""
+        return self.active in ("active", "reloading")
+
+    @property
     def is_enabled(self) -> bool:
         """Already enabled, so an enable changes nothing."""
         states = ("enabled", "enabled-runtime", "static", "alias", "indirect")

@@ -83,6 +83,11 @@ def test_status_counts_units_not_running_and_conflicts(
     assert status.status_verb(None, bundle, out) == 0
     assert "units            2, all good\n" in capsys.readouterr().out
 
+    # a unit restarting in a loop is "activating", which is not running either
+    systemctl("loaded activating enabled")
+    assert status.status_verb(None, bundle, out) == 1
+    assert "units            2, 2 not as intended\n" in capsys.readouterr().out
+
     systemctl("loaded failed enabled")
     conflict = (prechecks.CONFLICT, "exim4.service", "enabled/active", "mask it")
     monkeypatch.setattr(prechecks, "run_prechecks", lambda *args: [conflict])
