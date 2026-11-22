@@ -5,3 +5,6 @@ local-dns.patch
 
 # The invite QR code as SVG; cmdeploy's PNG needs Pillow (74 MiB).
 www-qr-svg.patch
+
+# chatmail-turn exits when an IPv6 address is still tentative; the unit waits for it.
+turnserver-tentative-ipv6.patch

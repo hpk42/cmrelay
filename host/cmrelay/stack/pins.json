@@ -2,19 +2,19 @@
   "DOVECOT_VERSION": "2.3.21+dfsg1-3",
   "FILTERMAIL_ARTIFACTS": {
     "aarch64": [
-      "https://github.com/chatmail/filtermail/releases/download/v0.7.8/filtermail-aarch64",
-      "a15a476ab92072ad22f1bc9d81e5c545bc3d81fc9d446d53f8cc1de810867837"
+      "https://github.com/chatmail/filtermail/releases/download/v0.7.10/filtermail-aarch64",
+      "eaf2a46c7c39e898bb37b82716a0a866cea5bbbc642675c78c259e0f98517ceb"
     ],
     "mtail": [
-      "https://raw.githubusercontent.com/chatmail/filtermail/v0.7.8/contrib/filtermail.mtail",
+      "https://raw.githubusercontent.com/chatmail/filtermail/v0.7.10/contrib/filtermail.mtail",
       "948f688bb89ad47e6eb0fc8fa107e201a689f5adc264ff926be487a2a8562b51"
     ],
     "x86_64": [
-      "https://github.com/chatmail/filtermail/releases/download/v0.7.8/filtermail-x86_64",
-      "f470431f98468b9f4d2452470bffc00c0010b3f92655005d59b997f599fd7d4a"
+      "https://github.com/chatmail/filtermail/releases/download/v0.7.10/filtermail-x86_64",
+      "c800e39e37d81c504f48dee2e61c10fcdd679c23e7ab958d6f0e6413c19d2be3"
     ]
   },
-  "FILTERMAIL_VERSION": "v0.7.8",
+  "FILTERMAIL_VERSION": "v0.7.10",
   "IROH_ARTIFACTS": {
     "aarch64": [
       "https://github.com/n0-computer/iroh/releases/download/v0.35.0/iroh-relay-v0.35.0-aarch64-unknown-linux-musl.tar.gz",
@@ -37,7 +37,7 @@
     ]
   },
   "MTAIL_VERSION": "3.4.9",
-  "RELAY_COMMIT": "7a0bd2d4f8d078681eaab6edde387e9ce09d22fc",
+  "RELAY_COMMIT": "8a7dcba595b397473b6db7637876f1b79fd22bb5",
   "TURN_ARTIFACTS": {
     "aarch64": [
       "https://github.com/chatmail/chatmail-turn/releases/download/v0.4/chatmail-turn-aarch64-linux",
