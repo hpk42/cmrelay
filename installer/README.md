@@ -23,6 +23,7 @@ The numbered ones in the order of a release; each runs from any directory.
 | `scripts/2_test-distros [IMAGE...]`         | installs, deploys and uninstalls on fresh Debian 12, 13, Ubuntu 24.04, 26.04 |
 | `scripts/2_test-takeover [NAME]`            | takes a cmdeploy relay over with the build and hands it back             |
 | `scripts/3_sign-installer FILE [--key KEY]` | signs an installer, offering to generate a release key if there is none  |
+| `scripts/verify-cmrelay-signature FILE`     | checks an installer's signature line against the release key it carries |
 | `scripts/chore-sync-from-relay COMMIT`      | refreshes the files copied from chatmail/relay to that commit            |
 | `scripts/chore-bump-nixpkgs`                | moves `flake.lock` forward and builds the installer                      |
 | `scripts/failing-release`                   | builds an installer of version 99.0.0 whose deploy fails, for the test   |
@@ -85,6 +86,9 @@ chatmail/workflows' make_new_release.py writes the tag's version there in the re
 | its content      | `cmrelay-sig `, the base64 of a raw Ed25519 signature and a newline                |
 | signing key      | a file on bb33, never on GitHub and never in the repository                        |
 | verification key | `release-key.pem` in the repository and in every installed cmrelay                 |
+
+`scripts/verify-cmrelay-signature`, which the manual shows in full, carries a copy of the verification key;
+the release workflow verifies each signed installer with it, so a copy that still holds an old key fails the release.
 
 An upgrade from a mirror or a USB stick is therefore as safe as one from GitHub;
 the first install of a host checks no signature.

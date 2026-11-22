@@ -1,0 +1,12 @@
+#!/bin/bash
+# Usage: verify-cmrelay-signature FILE
+# Verifies the signature line at the end of a cmrelay installer file against cmrelay's release key.
+set -eu
+file=${1:?usage: verify-cmrelay-signature cmrelay-installer-VERSION-ARCH-linux.run}
+key=MCowBQYDK2VwAyEAJwnuoQeP1WesSmTEkWZ7zd2z+v7iI0TflujzHi/6mlg=
+unsigned=$(mktemp)
+trap 'rm -f "$unsigned"' EXIT
+head -c -101 "$file" > "$unsigned"
+# the signature line: "cmrelay-sig ", the base64 of a raw Ed25519 signature, a newline
+openssl pkeyutl -verify -rawin -pubin -keyform DER -inkey <(echo $key | base64 -d) -in "$unsigned" \
+    -sigfile <(tail -c 101 "$file" | sed 's/^cmrelay-sig //' | base64 -d)

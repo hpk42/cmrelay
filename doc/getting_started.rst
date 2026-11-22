@@ -42,7 +42,7 @@ The steps use ``chat.example.org``. Please substitute it with your own domain.
 2. Download the latest ``cmrelay-installer-<version>-<arch>-linux.run`` file
    from https://github.com/hpk42/cmrelay/releases,
    where ``<arch>`` is what ``uname -m`` prints on the host, ``x86_64`` or ``aarch64``,
-   and copy the file onto the host.
+   and copy the file onto the host; you can :ref:`check its signature <verify>` first.
 
 3. Run the installer as root::
 
@@ -171,14 +171,34 @@ Upgrading
 ---------
 
 Cmrelay itself never downloads software.
-You need to download the `newer installer file <https://github.com/hpk42/cmrelay/releases>`_ yourself and run::
+You need to download a `newer installer file <https://github.com/hpk42/cmrelay/releases>`_ yourself and run::
 
    cmrelay upgrade NEWFILE
 
-The file is verified against the release key
-of the already installed cmrelay before it is unpacked.
-The first install verifies no signature,
-but you can check its sha256 against the release page.
+cmrelay will first verify the ``NEWFILE`` is signed by its own release key,
+before unpacking and deploying the upgrade.
+
+
+.. _verify:
+
+Verifying the signature on cmrelay install files
+------------------------------------------------
+
+On upgrade, signatures on new installer files are automatically verified,
+see previous section.
+
+For the first install you may check the installer file
+by storing the following script as ``/root/verify-cmrelay-signature``:
+
+.. literalinclude:: ../installer/scripts/verify-cmrelay-signature
+   :language: bash
+
+You can then run it with an installer file as its argument::
+
+   bash /root/verify-cmrelay-signature cmrelay-installer-<version>-<arch>-linux.run
+
+It prints ``Signature Verified Successfully`` for an authentic installer,
+and ``Signature Verification Failure`` or another error for any other file.
 
 
 Modifying the home page

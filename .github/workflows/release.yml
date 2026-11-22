@@ -104,10 +104,7 @@ jobs:
           chmod 755 "$run"
           sudo "./$run" --stage-only
           sudo rm -rf /opt/cmrelay
-          # the signature line: "cmrelay-sig ", 88 bytes of base64, a newline
-          head -c -101 "$run" > unsigned
-          tail -c 101 "$run" | sed 's/^cmrelay-sig //' | base64 -d > sig
-          openssl pkeyutl -verify -rawin -pubin -inkey release-key.pem -in unsigned -sigfile sig
+          installer/scripts/verify-cmrelay-signature "$run"
 
       - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
