@@ -62,6 +62,8 @@ version information changes only with ``cmrelay upgrade FILE``.
    currently only the Delta Chat Android app,
    need to verify themselves that downloaded app files are valid.
 
+.. _active-ports:
+
 Active ports
 ~~~~~~~~~~~~
 

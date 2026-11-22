@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 project = "cmrelay"
@@ -7,7 +8,7 @@ copyright = "2026, holger krekel"
 release = (Path(__file__).parents[1] / "host/VERSION").read_text().strip()
 html_title = f"cmrelay {release}"
 
-extensions = ["sphinx.ext.extlinks"]
+extensions = ["sphinx.ext.extlinks", "sphinx_copybutton"]
 templates_path = ["_templates"]
 
 # The chatmail/relay commit the copied chapters and the installed software come from.
@@ -21,6 +22,30 @@ extlinks = {
     "relaydir": (f"https://github.com/chatmail/relay/tree/{commit}/%s", "%s"),
 }
 extlinks_detect_hardcoded_links = True
+
+# The newest release, whose installers the commands in the manual fetch:
+# between releases host/VERSION on main names the next one, which has no installers yet.
+describe = ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"]
+tag = subprocess.check_output(describe, cwd=Path(__file__).parent, text=True).strip()
+installer_tokens = {
+    "|release-url|": f"https://github.com/hpk42/cmrelay/releases/download/{tag}",
+    "|installer-x86_64|": f"cmrelay-installer-{tag[1:]}-x86_64-linux.run",
+    "|installer-aarch64|": f"cmrelay-installer-{tag[1:]}-aarch64-linux.run",
+}
+
+
+def setup(app):
+    # replaced as each page is read, so that they reach into literal blocks too,
+    # which reST substitutions do not
+    def replace_tokens(app, docname, source):
+        for token, value in installer_tokens.items():
+            source[0] = source[0].replace(token, value)
+
+    app.connect("source-read", replace_tokens)
+
+
+# copies a console block's commands without their "$ " prompt and without the output
+copybutton_prompt_text = "$ "
 
 html_theme = "furo"
 html_logo = "_static/cmrelay.svg"

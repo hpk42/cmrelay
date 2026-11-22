@@ -14,6 +14,7 @@ at https://github.com/hpk42/cmrelay.
     :maxdepth: 2
 
     getting_started
+    takeover
     cmrelay
     overview
     internals

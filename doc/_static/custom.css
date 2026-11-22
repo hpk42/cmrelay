@@ -101,3 +101,15 @@
 .sidebar-fullnav li.current > a {
   color: #7fc4e8;
 }
+
+/* Long lines in code blocks wrap instead of running out of view, and before the copy
+   button rather than under it; a copied line still comes out whole. */
+.highlight pre {
+  overflow-wrap: anywhere;
+  padding-right: 2.6em;
+  white-space: pre-wrap;
+}
+/* The copy button shows on every code block, not only while the pointer is over it. */
+button.copybtn {
+  opacity: 1;
+}

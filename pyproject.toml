@@ -28,7 +28,7 @@ dev = [
     "qrcode",
     "pytest-xdist>=3.8.0",
 ]
-doc = ["sphinx", "sphinx-autobuild", "furo"]
+doc = ["sphinx", "sphinx-autobuild", "furo", "sphinx-copybutton"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"

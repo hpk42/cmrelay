@@ -9,7 +9,7 @@ the software contained in a cmrelay installer is built with a "Nix closure" with
 Run the installer as root directly on the host with `<arch>` substituted by what `uname -m` prints there, 
 `x86_64` or `aarch64`:
 
-    ./cmrelay-installer-<version>-<arch>-linux.run
+    sh cmrelay-installer-<version>-<arch>-linux.run
 
 which will unpack the software contained in the installer into `/opt/cmrelay`.
 To initialize and deploy your relay:

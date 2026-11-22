@@ -52,7 +52,7 @@ All configuration lives in ``/opt/cmrelay``::
     ├── www-src/                # web page source: seeded once, then yours to modify
     └── lib/                    # managed by cmrelay, not for editing
         ├── bin/cmrelay         # the command, linked from /usr/local/bin
-        ├── cgi-bin/            # the script behind account creation
+        ├── cgi-bin/            # the script behind address creation
         ├── config/             # rendered configuration, one directory per component
         ├── state/              # what uninstall gives back, what is published, the store paths in use
         └── store/              # the dovecot/postfix/etc. software stack
