@@ -123,13 +123,22 @@ def write_pins(relay: Path, commit: str, out: Path) -> None:
 
 
 def stale_docs(relay: Path) -> list:
+    """Copied pages whose source changed, each with the commit it was copied from."""
     stale = []
     for line in (REPO / "doc/COPIED").read_text().splitlines():
         if line.strip() and not line.startswith("#"):
             page, source, recorded = line.split()
-            upstream = (relay / "doc/source" / source).read_bytes()
-            if hashlib.sha256(upstream).hexdigest() != recorded:
-                stale.append(f"doc/{page} (from {source})")
+            path = f"doc/source/{source}"
+            if hashlib.sha256((relay / path).read_bytes()).hexdigest() == recorded:
+                continue
+            base = None
+            for commit in git("log", "--format=%H", "--", path, cwd=relay).split():
+                show = ["git", "show", f"{commit}:{path}"]
+                old = subprocess.run(show, cwd=relay, capture_output=True, check=False)
+                if hashlib.sha256(old.stdout).hexdigest() == recorded:
+                    base = commit
+                    break
+            stale.append((page, path, base))
     return stale
 
 
@@ -157,7 +166,16 @@ def main() -> int:
     print(f"synced to chatmail/relay {commit[:12]}; review with git diff")
     if stale:
         print("upstream changed these copied pages; revisit, then update doc/COPIED:")
-        print("  " + "\n  ".join(stale))
+        github = "//github.com/", "//raw.githubusercontent.com/"
+        raw = args.source.removesuffix(".git").replace(*github)
+        for page, path, base in stale:
+            print(f"  doc/{page} (from {path}), what changed:")
+            ids = base and (base[:12], commit[:12])
+            if ids and Path(args.source).is_dir():
+                print(f"    git -C {args.source} diff {' '.join(ids)} -- {path}")
+            elif ids and "raw.githubusercontent" in raw:
+                old, new = (f"<(curl -fsSL {raw}/{i}/{path})" for i in ids)
+                print(f"    git diff --no-index {old} {new}")
     return 0
 
 
