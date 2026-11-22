@@ -1,9 +1,12 @@
 #!/bin/sh
 # Usage: chore-bump-nixpkgs
-# Moves flake.lock to the newest state of its nixpkgs branch and builds the installer.
+# Moves flake.lock to the newest state of its nixpkgs branch, builds the installer
+# and lists the packages whose versions changed.
 set -eu
 cd "$(dirname "$0")/.."
+old=$(nix build --no-link --print-out-paths .#closure)
 nix flake update
 git diff --stat flake.lock
 scripts/1_build-installer
+nix store diff-closures "$old" "$(nix build --no-link --print-out-paths .#closure)"
 echo "next: scripts/2_test-cmlxc --full and scripts/2_test-distros"
