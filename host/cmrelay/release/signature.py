@@ -40,7 +40,6 @@ def detach(installer: Path, dest: Path) -> str | None:
 
 def verify(bundle, artefact: Path, signature) -> bool:
     """Whether the release key signed these exact bytes."""
-    key = bundle.public_key
     if not signature:
         return False
     try:
@@ -50,6 +49,6 @@ def verify(bundle, artefact: Path, signature) -> bool:
     with tempfile.NamedTemporaryFile(suffix=".sig") as sig:
         sig.write(raw)
         sig.flush()
-        options = ("-verify", "-pubin", "-inkey", key, "-sigfile", sig.name)
-        command = ("pkeyutl", "-rawin", "-in", artefact, *options)
+        options = ("-verify", "-inkey", bundle.public_key, "-sigfile", sig.name)
+        command = ("pkeyutl", "-rawin", "-pubin", "-in", artefact, *options)
         return bundle.run("openssl", *command, check=False).returncode == 0
