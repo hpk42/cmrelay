@@ -99,7 +99,6 @@ class Bundle:
         return self.root / "cmrelay"
 
     @property
-    def public_key(self) -> Path | None:
-        """The release key this closure accepts, if it carries one."""
-        key = self.root / KEY
-        return key if key.is_file() else None
+    def public_key(self) -> Path:
+        """The release key this closure verifies an upgrade with."""
+        return self.root / KEY

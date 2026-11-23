@@ -75,7 +75,6 @@ path                             what happens
 ``/etc/sysusers.d``              ``cmrelay.conf``, the accounts the services run as
 ``/etc/sysctl.d``                ``60-cmrelay-inotify.conf``, the inotify limits dovecot needs
 ``/etc/acme/hooks``              the hook that reloads nginx after a renewal
-``/etc/opendkim``                created empty
 ``/etc/unbound/unbound.conf.d``  created if absent; unbound includes the ``*.conf`` in it
 ``/etc/chatmail-version``        the chatmail/relay commit the software comes from
 ``/var/lib``, ``/var/log``       state and log directories of unbound, nginx and postfix

@@ -100,6 +100,7 @@ def bundle(tmp_path):
     root.mkdir(parents=True)
     skip = shutil.ignore_patterns("tests", "__pycache__")
     shutil.copytree(REPO / "host/cmrelay", root / "cmrelay", ignore=skip)
+    shutil.copy(REPO / "release-key.pem", root)
 
     packages = {}
     for name, *tools in map(str.split, PACKAGES.strip().splitlines()):
@@ -109,7 +110,7 @@ def bundle(tmp_path):
     packages["dovecot"]["dh_params"] = "/nix/store/dovecot/share/dovecot/dh.pem"
     packages["nginx"]["prefix"] = "/nix/store/nginx"
     packages["python"]["python"] = "/nix/store/python/bin/python3"
-    manifest = {"version": "0.4.0", "packages": packages}
+    manifest = {"version": "1.0", "packages": packages}
     (root / "manifest.json").write_text(json.dumps(manifest))
     return Bundle(Path("/nix/store/deadbeef-cmrelay-closure"), prefix=tmp_path)
 

@@ -53,7 +53,7 @@ def test_uninstall_removes_only_its_own(fake_root, bundle, out, monkeypatch, sys
     # a deploy's drop-in goes, the operator's beside it stays
     ours, operators = (paths.JOURNALD_DROPINS / n for n in ("90-x.conf", "50-y.conf"))
     ours.parent.mkdir(parents=True)
-    ours.write_text(f"{paths.MARKER} 0.4.0\n[Journal]\n")
+    ours.write_text(f"{paths.MARKER} 1.0\n[Journal]\n")
     operators.write_text("[Journal]\n")
 
     # a prompt nobody can answer is a no

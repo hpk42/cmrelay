@@ -35,4 +35,4 @@ Both are under the MIT licence.
      - the answers on upgrading and on how relays are run,
        and the question on cmrelay and cmdeploy
 
-:doc:`getting_started` and :doc:`overview` are written for cmrelay.
+:doc:`getting_started`, :doc:`takeover`, :doc:`cmrelay` and :doc:`overview` are written for cmrelay.

@@ -7,7 +7,6 @@ from ..postfix import postfix
 from ..unbound import unbound
 
 KEYS = Path("/etc/dkimkeys")
-ETC = Path("/etc/opendkim")
 CONF = paths.CONFIG / "opendkim/opendkim.conf"
 SELECTOR = "opendkim"
 # opendkim-genkey defaults to a weak 1024.
@@ -26,7 +25,7 @@ def configure(deploy):
     source = "stack/opendkim"
     deploy.put_template("opendkim", f"{source}/opendkim.conf", CONF, **data)
     spool = postfix.SPOOL / "opendkim"
-    for directory in (ETC, KEYS, spool):
+    for directory in (KEYS, spool):
         deploy.changes.ensure_directory("opendkim", directory, mode=0o750, owner=owner)
     for name in ("KeyTable", "SigningTable"):
         dest = KEYS / name

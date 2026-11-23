@@ -45,7 +45,7 @@ def closure(tmp_path):
 
 @pytest.fixture
 def artefact(tmp_path):
-    path = tmp_path / "cmrelay-installer-0.4.0-x86_64-linux.run"
+    path = tmp_path / "cmrelay-installer-1.0-x86_64-linux.run"
     path.write_bytes(b"#!/bin/sh\n" + b"payload" * 1000)
     return path
 
@@ -82,7 +82,7 @@ def test_a_tampered_file_or_other_key_does_not_verify(tmp_path, closure, artefac
         check_signature(closure, *signed_part(artefact), args, out)
 
 
-def test_no_signature_or_no_key_verifies_nothing(tmp_path, closure, artefact, out):
+def test_no_signature_verifies_nothing(closure, artefact, out):
     copy, sig = signed_part(artefact)
     assert sig is None and copy.read_bytes() == artefact.read_bytes()
     assert not signature.verify(closure, copy, sig)
@@ -90,8 +90,3 @@ def test_no_signature_or_no_key_verifies_nothing(tmp_path, closure, artefact, ou
         check_signature(closure, copy, sig, SimpleNamespace(no_verify=False), out)
     no_verify = SimpleNamespace(no_verify=True)
     assert check_signature(closure, copy, sig, no_verify, out) == "none"
-
-    private, _ = keypair(tmp_path, "release")
-    sign(private, artefact)
-    assert closure.public_key is None
-    assert not signature.verify(closure, *signed_part(artefact))

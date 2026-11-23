@@ -41,7 +41,7 @@ def detach(installer: Path, dest: Path) -> str | None:
 def verify(bundle, artefact: Path, signature) -> bool:
     """Whether the release key signed these exact bytes."""
     key = bundle.public_key
-    if not (key and signature):
+    if not signature:
         return False
     try:
         raw = base64.b64decode(signature, validate=True)

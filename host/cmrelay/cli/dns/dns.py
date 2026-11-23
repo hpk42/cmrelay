@@ -31,9 +31,8 @@ def load_pycode(bundle):
     return modules["zone"], modules["rdns"]
 
 
-def dns_verb(args, bundle, out, config=None) -> int:
-    if config is None:
-        config = cfg.read_config(paths.INI)
+def dns_verb(args, bundle, out) -> int:
+    config = cfg.read_config(paths.INI)
 
     if config.ipv4_relay:
         out.print(f"{config.ipv4_relay} is not a domain; no DNS records apply.")

@@ -17,9 +17,7 @@ def status_verb(args, bundle, out) -> int:
     row("cmrelay", bundle.manifest["version"])
     row("config", paths.INI)
     row("chatmail/relay", bundle.relay_commit)
-    key = bundle.public_key
-    if key:
-        row("release key", signature.fingerprint(key.read_bytes()))
+    row("release key", signature.fingerprint(bundle.public_key.read_bytes()))
     row("closure", bundle.closure)
     if not paths.INI.is_file():
         out.warn(f"{paths.INI} does not exist; nothing is configured yet")

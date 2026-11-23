@@ -83,14 +83,11 @@ def check_signature(bundle, candidate: Path, sig, args, out) -> str:
         out.warn("installing without verifying the signature (--no-verify)")
         out.print(f"  sha256 {fsops.file_digest(candidate)}")
         return "none"
-    key = bundle.public_key
     if signature.verify(bundle, candidate, sig):
-        fingerprint = signature.fingerprint(key.read_bytes())
+        fingerprint = signature.fingerprint(bundle.public_key.read_bytes())
         out.ok(f"signature verified by the release key ({fingerprint})")
         return fingerprint
-    if not key:
-        reason = "this cmrelay carries no release key to verify with"
-    elif not sig:
+    if not sig:
         reason = "the installer carries no signature"
     else:
         reason = (

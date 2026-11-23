@@ -28,8 +28,7 @@ def install(changes, bundle, out) -> None:
         moved += 1
     out.print(f"  {moved} new store paths under {paths.STORE}")
     changes.write("cmrelay", paths.STORE_PATHS, "\n".join(names) + "\n")
-    # relative, so the whole tree can be moved
-    cli = Path("../store") / Path(bundle.closure).name / "bin/cmrelay"
+    cli = paths.STORE / Path(bundle.closure).name / "bin/cmrelay"
     changes.symlink("cmrelay", paths.CLI, cli)
 
 

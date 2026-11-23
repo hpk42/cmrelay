@@ -13,7 +13,3 @@ select = [
   "PLE", # Pylint Error
   "PLW", # Pylint Warning
 ]
-
-[lint.per-file-ignores]
-# Tests import inside a test when the import itself is what is under test.
-"**/tests/*" = ["PLC0415"]

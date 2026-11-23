@@ -120,7 +120,7 @@
               testEnv = pkgs.python3.withPackages (ps: pythonDeps ++ [ ps.pytest ]);
             in
             pkgs.runCommand "cmrelay-pytest" { nativeBuildInputs = [ pkgs.openssl ]; } ''
-              cp -r ${../.}/host ${../.}/installer ${../.}/doc ${../.}/README.md ${../.}/pyproject.toml .
+              cp -r ${../.}/host ${../.}/installer ${../.}/doc ${../.}/README.md ${../.}/pyproject.toml ${../.}/release-key.pem .
               chmod -R u+w .
               ${testEnv}/bin/python -m pytest -q -p no:cacheprovider host/cmrelay installer/test_installer.py
               # the closure's chatmaild leaves out its tests, this copy has them

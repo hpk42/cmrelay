@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "host"))
-from cmrelay.cli import main as cli  # noqa: E402
+from cmrelay.cli import main as cli
 
 PAGES = sorted((REPO / "doc").glob("*.rst"))
 READMES = [REPO / "README.md", REPO / "host/README.md", REPO / "installer/README.md"]

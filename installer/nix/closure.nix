@@ -29,9 +29,6 @@ let
     root = ../../host/cmrelay;
     fileset = lib.fileset.difference ../../host/cmrelay ../../host/cmrelay/tests;
   };
-  # the public half of the release key, if there is one
-  releaseKey = ../../release-key.pem;
-
   # Real store paths for the header: the env's symlinks dangle during staging.
   stagingPythonPath = python3Packages.makePythonPath (
     python3Packages.requiredPythonModules pythonDeps
@@ -146,7 +143,7 @@ runCommand "cmrelay-closure" { } ''
   mkdir -p $out
   cp ${manifest} $out/manifest.json
   cp ${../../LICENSE} $out/LICENSE
-  ${lib.optionalString (builtins.pathExists releaseKey) "cp ${releaseKey} $out/release-key.pem"}
+  cp ${../../release-key.pem} $out/release-key.pem
   cp -r ${cmrelay} $out/cmrelay
   chmod -R u+w $out
 
