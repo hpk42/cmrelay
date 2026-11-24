@@ -29,9 +29,9 @@ The numbered ones in the order of a release; each runs from any directory.
 | `scripts/failing-release`                   | builds an installer of version 99.0.0 whose deploy fails, for the test   |
 
 The `2_test-` scripts need [Incus](https://linuxcontainers.org/incus/),
-and `2_test-cmlxc` and `2_test-takeover` a cmlxc with the `deploy-cmrelay` command, which is on a branch until it is released:
+and `2_test-cmlxc` and `2_test-takeover` cmlxc 0.18:
 
-    uv tool install git+https://github.com/chatmail/cmlxc@hpk/deploy-cmrelay-init
+    uv tool install "cmlxc~=0.18.0"
 
 With `--full`, `2_test-cmlxc` also runs cmdeploy's own test suite through `cmlxc test-cmdeploy`
 and takes the last container through an upgrade, a failing upgrade and an uninstall.

@@ -15,7 +15,7 @@ fail() {
     exit 1
 }
 
-install="uv tool install git+https://github.com/chatmail/cmlxc@hpk/deploy-cmrelay-init"
+install="uv tool install cmlxc~=0.18.0"
 cmlxc deploy-cmrelay --help >/dev/null 2>&1 \
     || fail "no cmlxc with a deploy-cmrelay command: $install"
 installer=build/installer/bin/cmrelay.run

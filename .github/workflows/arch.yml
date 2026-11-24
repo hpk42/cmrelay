@@ -135,18 +135,13 @@ jobs:
           # only the relays test upgrades to the failing release
           failing: ${{ matrix.test == 'relays' }}
 
-      - name: Set Incus up
-        run: installer/scripts/ci-incus
+      - uses: chatmail/cmlxc/.github/actions/incus@v0.18.0
 
       - uses: astral-sh/setup-uv@v9.0.0
 
-      # deploy-cmrelay lives on that chatmail/cmlxc branch until it is released;
-      # the repository variable CMLXC_REF picks another ref
       - name: Install cmlxc
-        env:
-          CMLXC_REF: ${{ vars.CMLXC_REF || 'hpk/deploy-cmrelay-init' }}
         run: |
-          uv tool install "git+https://github.com/chatmail/cmlxc@$CMLXC_REF"
+          uv tool install "cmlxc~=0.18.0"
           uv --color never tool dir --bin >> "$GITHUB_PATH"
 
       - name: Deploy and test
@@ -177,8 +172,7 @@ jobs:
           nix-cache: ${{ needs.build.outputs.NIX_CACHE }}
           nix-cache-keys: ${{ needs.build.outputs.NIX_CACHE_KEYS }}
 
-      - name: Set Incus up
-        run: installer/scripts/ci-incus
+      - uses: chatmail/cmlxc/.github/actions/incus@v0.18.0
 
       - name: Install, deploy and uninstall on Debian 12, 13 and Ubuntu 24.04, 26.04
         run: installer/scripts/2_test-distros
