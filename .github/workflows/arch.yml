@@ -176,3 +176,29 @@ jobs:
 
       - name: Install, deploy and uninstall on Debian 12, 13 and Ubuntu 24.04, 26.04
         run: installer/scripts/2_test-distros
+
+  upload:
+    name: upload the installer
+    needs: [build, deploy, distros]
+    if: needs.build.outputs.NIX_CACHE && github.event_name == 'pull_request'
+    runs-on: ${{ inputs.arch == 'aarch64' && (vars.LINUX_RUNNER_ARM || 'ubuntu-24.04-arm') || vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/installer
+        with:
+          arch: ${{ inputs.arch }}
+          nix-cache: ${{ needs.build.outputs.NIX_CACHE }}
+          nix-cache-keys: ${{ needs.build.outputs.NIX_CACHE_KEYS }}
+
+      - run: cp build/installer/bin/cmrelay.run "cmrelay-${GITHUB_SHA:0:7}-${{ inputs.arch }}-linux.run"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cmrelay-payload-${{ inputs.arch }}
+          path: cmrelay-*.run
+          if-no-files-found: error
+          retention-days: 14
