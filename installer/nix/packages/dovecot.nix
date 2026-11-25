@@ -35,8 +35,9 @@ stdenv.mkDerivation {
   src = fetchFromGitHub {
     owner = "chatmail";
     repo = "dovecot";
-    tag = "upstream/2.3.21+dfsg1-3+chatmail2";
-    hash = "sha256-YQS1HVvgAOvYEnj9cdRYq2/GZWfkn/EsWNW94RhdS7I=";
+    # chatmail/dovecot#15, the LMTP retry for expunged first copies
+    rev = "43e292056abf9d56010ac3fc40970c6f01813035";
+    hash = "sha256-KtXFWwRoN7dV/HLXMvMXY5jtPPvqL5MpIBvnrkilW/s=";
   };
 
   nativeBuildInputs = [
