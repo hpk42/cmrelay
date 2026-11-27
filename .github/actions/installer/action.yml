@@ -5,13 +5,30 @@ inputs:
   nix-cache: {default: ""}
   nix-cache-keys: {default: ""}
   failing: {default: "false"}
+  payload-sha256: {default: ""}
+  failing-sha256: {default: ""}
 runs:
   using: composite
   steps:
-    # With bb33's nix cache the installer builds here faster than it downloads: GitHub's
-    # artifact store loses packets on the way to bb33 and studio96, 20 to 110s a download.
+    - name: Fetch the installers from bb33's artifact store
+      id: fetch
+      if: inputs.nix-cache && inputs.payload-sha256 && (inputs.failing != 'true' || inputs.failing-sha256)
+      continue-on-error: true
+      shell: bash
+      env:
+        STORE: ${{ inputs.nix-cache }}/artifacts
+        PAYLOAD: ${{ inputs.payload-sha256 }}
+        FAILING: ${{ inputs.failing == 'true' && inputs.failing-sha256 || '' }}
+      run: |
+        get() {
+          curl -fsS --retry 2 --create-dirs -o "$2" "$STORE/$1"
+          echo "$1  $2" | sha256sum -c
+        }
+        get "$PAYLOAD" artifact/cmrelay-bb33.run
+        if [ -n "$FAILING" ]; then get "$FAILING" failing/failing.run; fi
+    # Failing that, the installer builds from bb33's nix cache, faster than it downloads.
     - uses: cachix/install-nix-action@v31
-      if: inputs.nix-cache
+      if: inputs.nix-cache && steps.fetch.outcome != 'success'
       with:
         extra_nix_config: |
           experimental-features = nix-command flakes
@@ -19,13 +36,13 @@ runs:
           extra-trusted-public-keys = ${{ inputs.nix-cache-keys }}
           connect-timeout = 5
     - name: Build the installer from bb33's nix cache
-      if: inputs.nix-cache
+      if: inputs.nix-cache && steps.fetch.outcome != 'success'
       shell: bash
       env:
         FAILING: ${{ inputs.failing }}
       run: |
         nix build -o payload ./installer#payload
-        mkdir artifact failing && cp payload/bin/cmrelay-*.run artifact/
+        rm -rf artifact failing && mkdir artifact failing && cp payload/bin/cmrelay-*.run artifact/
         [ "$FAILING" != true ] || cp "$(installer/scripts/failing-release)" failing/failing.run
     - uses: actions/download-artifact@v8
       if: ${{ !inputs.nix-cache }}
