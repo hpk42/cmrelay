@@ -87,7 +87,7 @@ filtermail     bin/filtermail
 chatmail-turn  bin/chatmail-turn
 iroh-relay     bin/iroh-relay
 python         bin/doveauth bin/chatmail-metadata bin/lastlogin
-python         bin/chatmail-expire bin/chatmail-quota-expire bin/chatmail-fsreport
+python         bin/chatmail-expire bin/chatmail-quota-expire
 ldns           bin/drill
 openssl        bin/openssl
 """

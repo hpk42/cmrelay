@@ -113,3 +113,9 @@ def test_status_counts_units_not_running_and_conflicts(
     assert "not green: 1 silent resolver; see below" in capsys.readouterr().out
     fake_tool(tmp_path, "drill", "exit 0")
     assert status.status_verb(None, bundle, out) == 0
+
+    (paths.SYSTEMD_SYSTEM / "chatmail-fsreport.timer").write_text(f"{paths.MARKER}\n")
+    assert status.status_verb(None, bundle, out) == 1
+    printed = capsys.readouterr().out
+    assert "units            3, 1 not as intended\n" in printed
+    assert "chatmail-fsreport.timer" in printed

@@ -105,6 +105,8 @@ def test_deploy_records_every_change_then_is_a_noop(deployment, fake_root, monke
     systemd_files = {p for p in moved if paths.SYSTEMD_SYSTEM in p.parents}
     systemd_files = {p for p in systemd_files if after[p][0] == "file"}
     assert systemd_files and all(map(paths.written_by_cmrelay, systemd_files))
+    # activate() removes its own units missing here
+    assert set(paths.own_units()) <= set(deployment.units())
     secrets = (config.tls_key_path, opendkim.KEYS / "opendkim.private")
     modes = [after[Path(p)][-1] for p in (*secrets, config.mailboxes_dir)]
     assert modes == [0o600, 0o600, 0o700]

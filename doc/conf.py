@@ -23,6 +23,9 @@ extlinks = {
 }
 extlinks_detect_hardcoded_links = True
 
+# delta.chat/help picks the reader's language in JavaScript and keeps the anchor.
+linkcheck_anchors_ignore_for_url = [r"https://delta\.chat/help"]
+
 # The newest release, whose installers the commands in the manual fetch:
 # between releases host/VERSION on main names the next one, which has no installers yet.
 describe = ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"]

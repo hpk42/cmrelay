@@ -35,8 +35,8 @@ stdenv.mkDerivation {
   src = fetchFromGitHub {
     owner = "chatmail";
     repo = "dovecot";
-    tag = "upstream/2.3.21+dfsg1-3+chatmail2";
-    hash = "sha256-YQS1HVvgAOvYEnj9cdRYq2/GZWfkn/EsWNW94RhdS7I=";
+    tag = "upstream/2.3.21+dfsg1-3+chatmail3";
+    hash = "sha256-kv82lu8pokyRFeGWSxCm1/qWEiMANoeLw7JpU20r0ow=";
   };
 
   nativeBuildInputs = [

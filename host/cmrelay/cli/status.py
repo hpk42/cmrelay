@@ -32,7 +32,7 @@ def status_verb(args, bundle, out) -> int:
     wanted = Deployment(bundle, config, out, fsops.Changes()).units()
     names = paths.own_units()
     states = systemd.unit_states(names)
-    bad = [n for n in names if wanted.get(n, (None,))[0] and not states[n].is_up]
+    bad = [n for n in names if n not in wanted or wanted[n][0] and not states[n].is_up]
     findings = prechecks.run_prechecks(bundle, config)
     # A failed host unit can be cmrelay's doing, like a wait-online without resolved.
     listed = systemd.query("list-units", "--failed", "--plain", "--no-legend")

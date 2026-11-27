@@ -103,7 +103,6 @@ let
       chatmail-metadata = "${pythonEnv}/bin/chatmail-metadata";
       chatmail-expire = "${pythonEnv}/bin/chatmail-expire";
       chatmail-quota-expire = "${pythonEnv}/bin/chatmail-quota-expire";
-      chatmail-fsreport = "${pythonEnv}/bin/chatmail-fsreport";
       lastlogin = "${pythonEnv}/bin/lastlogin";
     };
 

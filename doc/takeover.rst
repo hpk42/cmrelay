@@ -49,6 +49,8 @@ As ``root`` on the cmdeploy relay host:
    It stops and disables postfix, dovecot, nginx, unbound, opendkim and fcgiwrap,
    and masks exim4, mta-sts-daemon and postfix's default instance,
    which cmrelay has no replacement for.
+   It also stops and disables the units an older cmdeploy left behind
+   that current chatmail/relay no longer has, like the chatmail-fsreport timer.
    **Mailboxes, the DKIM key and the certificates stay where they are and are not touched.**
 
 

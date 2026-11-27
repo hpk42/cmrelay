@@ -155,6 +155,7 @@ def take_over(where, findings, bundle, out, args, changes) -> bool:
     out.section("Take-over")
     retire(prechecks.SHADOWED_UNITS, changes, out, mask=False)
     retire(prechecks.MASKED_UNITS, changes, out, mask=True)
+    retire(prechecks.CMDEPLOY_STALEUNITS, changes, out, mask=False)
     systemd.daemon_reload()
     return True
 
@@ -181,11 +182,16 @@ def activate(deployment, changes, out) -> list:
     """One reload if unit files moved, then one systemctl call per verb."""
     # Every deploy, not only a take-over: a bare host runs systemd-resolved too.
     retired = retire(unbound.RESOLVER_UNITS, changes, out, mask=True)
+    units = deployment.units()
+    for name in (n for n in paths.own_units() if n not in units):
+        systemd.retire(name)
+        changes.remove_file("cmrelay", paths.SYSTEMD_SYSTEM / name)
+        systemd.systemctl("reset-failed", name)
+        out.changed(f"{name} stopped and removed: this release has no such unit")
     in_systemd = (paths.SYSTEMD_SYSTEM in c.path.parents for c in changes)
     if any(in_systemd) or retired:
         systemd.daemon_reload()
 
-    units = deployment.units()
     states = systemd.unit_states(units)
     resolver = states.get("unbound.service")
     if resolver and resolver.active == "failed":
