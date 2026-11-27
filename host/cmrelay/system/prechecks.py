@@ -27,6 +27,10 @@ MASKED_UNITS = [
     "mta-sts-daemon.service",
 ]
 
+# cmdeploy installed these, and nothing replaces them
+CMDEPLOY_STALEUNITS = ["chatmail-fsreport.timer", "chatmail-fsreport.service"]
+CMDEPLOY_STALEUNITS += ["echobot.service"]
+
 # A finding is (kind, subject, detail, remedy).
 CONFLICT = "conflict"
 MISSING = "missing"

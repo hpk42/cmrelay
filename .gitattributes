@@ -1,0 +1,2 @@
+# rendered from the .mmd next to them by `make -C doc diagrams`
+doc/diagrams/*.svg -diff linguist-generated

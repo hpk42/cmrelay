@@ -76,6 +76,22 @@ def test_without_a_certificate_everything_but_its_users_starts(
     assert "all as intended" not in capsys.readouterr().out
 
 
+def test_a_unit_an_old_release_wrote_goes(fake_root, deployment, tmp_path):
+    acmetool = fake_tool(tmp_path, "acmetool", "exit 1")
+    deployment.bundle.packages["acmetool"]["acmetool"] = acmetool
+    deployment.config.tls_cert_path = str(tmp_path / "no-such-cert")
+    paths.SYSTEMD_SYSTEM.mkdir(parents=True)
+    names = ("chatmail-fsreport.timer", "nginx.service", "backup.timer")
+    stale, kept, operators = (paths.SYSTEMD_SYSTEM / n for n in names)
+    stale.write_text(f"{paths.MARKER} 0.6.0\n[Timer]\n")
+    kept.write_text(f"{paths.MARKER} 0.6.0\n[Service]\n")
+    operators.write_text("[Timer]\n")
+
+    activate(deployment, deployment.changes, deployment.out)
+
+    assert not stale.exists() and kept.exists() and operators.exists()
+
+
 def test_retiring_masks_what_it_can_and_refuses_a_failure(fake_root, out, systemctl):
     paths.SYSTEMD_SYSTEM.mkdir(parents=True, exist_ok=True)
     (paths.SYSTEMD_SYSTEM / "mta-sts-daemon.service").write_text("[Unit]\n")

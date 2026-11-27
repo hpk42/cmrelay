@@ -28,7 +28,7 @@ and wired together through systemd units under the names Debian uses:
   services:
   ``doveauth`` creating addresses on first login,
   ``chatmail-metadata`` for push notifications, ``lastlogin``,
-  and the ``chatmail-expire`` and ``chatmail-fsreport`` timers
+  and the ``chatmail-expire`` timer
 
 chatmaild comes from the pinned commit of the `chatmail/relay repository <https://github.com/chatmail/relay>`_,
 which also names the filtermail, TURN and Iroh relay releases,

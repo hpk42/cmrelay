@@ -72,7 +72,10 @@ def dns_verb(args, bundle, out) -> int:
         out.warn("these recommended DNS entries are not set:")
         for line in recommended:
             out.print(f"  {line}")
-    if not (required or recommended):
+    if adsp := remote_data.get("ADSP"):
+        out.warn("this obsolete DNS entry can be deleted:")
+        out.print(f"  _adsp._domainkey.{config.mail_domain}.   TXT  {adsp}")
+    if not (required or recommended or adsp):
         out.ok("all DNS entries are published and correct")
     return 1 if required else 0
 

@@ -4,17 +4,15 @@ from pathlib import Path
 
 from ... import paths
 
-# The timers own expire and fsreport.
+# The timer owns expire.
 UNITS = [
     "doveauth.service",
     "chatmail-metadata.service",
     "lastlogin.service",
     "chatmail-expire.service",
     "chatmail-expire.timer",
-    "chatmail-fsreport.service",
-    "chatmail-fsreport.timer",
 ]
-TIMER_DRIVEN = {"chatmail-expire.service", "chatmail-fsreport.service"}
+TIMER_DRIVEN = {"chatmail-expire.service"}
 
 
 def configure(deploy):

@@ -40,7 +40,7 @@ buildPythonPackage {
   postInstall = "rm -r $out/lib/python*/site-packages/chatmaild/tests";
 
   meta = {
-    description = "chatmail relay daemons: doveauth, metadata, lastlogin, expire, fsreport, quota-expire";
+    description = "chatmail relay daemons: doveauth, metadata, lastlogin, expire, quota-expire";
     license = lib.licenses.mit;
   };
 }

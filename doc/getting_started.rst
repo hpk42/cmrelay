@@ -105,6 +105,8 @@ or on ``aarch64``::
 
 cmrelay will first verify the file is signed by its own release key,
 before unpacking and deploying the upgrade.
+The deploy stops and removes the units the earlier release wrote
+and the new one no longer has.
 
 
 Modifying the home page
