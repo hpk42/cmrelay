@@ -25,14 +25,14 @@ jobs:
     outputs:
       NIX_CACHE: ${{ steps.cache.outputs.NIX_CACHE }}
       NIX_CACHE_KEYS: ${{ steps.cache.outputs.NIX_CACHE_KEYS }}
+      PAYLOAD_SHA256: ${{ steps.bb33.outputs.PAYLOAD_SHA256 }}
+      FAILING_SHA256: ${{ steps.bb33.outputs.FAILING_SHA256 }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       # bb33's nix cache on bb33's own runners only, releases included.
-      # aarch64 comes from studio96, so x86_64 jobs
-      # trust only the key of what the cache built itself.
       - name: Pick bb33's nix cache
         id: cache
         if: runner.environment == 'self-hosted' && vars.NIX_CACHE
@@ -81,8 +81,20 @@ jobs:
       - name: Run the tests on the shipped Python
         run: nix flake check --print-build-logs ./installer
 
-      # The artifacts serve GitHub's own runners and releases; bb33's runners build the
-      # installer from bb33's nix cache instead, which is faster than the artifact store.
+      - name: Put the installers into bb33's artifact store
+        id: bb33
+        if: env.NIX_CACHE
+        continue-on-error: true
+        run: |
+          put() {
+            sha=$(sha256sum "$2" | cut -c1-64)
+            curl -fsS --retry 2 -T "$2" "$NIX_CACHE/artifacts/$sha"
+            echo "$1=$sha" >> "$GITHUB_OUTPUT"
+          }
+          put PAYLOAD_SHA256 build/installer/bin/cmrelay-*.run
+          put FAILING_SHA256 "$(installer/scripts/failing-release)"
+
+      # The artifacts serve GitHub's own runners and releases.
       # build/installer is a symlink into the store; the name carries the commit
       - name: Name the payload after the commit
         if: ${{ !env.NIX_CACHE || github.ref_type == 'tag' }}
@@ -132,6 +144,8 @@ jobs:
           arch: ${{ inputs.arch }}
           nix-cache: ${{ needs.build.outputs.NIX_CACHE }}
           nix-cache-keys: ${{ needs.build.outputs.NIX_CACHE_KEYS }}
+          payload-sha256: ${{ needs.build.outputs.PAYLOAD_SHA256 }}
+          failing-sha256: ${{ needs.build.outputs.FAILING_SHA256 }}
           # only the relays test upgrades to the failing release
           failing: ${{ matrix.test == 'relays' }}
 
@@ -171,6 +185,7 @@ jobs:
           arch: ${{ inputs.arch }}
           nix-cache: ${{ needs.build.outputs.NIX_CACHE }}
           nix-cache-keys: ${{ needs.build.outputs.NIX_CACHE_KEYS }}
+          payload-sha256: ${{ needs.build.outputs.PAYLOAD_SHA256 }}
 
       - uses: chatmail/cmlxc/.github/actions/incus@v0.18.0
 
@@ -179,7 +194,7 @@ jobs:
 
   upload:
     name: upload the installer
-    needs: [build, deploy, distros]
+    needs: build
     if: needs.build.outputs.NIX_CACHE && github.event_name == 'pull_request'
     runs-on: ${{ inputs.arch == 'aarch64' && (vars.LINUX_RUNNER_ARM || 'ubuntu-24.04-arm') || vars.LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
@@ -193,6 +208,7 @@ jobs:
           arch: ${{ inputs.arch }}
           nix-cache: ${{ needs.build.outputs.NIX_CACHE }}
           nix-cache-keys: ${{ needs.build.outputs.NIX_CACHE_KEYS }}
+          payload-sha256: ${{ needs.build.outputs.PAYLOAD_SHA256 }}
 
       - run: cp build/installer/bin/cmrelay.run "cmrelay-${GITHUB_SHA:0:7}-${{ inputs.arch }}-linux.run"
 
